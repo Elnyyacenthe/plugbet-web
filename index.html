@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Plugbet - Chat & Bet</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #040810; --card: #0E1A2E; --blue: #0B1726;
+      --green: #00E676; --yellow: #FFD600; --nblue: #448AFF;
+      --red: #FF1744; --orange: #FF9100;
+      --t1: #F0F2F5; --t2: #8E99A4; --t3: #4A5568;
+      --div: #1A2940;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: var(--bg); color: var(--t1); overflow-x: hidden; }
+
+    /* NAV */
+    nav { position: fixed; top: 0; width: 100%; z-index: 100; background: rgba(4,8,16,0.95); backdrop-filter: blur(20px); border-bottom: 1px solid var(--div); padding: 0 24px; }
+    .nav-inner { max-width: 1200px; margin: 0 auto; display: flex; align-items: center; justify-content: space-between; height: 60px; }
+    .logo { display: flex; align-items: center; gap: 8px; text-decoration: none; }
+    .logo-text { font-size: 22px; font-weight: 900; background: linear-gradient(135deg, var(--green), var(--t1)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .logo-sub { font-size: 10px; color: var(--t3); }
+    .nav-links { display: flex; gap: 20px; align-items: center; }
+    .nav-links a { color: var(--t2); text-decoration: none; font-size: 13px; font-weight: 600; transition: color 0.3s; }
+    .nav-links a:hover { color: var(--green); }
+    .nav-btn { background: var(--green); color: #000; padding: 7px 18px; border-radius: 10px; font-weight: 800; font-size: 12px; text-decoration: none; }
+
+    /* HERO */
+    .hero { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 80px 24px 60px; background: radial-gradient(ellipse at 50% 0%, rgba(0,230,118,0.08), transparent 60%); }
+    .hero-inner { max-width: 1000px; text-align: center; }
+    .hero-badge { display: inline-block; padding: 5px 14px; border-radius: 20px; background: rgba(0,230,118,0.1); border: 1px solid rgba(0,230,118,0.3); color: var(--green); font-size: 11px; font-weight: 700; margin-bottom: 20px; letter-spacing: 1px; }
+    .hero h1 { font-size: clamp(32px, 6vw, 64px); font-weight: 900; line-height: 1.1; margin-bottom: 16px; letter-spacing: -2px; }
+    .hero h1 span { color: var(--green); }
+    .hero p { font-size: clamp(14px, 2vw, 18px); color: var(--t2); max-width: 550px; margin: 0 auto 32px; line-height: 1.6; }
+    .hero-buttons { display: flex; gap: 14px; justify-content: center; flex-wrap: wrap; }
+    .btn-main { display: inline-flex; align-items: center; gap: 8px; background: var(--green); color: #000; padding: 13px 28px; border-radius: 14px; font-weight: 800; font-size: 15px; text-decoration: none; box-shadow: 0 4px 20px rgba(0,230,118,0.3); transition: all 0.3s; }
+    .btn-main:hover { transform: translateY(-2px); }
+    .btn-out { display: inline-flex; align-items: center; gap: 8px; background: transparent; color: var(--t1); padding: 13px 28px; border-radius: 14px; font-weight: 700; font-size: 15px; text-decoration: none; border: 2px solid var(--div); transition: all 0.3s; }
+    .btn-out:hover { border-color: var(--green); color: var(--green); }
+
+    /* SECTIONS */
+    .section { padding: 70px 24px; max-width: 1200px; margin: 0 auto; }
+    .section-title { text-align: center; margin-bottom: 40px; }
+    .section-title h2 { font-size: 32px; font-weight: 900; margin-bottom: 10px; }
+    .section-title p { color: var(--t2); font-size: 15px; }
+
+    /* FEATURES */
+    .features-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+    .feature-card { background: linear-gradient(135deg, var(--card), rgba(20,32,53,0.8)); border: 1px solid var(--div); border-radius: 18px; padding: 24px; transition: all 0.3s; }
+    .feature-card:hover { transform: translateY(-3px); border-color: var(--green); }
+    .feature-icon { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; font-size: 22px; margin-bottom: 14px; }
+    .feature-card h3 { font-size: 16px; font-weight: 800; margin-bottom: 6px; }
+    .feature-card p { color: var(--t2); font-size: 13px; line-height: 1.6; }
+
+    /* GAMES */
+    .games-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+    .game-card { background: var(--card); border: 1px solid var(--div); border-radius: 14px; padding: 20px; text-align: center; transition: all 0.3s; }
+    .game-card:hover { transform: scale(1.03); border-color: var(--green); }
+    .game-emoji { font-size: 36px; margin-bottom: 10px; }
+    .game-name { font-size: 14px; font-weight: 800; margin-bottom: 3px; }
+    .game-desc { font-size: 11px; color: var(--t3); }
+
+    /* DOWNLOAD */
+    #download { background: linear-gradient(180deg, transparent, rgba(0,230,118,0.03), transparent); }
+    .download-cards { display: flex; gap: 20px; justify-content: center; flex-wrap: wrap; }
+    .dl-card { background: var(--card); border: 2px solid var(--div); border-radius: 18px; padding: 28px 36px; text-align: center; min-width: 240px; transition: all 0.3s; }
+    .dl-card:hover { border-color: var(--green); transform: translateY(-3px); }
+    .dl-card .icon { font-size: 44px; margin-bottom: 14px; }
+    .dl-card h3 { font-size: 18px; font-weight: 800; margin-bottom: 6px; }
+    .dl-card p { color: var(--t2); font-size: 12px; margin-bottom: 16px; }
+    .dl-btn { display: inline-block; padding: 10px 24px; border-radius: 12px; font-weight: 800; font-size: 13px; text-decoration: none; transition: all 0.3s; }
+    .dl-btn.android { background: var(--green); color: #000; }
+    .dl-btn.ios { background: var(--nblue); color: #fff; opacity: 0.5; pointer-events: none; }
+    .dl-btn.web { background: var(--orange); color: #000; }
+    .dl-btn:hover { transform: scale(1.05); }
+
+    /* FOOTER */
+    footer { border-top: 1px solid var(--div); padding: 36px 24px; text-align: center; }
+    .footer-links { display: flex; gap: 20px; justify-content: center; margin-bottom: 16px; flex-wrap: wrap; }
+    .footer-links a { color: var(--t3); text-decoration: none; font-size: 12px; }
+    .footer-links a:hover { color: var(--green); }
+    .footer-copy { color: var(--t3); font-size: 11px; }
+
+    @media (max-width: 768px) {
+      .nav-links { display: none; }
+      .hero { padding-top: 70px; }
+      .download-cards { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+
+  <nav>
+    <div class="nav-inner">
+      <a href="#" class="logo">
+        <span class="logo-text">Plugbet</span>
+        <span class="logo-sub">Chat & Bet</span>
+      </a>
+      <div class="nav-links">
+        <a href="#features">Fonctionnalites</a>
+        <a href="#games">Jeux</a>
+        <a href="#download">Telecharger</a>
+        <a href="app/" class="nav-btn">Ouvrir l'app</a>
+      </div>
+    </div>
+  </nav>
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-badge">DISPONIBLE SUR WEB, ANDROID & iOS</div>
+      <h1>Scores en direct.<br><span>Jeux entre amis.</span><br>Tout en un.</h1>
+      <p>Plugbet combine les scores de football en temps reel, la Fantasy Premier League, et des jeux multijoueurs avec mise en coins.</p>
+      <div class="hero-buttons">
+        <a href="app/" class="btn-main">&#x1F310; Ouvrir l'app web</a>
+        <a href="#download" class="btn-out">&#x1F4F1; Telecharger</a>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="features">
+    <div class="section-title">
+      <h2>Tout ce dont tu as besoin</h2>
+      <p>Une plateforme complete pour les passionnes de foot et de jeux</p>
+    </div>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(0,230,118,0.15)">&#x26BD;</div>
+        <h3>Scores en direct</h3>
+        <p>Suivez tous les matchs en temps reel avec scores, evenements et compositions.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(68,138,255,0.15)">&#x1F3C6;</div>
+        <h3>Fantasy Football</h3>
+        <p>Creez votre equipe FPL, gerez transferts, formations et ligues privees.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(255,214,0,0.15)">&#x1F3B2;</div>
+        <h3>8 jeux multijoueurs</h3>
+        <p>Ludo, Cora Dice, Dames, Blackjack, Roulette, Pile ou Face, Aviator, Solitaire.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(255,145,0,0.15)">&#x1F4AC;</div>
+        <h3>Chat & Social</h3>
+        <p>Messagerie privee, amis, partage d'images et systeme de rang.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(224,64,251,0.15)">&#x1FA99;</div>
+        <h3>Systeme de coins</h3>
+        <p>Gagnez et depensez des coins dans tous les jeux. Synchronise en temps reel.</p>
+      </div>
+      <div class="feature-card">
+        <div class="feature-icon" style="background:rgba(255,23,68,0.15)">&#x1F6E1;</div>
+        <h3>Securise</h3>
+        <p>Logique serveur, anti-triche, des aleatoires et gains valides cote backend.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="section" id="games">
+    <div class="section-title">
+      <h2>8 jeux multijoueurs</h2>
+      <p>Jouez avec vos amis, misez vos coins, gagnez gros</p>
+    </div>
+    <div class="games-grid">
+      <div class="game-card"><div class="game-emoji">&#x1F3B2;</div><div class="game-name">Ludo</div><div class="game-desc">2-4 joueurs</div></div>
+      <div class="game-card"><div class="game-emoji">&#x1F3B2;</div><div class="game-name">Cora Dice</div><div class="game-desc">2-6 joueurs</div></div>
+      <div class="game-card"><div class="game-emoji">&#x265F;</div><div class="game-name">Dames</div><div class="game-desc">1v1</div></div>
+      <div class="game-card"><div class="game-emoji">&#x1F0CF;</div><div class="game-name">Solitaire</div><div class="game-desc">Solo/Multi</div></div>
+      <div class="game-card"><div class="game-emoji">&#x2708;</div><div class="game-name">Aviator</div><div class="game-desc">Crash game</div></div>
+      <div class="game-card"><div class="game-emoji">&#x1F0CF;</div><div class="game-name">Blackjack</div><div class="game-desc">2-4 vs Dealer</div></div>
+      <div class="game-card"><div class="game-emoji">&#x1F3B0;</div><div class="game-name">Roulette</div><div class="game-desc">2-6 joueurs</div></div>
+      <div class="game-card"><div class="game-emoji">&#x1FA99;</div><div class="game-name">Pile ou Face</div><div class="game-desc">Duel 1v1</div></div>
+    </div>
+  </section>
+
+  <section class="section" id="download">
+    <div class="section-title">
+      <h2>Telecharge Plugbet</h2>
+      <p>Disponible sur Web, Android et bientot iOS</p>
+    </div>
+    <div class="download-cards">
+      <div class="dl-card">
+        <div class="icon">&#x1F310;</div>
+        <h3>App Web</h3>
+        <p>Joue directement dans ton navigateur — rien a installer</p>
+        <a href="app/" class="dl-btn web">Ouvrir l'app web</a>
+      </div>
+      <div class="dl-card">
+        <div class="icon">&#x1F4F1;</div>
+        <h3>Android</h3>
+        <p>Version 1.5.0 — Compatible Android 7.0+</p>
+        <a href="plugbet.apk" class="dl-btn android" download>Telecharger APK</a>
+      </div>
+      <div class="dl-card">
+        <div class="icon">&#x1F34F;</div>
+        <h3>iOS</h3>
+        <p>Bientot disponible sur l'App Store</p>
+        <a href="#" class="dl-btn ios">Bientot</a>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <div class="footer-links">
+      <a href="#">Accueil</a>
+      <a href="#features">Fonctionnalites</a>
+      <a href="#games">Jeux</a>
+      <a href="#download">Telecharger</a>
+      <a href="privacy.html">Confidentialite</a>
+      <a href="terms.html">Conditions</a>
+    </div>
+    <p class="footer-copy">&copy; 2026 Plugbet — Chat & Bet. Tous droits reserves.</p>
+  </footer>
+
+  <script>
+    document.querySelectorAll('a[href^="#"]').forEach(a => {
+      a.addEventListener('click', e => {
+        e.preventDefault();
+        const t = document.querySelector(a.getAttribute('href'));
+        if (t) t.scrollIntoView({ behavior: 'smooth' });
+      });
+    });
+  </script>
+</body>
+</html>
