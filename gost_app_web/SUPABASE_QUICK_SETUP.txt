@@ -1,0 +1,64 @@
+================================================================================
+  CORA DICE - SUPABASE SETUP RAPIDE
+================================================================================
+
+🔗 ÉTAPE 1 : Connexion
+---------------------
+1. Ouvrez : https://app.supabase.com
+2. Connectez-vous
+3. Sélectionnez votre projet
+
+🗃️ ÉTAPE 2 : Exécuter la migration
+----------------------------------
+1. Menu de gauche → SQL Editor
+2. New Query
+3. Copiez TOUT le fichier : supabase_migrations/05_cora_dice.sql
+4. Collez dans l'éditeur
+5. Cliquez RUN
+6. Attendez 2-3 secondes
+
+✅ ÉTAPE 3 : Vérification
+-------------------------
+1. Menu de gauche → Table Editor
+2. Vérifiez ces 4 tables :
+   ✓ cora_rooms
+   ✓ cora_games
+   ✓ cora_room_players
+   ✓ cora_messages
+
+🚀 ÉTAPE 4 : Lancer l'app
+-------------------------
+Dans le terminal :
+   flutter run
+
+📱 ÉTAPE 5 : Tester
+------------------
+1. Ouvrir l'app
+2. Onglet "Jeux" (🎮)
+3. Cliquer "Cora Dice"
+4. Créer une partie
+5. Jouer !
+
+================================================================================
+
+💡 AIDE RAPIDE
+
+Si erreur "Table doesn't exist" :
+   → Relancez la migration SQL
+
+Si l'onglet Jeux n'apparaît pas :
+   → flutter clean && flutter pub get && flutter run
+
+Si la partie ne démarre pas :
+   → Tous les joueurs doivent être "PRÊT !"
+
+Pour jouer à 2 appareils :
+   → Appareil 1 : Créer partie publique
+   → Appareil 2 : Rejoindre depuis la liste
+
+Pour jouer avec code :
+   → Créer partie PRIVÉE
+   → Partager le code (6 caractères)
+   → L'autre entre le code
+
+================================================================================
