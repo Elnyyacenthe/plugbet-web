@@ -1,6 +1,7 @@
 // ============================================================
-// Plugbet – Ecran d'authentification complet
-// 4 modes : Compte rapide, Email, Google, Telephone (OTP)
+// Plugbet – Ecran d'authentification
+// 2 modes : Compte rapide (pseudo+mdp) / Email (email+mdp)
+// + Google Sign-In
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -19,31 +20,7 @@ class AuthScreen extends StatefulWidget {
   State<AuthScreen> createState() => _AuthScreenState();
 }
 
-enum _AuthMode { quick, email, phone }
-
-// Codes pays courants
-const _countryCodes = [
-  ('+237', '🇨🇲', 'CM'),
-  ('+33', '🇫🇷', 'FR'),
-  ('+1', '🇺🇸', 'US'),
-  ('+44', '🇬🇧', 'GB'),
-  ('+225', '🇨🇮', 'CI'),
-  ('+221', '🇸🇳', 'SN'),
-  ('+234', '🇳🇬', 'NG'),
-  ('+250', '🇷🇼', 'RW'),
-  ('+243', '🇨🇩', 'CD'),
-  ('+32', '🇧🇪', 'BE'),
-  ('+41', '🇨🇭', 'CH'),
-  ('+49', '🇩🇪', 'DE'),
-  ('+34', '🇪🇸', 'ES'),
-  ('+39', '🇮🇹', 'IT'),
-  ('+351', '🇵🇹', 'PT'),
-  ('+212', '🇲🇦', 'MA'),
-  ('+216', '🇹🇳', 'TN'),
-  ('+213', '🇩🇿', 'DZ'),
-  ('+91', '🇮🇳', 'IN'),
-  ('+55', '🇧🇷', 'BR'),
-];
+enum _AuthMode { quick, email }
 
 const _log = Logger('AUTH');
 
@@ -55,15 +32,9 @@ class _AuthScreenState extends State<AuthScreen>
   String? _errorMessage;
   _AuthMode _mode = _AuthMode.quick;
 
-  // Phone OTP
-  bool _otpSent = false;
-  String _countryCode = '+237';
-
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   final _usernameController = TextEditingController();
-  final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
   final _formKey = GlobalKey<FormState>();
 
   late AnimationController _animController;
@@ -87,8 +58,6 @@ class _AuthScreenState extends State<AuthScreen>
     _emailController.dispose();
     _passwordController.dispose();
     _usernameController.dispose();
-    _phoneController.dispose();
-    _otpController.dispose();
     _animController.dispose();
     super.dispose();
   }
@@ -98,7 +67,6 @@ class _AuthScreenState extends State<AuthScreen>
       setState(() {
         _mode = mode;
         _errorMessage = null;
-        _otpSent = false;
       });
       _animController.forward();
     });
@@ -109,7 +77,6 @@ class _AuthScreenState extends State<AuthScreen>
       setState(() {
         _isSignUp = !_isSignUp;
         _errorMessage = null;
-        _otpSent = false;
       });
       _animController.forward();
     });
@@ -146,9 +113,7 @@ class _AuthScreenState extends State<AuthScreen>
                 SizedBox(height: 16),
                 FadeTransition(
                   opacity: _fadeAnim,
-                  child: _mode == _AuthMode.phone
-                      ? _buildPhoneForm(t)
-                      : _buildCredentialForm(t),
+                  child: _buildCredentialForm(t),
                 ),
                 SizedBox(height: 24),
                 _buildToggle(t),
@@ -205,19 +170,16 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   // ════════════════════════════════════════════════════════════
-  // MODE SELECTOR
+  // MODE SELECTOR (Quick / Email)
   // ════════════════════════════════════════════════════════════
   Widget _buildModeSelector(AppLocalizations t) {
     return Row(
       children: [
         _modeChip(t.authQuickAccount, Icons.flash_on, _AuthMode.quick,
             AppColors.neonYellow),
-        SizedBox(width: 8),
+        SizedBox(width: 12),
         _modeChip(
             'Email', Icons.email_outlined, _AuthMode.email, AppColors.neonBlue),
-        SizedBox(width: 8),
-        _modeChip(t.authPhoneNumber.split(' ').first, Icons.phone_android,
-            _AuthMode.phone, AppColors.neonGreen),
       ],
     );
   }
@@ -228,7 +190,7 @@ class _AuthScreenState extends State<AuthScreen>
       child: GestureDetector(
         onTap: () => _switchMode(mode),
         child: Container(
-          padding: EdgeInsets.symmetric(vertical: 10),
+          padding: EdgeInsets.symmetric(vertical: 12),
           decoration: BoxDecoration(
             color:
                 selected ? color.withValues(alpha: 0.15) : AppColors.bgCard,
@@ -240,19 +202,19 @@ class _AuthScreenState extends State<AuthScreen>
               width: selected ? 1.5 : 0.5,
             ),
           ),
-          child: Column(
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Icon(icon,
                   size: 18,
                   color: selected ? color : AppColors.textMuted),
-              SizedBox(height: 4),
+              SizedBox(width: 8),
               Text(label,
                   style: TextStyle(
-                    fontSize: 10,
+                    fontSize: 13,
                     fontWeight: selected ? FontWeight.w800 : FontWeight.w500,
                     color: selected ? color : AppColors.textMuted,
-                  ),
-                  textAlign: TextAlign.center),
+                  )),
             ],
           ),
         ),
@@ -404,185 +366,6 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   // ════════════════════════════════════════════════════════════
-  // PHONE FORM — avec selecteur code pays
-  // ════════════════════════════════════════════════════════════
-  Widget _buildPhoneForm(AppLocalizations t) {
-    return Column(
-      children: [
-        if (_errorMessage != null) ...[
-          _errorBox(),
-          SizedBox(height: 14),
-        ],
-
-        if (!_otpSent) ...[
-          // Phone number avec code pays separe
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Country code dropdown
-              Container(
-                height: 52,
-                padding: EdgeInsets.symmetric(horizontal: 8),
-                decoration: BoxDecoration(
-                  color: AppColors.bgCard,
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(color: AppColors.divider),
-                ),
-                child: DropdownButtonHideUnderline(
-                  child: DropdownButton<String>(
-                    value: _countryCode,
-                    isDense: true,
-                    dropdownColor: AppColors.bgCard,
-                    style: TextStyle(
-                        color: AppColors.textPrimary, fontSize: 14),
-                    items: _countryCodes.map((c) {
-                      final (code, flag, _) = c;
-                      return DropdownMenuItem(
-                        value: code,
-                        child: Text('$flag $code',
-                            style: TextStyle(fontSize: 13)),
-                      );
-                    }).toList(),
-                    onChanged: (v) {
-                      if (v != null) setState(() => _countryCode = v);
-                    },
-                  ),
-                ),
-              ),
-              SizedBox(width: 10),
-              // Phone number field
-              Expanded(
-                child: SizedBox(
-                  height: 52,
-                  child: TextField(
-                    controller: _phoneController,
-                    keyboardType: TextInputType.phone,
-                    style:
-                        TextStyle(color: AppColors.textPrimary, fontSize: 15),
-                    decoration: InputDecoration(
-                      hintText: '6XX XXX XXX',
-                      hintStyle:
-                          TextStyle(color: AppColors.textMuted, fontSize: 14),
-                      filled: true,
-                      fillColor: AppColors.bgCard,
-                      contentPadding: EdgeInsets.symmetric(
-                          horizontal: 16, vertical: 16),
-                      border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.divider),
-                      ),
-                      enabledBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(color: AppColors.divider),
-                      ),
-                      focusedBorder: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide(
-                            color: AppColors.neonGreen, width: 1.5),
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ],
-          ),
-          SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _handleSendOtp,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.neonGreen,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              icon: _isLoading
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.black))
-                  : Icon(Icons.send, size: 18),
-              label: Text(t.authSendOtp,
-                  style:
-                      TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-          ),
-        ] else ...[
-          // OTP sent confirmation
-          Container(
-            padding: EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: AppColors.neonGreen.withValues(alpha: 0.08),
-              borderRadius: BorderRadius.circular(10),
-              border: Border.all(
-                  color: AppColors.neonGreen.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.check_circle,
-                    color: AppColors.neonGreen, size: 18),
-                SizedBox(width: 8),
-                Expanded(
-                  child: Text(
-                      t.authOtpSent(_fullPhone),
-                      style: TextStyle(
-                          color: AppColors.neonGreen, fontSize: 13)),
-                ),
-              ],
-            ),
-          ),
-          SizedBox(height: 16),
-          _field(
-            controller: _otpController,
-            hint: t.authOtpCode,
-            icon: Icons.pin,
-            keyboardType: TextInputType.number,
-          ),
-          SizedBox(height: 20),
-          SizedBox(
-            width: double.infinity,
-            height: 52,
-            child: ElevatedButton.icon(
-              onPressed: _isLoading ? null : _handleVerifyOtp,
-              style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.neonGreen,
-                foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(14)),
-              ),
-              icon: _isLoading
-                  ? SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(
-                          strokeWidth: 2, color: Colors.black))
-                  : Icon(Icons.verified, size: 18),
-              label: Text(t.authVerify,
-                  style:
-                      TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-            ),
-          ),
-          SizedBox(height: 12),
-          TextButton(
-            onPressed: () => setState(() => _otpSent = false),
-            child: Text('← ${t.profileChange} ${t.authPhoneNumber.toLowerCase()}',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-          ),
-        ],
-      ],
-    );
-  }
-
-  /// Numero complet avec code pays
-  String get _fullPhone {
-    final num = _phoneController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
-    return '$_countryCode$num';
-  }
-
-  // ════════════════════════════════════════════════════════════
   // WIDGETS HELPERS
   // ════════════════════════════════════════════════════════════
   Widget _errorBox() {
@@ -719,7 +502,6 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Widget _buildToggle(AppLocalizations t) {
-    if (_mode == _AuthMode.phone) return SizedBox.shrink();
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -768,14 +550,8 @@ class _AuthScreenState extends State<AuthScreen>
             _log.warn('Quick signup error: $error');
             setState(() => _errorMessage = error);
           } else if (result != null) {
-            _log.info('Quick signup OK, tentative auto-signin...');
-            // Auto-signin apres signup (contourne email confirmation)
-            final (loginResult, loginError) =
-                await supabase.quickSignIn(username, password);
-            if (loginError != null) {
-              _log.warn('Auto-signin failed: $loginError');
-              // Quand meme un succes si le signup a marche
-            }
+            _log.info('Quick signup OK, auto-signin...');
+            await supabase.quickSignIn(username, password);
             await _updateUsernameAndPop(username, t.authAccountCreated);
           }
         } else {
@@ -790,7 +566,6 @@ class _AuthScreenState extends State<AuthScreen>
           }
         }
       } else {
-        // Email mode
         final email = _emailController.text.trim();
         if (_isSignUp) {
           _log.info('Email signup: $email');
@@ -800,7 +575,6 @@ class _AuthScreenState extends State<AuthScreen>
             _log.warn('Email signup error: $error');
             setState(() => _errorMessage = error);
           } else if (result != null) {
-            // Auto-signin
             await supabase.signInWithEmail(email, password);
             if (username.isNotEmpty) {
               await _updateUsernameAndPop(username, t.authAccountCreated);
@@ -822,7 +596,7 @@ class _AuthScreenState extends State<AuthScreen>
       }
     } catch (e) {
       _log.error('handleSubmit', e, StackTrace.current);
-      setState(() => _errorMessage = 'Erreur: $e');
+      setState(() => _errorMessage = 'Une erreur est survenue. Réessayez.');
     }
 
     if (mounted) setState(() => _isLoading = false);
@@ -848,60 +622,6 @@ class _AuthScreenState extends State<AuthScreen>
       _successAndPop(AppLocalizations.of(context)!.authLoginSuccess);
     } else {
       setState(() => _isLoading = false);
-    }
-  }
-
-  Future<void> _handleSendOtp() async {
-    final num = _phoneController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
-    if (num.isEmpty || num.length < 6) {
-      setState(() => _errorMessage = 'Numero invalide');
-      return;
-    }
-
-    _log.info('Sending OTP to $_fullPhone');
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    final error = await SupabaseService().sendPhoneOtp(_fullPhone);
-    if (!mounted) return;
-
-    setState(() => _isLoading = false);
-    if (error != null) {
-      _log.warn('OTP send error: $error');
-      setState(() => _errorMessage = error);
-    } else {
-      _log.info('OTP sent OK');
-      setState(() => _otpSent = true);
-    }
-  }
-
-  Future<void> _handleVerifyOtp() async {
-    final otp = _otpController.text.trim();
-    if (otp.isEmpty || otp.length < 4) {
-      setState(() => _errorMessage = 'Code invalide');
-      return;
-    }
-
-    _log.info('Verifying OTP for $_fullPhone');
-    setState(() {
-      _isLoading = true;
-      _errorMessage = null;
-    });
-
-    final (result, error) =
-        await SupabaseService().verifyPhoneOtp(_fullPhone, otp);
-    if (!mounted) return;
-
-    if (error != null) {
-      _log.warn('OTP verify error: $error');
-      setState(() {
-        _isLoading = false;
-        _errorMessage = error;
-      });
-    } else if (result != null) {
-      _successAndPop(AppLocalizations.of(context)!.authLoginSuccess);
     }
   }
 

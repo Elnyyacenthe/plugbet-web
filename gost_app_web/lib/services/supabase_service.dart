@@ -151,33 +151,44 @@ class SupabaseService {
   }
 
   // ============================================================
-  // AUTH – Compte rapide (username + password, sans vrai email)
+  // AUTH – Compte rapide (pseudo + mot de passe, sans email visible)
+  // Sous le capot : email genere username@plugbet.app
+  // L'utilisateur ne voit que pseudo + mot de passe
   // ============================================================
-  /// Cree un compte avec un email genere (username@plugbet.local)
+
+  String _quickEmail(String username) =>
+      '${username.toLowerCase().replaceAll(RegExp(r'[^a-z0-9_]'), '')}@plugbet.app';
+
+  /// Verifie d'abord si le pseudo est pris, puis cree le compte
   Future<(AuthResponse?, String?)> quickSignUp(String username, String password) async {
-    final fakeEmail = '${username.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}@plugbet.local';
     try {
+      // Verifier si le pseudo existe deja
+      final existing = await _client
+          .from('user_profiles')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle();
+      if (existing != null) {
+        return (null, 'Ce nom d\'utilisateur est deja pris');
+      }
+
+      final email = _quickEmail(username);
       final response = await _client.auth.signUp(
-        email: fakeEmail,
+        email: email,
         password: password,
         data: {'username': username, 'account_type': 'quick'},
       );
       return (response, null);
     } on AuthException catch (e) {
-      final msg = e.message.toLowerCase();
-      if (msg.contains('already') || msg.contains('registered')) {
-        return (null, 'Ce nom d\'utilisateur est deja pris');
-      }
       return (null, _translateAuthError(e.message));
     } catch (e) {
-      return (null, 'Erreur: $e');
+      return (null, _translateAuthError(e.toString()));
     }
   }
 
-  /// Connexion compte rapide
+  /// Connexion compte rapide par pseudo + password
   Future<(AuthResponse?, String?)> quickSignIn(String username, String password) async {
-    final fakeEmail = '${username.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}@plugbet.local';
-    return signInWithEmail(fakeEmail, password);
+    return signInWithEmail(_quickEmail(username), password);
   }
 
   // ============================================================
