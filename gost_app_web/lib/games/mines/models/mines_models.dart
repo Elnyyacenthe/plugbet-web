@@ -99,17 +99,12 @@ class MinesSession {
   bool get canCashOut => isActive && safeRevealedCount >= 1;
 
   /// Multiplicateur suivant si on revele une case de plus
+  /// Progression lineaire : 1.50, 2.50, 3.50, 4.50... (+1.00 par case)
   double nextMultiplier() {
     final totalSafe = gridSize - minesCount;
     if (safeRevealedCount >= totalSafe) return currentMultiplier;
-
-    // Meme calcul que le SQL : mult *= (total-i)/(safe-i) * 0.97
-    double mult = 1.0;
-    const edge = 0.97;
-    for (int i = 0; i < safeRevealedCount + 1; i++) {
-      mult *= (gridSize - i) / (totalSafe - i);
-    }
-    return double.parse((mult * edge).toStringAsFixed(4));
+    final n = safeRevealedCount + 1;
+    return double.parse((0.50 + n * 1.00).toStringAsFixed(2));
   }
 }
 
