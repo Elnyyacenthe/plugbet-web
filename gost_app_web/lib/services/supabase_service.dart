@@ -298,19 +298,25 @@ class SupabaseService {
   String _translateAuthError(String msg) {
     final lower = msg.toLowerCase();
     if (lower.contains('invalid login credentials') || lower.contains('invalid_credentials')) {
-      return 'Email ou mot de passe incorrect';
+      return 'Pseudo ou mot de passe incorrect';
     }
     if (lower.contains('email not confirmed')) {
-      return 'Veuillez confirmer votre email avant de vous connecter';
+      return 'Compte en attente de confirmation. Réessayez.';
     }
     if (lower.contains('user already registered') || lower.contains('already been registered')) {
-      return 'Cet email est déjà inscrit. Essayez de vous connecter.';
+      return 'Ce nom d\'utilisateur est déjà pris. Essayez un autre.';
     }
-    if (lower.contains('password')) {
+    if (lower.contains('database error') || lower.contains('unexpected_failure')) {
+      return 'Erreur serveur. Réessayez dans quelques instants.';
+    }
+    if (lower.contains('password') && lower.contains('6')) {
       return 'Le mot de passe doit contenir au moins 6 caractères';
     }
     if (lower.contains('rate limit') || lower.contains('too many')) {
       return 'Trop de tentatives. Réessayez dans quelques minutes.';
+    }
+    if (lower.contains('phone') && lower.contains('provider')) {
+      return 'La connexion par téléphone n\'est pas encore disponible.';
     }
     if (lower.contains('invalid') && lower.contains('email')) {
       return 'Adresse email invalide';
@@ -320,6 +326,13 @@ class SupabaseService {
     }
     if (lower.contains('network') || lower.contains('connection')) {
       return 'Erreur réseau. Vérifiez votre connexion internet.';
+    }
+    if (lower.contains('otp') || lower.contains('token')) {
+      return 'Code de vérification invalide ou expiré.';
+    }
+    // Jamais montrer le message technique brut
+    if (msg.contains('{') || msg.contains('error') || msg.length > 80) {
+      return 'Une erreur est survenue. Réessayez.';
     }
     return msg;
   }
