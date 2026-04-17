@@ -22,7 +22,7 @@ class _MinesScreenState extends State<MinesScreen> {
   final _svc = MinesService.instance;
 
   int _betAmount = 100;
-  int _minesCount = 3;
+  static const int _minesCount = 15; // Mode Extreme fixe
 
   MinesSession? _session;
   bool _loading = false;
@@ -45,7 +45,6 @@ class _MinesScreenState extends State<MinesScreen> {
       setState(() {
         _session = session;
         _betAmount = session.betAmount;
-        _minesCount = session.minesCount;
       });
     }
   }
@@ -507,60 +506,50 @@ class _MinesScreenState extends State<MinesScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Presets mines
-          Row(
-            children: MinesPreset.presets.map((p) {
-              final isSelected = p.minesCount == _minesCount;
-              return Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 2),
-                  child: GestureDetector(
-                    onTap: () => setState(() => _minesCount = p.minesCount),
-                    child: AnimatedContainer(
-                      duration: const Duration(milliseconds: 200),
-                      padding: const EdgeInsets.symmetric(vertical: 8),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(10),
-                        color: isSelected
-                            ? AppColors.neonRed.withValues(alpha: 0.2)
-                            : AppColors.bgCard,
-                        border: Border.all(
-                          color: isSelected
-                              ? AppColors.neonRed
-                              : AppColors.divider,
-                          width: isSelected ? 1.5 : 1,
-                        ),
-                      ),
-                      child: Column(
-                        children: [
-                          Text(
-                            p.label,
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.w700,
-                              color: isSelected
-                                  ? AppColors.neonRed
-                                  : AppColors.textSecondary,
-                            ),
-                            textAlign: TextAlign.center,
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                          const SizedBox(height: 2),
-                          Text(
-                            '${p.minesCount}💣',
-                            style: TextStyle(
-                              fontSize: 9,
-                              color: AppColors.textMuted,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
+          // Badge mode fixe : 15 mines (Extreme)
+          Container(
+            padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 16),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.neonRed.withValues(alpha: 0.25),
+                  AppColors.neonOrange.withValues(alpha: 0.15),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: AppColors.neonRed.withValues(alpha: 0.5),
+                width: 1.5,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.local_fire_department, color: AppColors.neonRed, size: 18),
+                const SizedBox(width: 8),
+                Text('MODE EXTREME',
+                    style: TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.neonRed,
+                      letterSpacing: 1.2,
+                    )),
+                const SizedBox(width: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonRed.withValues(alpha: 0.2),
+                    borderRadius: BorderRadius.circular(8),
                   ),
+                  child: Text('15 💣',
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w800,
+                        color: AppColors.textPrimary,
+                      )),
                 ),
-              );
-            }).toList(),
+              ],
+            ),
           ),
           const SizedBox(height: 12),
 
