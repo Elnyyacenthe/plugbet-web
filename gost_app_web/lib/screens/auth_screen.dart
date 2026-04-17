@@ -755,7 +755,8 @@ class _AuthScreenState extends State<AuthScreen>
                       .neq('id', SupabaseService().currentUserId ?? '')
                       .maybeSingle();
                   if (existing != null) {
-                    setS(() => err = 'Ce pseudo est deja pris');
+                    setS(() => err = 'Ce pseudo est déjà utilisé. Choisis-en un autre.');
+                    ctrl.clear();
                     return;
                   }
                 } catch (_) {}
