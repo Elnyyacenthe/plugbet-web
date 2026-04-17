@@ -625,10 +625,156 @@ class _AuthScreenState extends State<AuthScreen>
         _errorMessage = error;
       });
     } else if (result != null) {
+      // Verifier si l'utilisateur a deja un pseudo dans son profil
+      final needsUsername = await _checkIfUsernameNeeded();
+      if (!mounted) return;
+
+      if (needsUsername) {
+        final pseudo = await _askForUsername();
+        if (!mounted) return;
+        if (pseudo != null && pseudo.isNotEmpty) {
+          try {
+            final ludo = context.read<LudoProvider>();
+            await ludo.loadProfile();
+            await ludo.updateUsername(pseudo);
+          } catch (e) {
+            _log.warn('Failed to set username: $e');
+          }
+        }
+      }
+
+      if (!mounted) return;
       _successAndPop(AppLocalizations.of(context)!.authLoginSuccess);
     } else {
       setState(() => _isLoading = false);
     }
+  }
+
+  /// Verifie si le pseudo de l'utilisateur connecte est vide ou auto-genere
+  Future<bool> _checkIfUsernameNeeded() async {
+    try {
+      final uid = SupabaseService().currentUserId;
+      if (uid == null) return false;
+      final client = SupabaseService().client;
+      final profile = await client
+          .from('user_profiles')
+          .select('username')
+          .eq('id', uid)
+          .maybeSingle();
+      final u = profile?['username'] as String?;
+      if (u == null || u.isEmpty) return true;
+      // Considere auto-genere les pseudos Player_xxx
+      if (u.startsWith('Player_') && u.length <= 14) return true;
+      return false;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  /// Affiche un dialog pour demander le pseudo. Retourne null si annule.
+  Future<String?> _askForUsername() async {
+    final ctrl = TextEditingController();
+    String? err;
+    return showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.person, color: AppColors.neonGreen, size: 20),
+              const SizedBox(width: 10),
+              Text('Choisis ton pseudo',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ce pseudo sera affiche aux autres joueurs dans les parties.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              const SizedBox(height: 14),
+              if (err != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(err!,
+                      style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                style: TextStyle(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Mon pseudo',
+                  hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                  prefixIcon: Icon(Icons.alternate_email,
+                      color: AppColors.textMuted, size: 20),
+                  filled: true,
+                  fillColor: AppColors.bgElevated,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.divider),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        BorderSide(color: AppColors.neonGreen, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            ElevatedButton(
+              onPressed: () async {
+                final v = ctrl.text.trim();
+                if (v.length < 3) {
+                  setS(() => err = 'Min 3 caractères');
+                  return;
+                }
+                // Verifier si pris
+                try {
+                  final existing = await SupabaseService()
+                      .client
+                      .from('user_profiles')
+                      .select('id')
+                      .eq('username', v)
+                      .neq('id', SupabaseService().currentUserId ?? '')
+                      .maybeSingle();
+                  if (existing != null) {
+                    setS(() => err = 'Ce pseudo est deja pris');
+                    return;
+                  }
+                } catch (_) {}
+                if (ctx.mounted) Navigator.pop(ctx, v);
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonGreen,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+              ),
+              child: const Text('Valider',
+                  style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      ),
+    );
   }
 
   Future<void> _handleForgotPassword() async {
