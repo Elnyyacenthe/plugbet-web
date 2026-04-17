@@ -104,13 +104,12 @@ class _AuthScreenState extends State<AuthScreen>
                 ),
                 SizedBox(height: 16),
                 _buildHeader(t),
-                SizedBox(height: 28),
-                _buildModeSelector(t),
-                SizedBox(height: 24),
+                SizedBox(height: 20),
+                // Google icon rond, en haut a droite du header
                 _buildGoogleButton(t),
-                SizedBox(height: 16),
-                _buildDivider(t),
-                SizedBox(height: 16),
+                SizedBox(height: 20),
+                _buildModeSelector(t),
+                SizedBox(height: 20),
                 FadeTransition(
                   opacity: _fadeAnim,
                   child: _buildCredentialForm(t),
@@ -223,42 +222,49 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   // ════════════════════════════════════════════════════════════
-  // GOOGLE BUTTON
+  // GOOGLE ICON (rond, compact)
   // ════════════════════════════════════════════════════════════
   Widget _buildGoogleButton(AppLocalizations t) {
-    return SizedBox(
-      width: double.infinity,
-      height: 50,
-      child: OutlinedButton.icon(
-        onPressed: _isLoading ? null : _handleGoogleSignIn,
-        style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.textPrimary,
-          side: BorderSide(color: AppColors.divider),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+    return Center(
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          onTap: _isLoading ? null : _handleGoogleSignIn,
+          customBorder: const CircleBorder(),
+          child: Container(
+            width: 56,
+            height: 56,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: Colors.white,
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.15),
+                  blurRadius: 8,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Image.asset(
+                'assets/google_logo.png',
+                width: 28,
+                height: 28,
+                errorBuilder: (_, __, ___) => Text(
+                  'G',
+                  style: TextStyle(
+                    fontSize: 30,
+                    fontWeight: FontWeight.w800,
+                    color: const Color(0xFF4285F4),
+                    fontFamily: 'Arial',
+                    height: 1,
+                  ),
+                ),
+              ),
+            ),
+          ),
         ),
-        icon: Image.asset('assets/google_logo.png',
-            width: 20,
-            height: 20,
-            errorBuilder: (_, __, ___) =>
-                Icon(Icons.g_mobiledata, size: 24, color: Colors.red)),
-        label: Text(t.authGoogleSignIn,
-            style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
       ),
-    );
-  }
-
-  Widget _buildDivider(AppLocalizations t) {
-    return Row(
-      children: [
-        Expanded(child: Divider(color: AppColors.divider)),
-        Padding(
-          padding: EdgeInsets.symmetric(horizontal: 16),
-          child: Text(t.authOr,
-              style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-        ),
-        Expanded(child: Divider(color: AppColors.divider)),
-      ],
     );
   }
 
