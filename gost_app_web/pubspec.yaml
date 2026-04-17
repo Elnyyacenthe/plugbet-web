@@ -47,6 +47,7 @@ dependencies:
 
   # --- Shorebird Code Push (OTA updates) ---
   shorebird_code_push: ^2.0.4
+  google_sign_in: ^7.2.0
 
 dev_dependencies:
   flutter_test:

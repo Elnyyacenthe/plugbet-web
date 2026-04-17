@@ -328,6 +328,44 @@
   "splashLoading": "Preparation de l'interface...",
   "splashAlmostReady": "Presque pret...",
 
+  "authQuickAccount": "Compte rapide",
+  "authQuickAccountSubtitle": "Pseudo + mot de passe, sans email",
+  "authGoogleSignIn": "Continuer avec Google",
+  "authPhoneSignIn": "Continuer avec telephone",
+  "authPhoneNumber": "Numero de telephone",
+  "authPhoneHint": "+237 6XX XXX XXX",
+  "authSendOtp": "Envoyer le code",
+  "authOtpSent": "Code envoye a {phone}",
+  "@authOtpSent": {
+    "placeholders": {
+      "phone": {"type": "String"}
+    }
+  },
+  "authOtpCode": "Code de verification",
+  "authVerify": "Verifier",
+  "authOr": "ou",
+  "authAccountCreated": "Compte cree avec succes !",
+  "authLoginSuccess": "Connexion reussie !",
+  "authEnterEmailFirst": "Entrez votre email d'abord",
+  "authPseudo": "Pseudo",
+
+  "profileUpgradeTitle": "Passer en compte officiel",
+  "profileUpgradeSubtitle": "Remplissez vos infos pour securiser votre compte",
+  "profileFullName": "Nom complet",
+  "profilePhoneNumber": "Numero de telephone",
+  "profileUpgradeSuccess": "Compte officiel active !",
+  "profileOfficialBadge": "OFFICIEL",
+  "profileQuickBadge": "RAPIDE",
+
+  "profileChangePassword": "Modifier le mot de passe",
+  "profileCurrentPassword": "Mot de passe actuel",
+  "profileNewPassword": "Nouveau mot de passe",
+  "profileConfirmPassword": "Confirmer le nouveau mot de passe",
+  "profilePasswordChanged": "Mot de passe modifie avec succes !",
+  "profilePasswordMismatch": "Les mots de passe ne correspondent pas",
+  "profilePasswordTooShort": "Minimum 6 caracteres",
+  "profileChange": "Modifier",
+
   "updateAvailableTitle": "Mise a jour disponible",
   "updateAvailableMessage": "Une nouvelle version de l'application est prete a etre installee. Voulez-vous redemarrer maintenant ?",
   "updateRestartNow": "Redemarrer",

@@ -14,6 +14,7 @@ import '../providers/player_provider.dart';
 import '../models/player_models.dart';
 import '../services/messaging_service.dart';
 import '../services/profile_service.dart';
+import '../services/supabase_service.dart';
 import '../utils/logger.dart';
 import '../widgets/profile/transaction_tile.dart';
 import '../widgets/user_avatar.dart';
@@ -449,9 +450,41 @@ class _ProfileScreenState extends State<ProfileScreen>
           SizedBox(height: 12),
 
           if (isLoggedIn && !isAnonymous) ...[
-            // Connecté avec email
-            _accountRow(Icons.email_outlined, user.email ?? '',
-                AppColors.textSecondary, null),
+            // Badge type de compte
+            Builder(builder: (_) {
+              final accountType = SupabaseService().accountType;
+              final isOfficial = accountType == 'official';
+              final badgeText = isOfficial ? t.profileOfficialBadge : t.profileQuickBadge;
+              final badgeColor = isOfficial ? AppColors.neonGreen : AppColors.neonYellow;
+              return Row(
+                children: [
+                  Icon(Icons.email_outlined, size: 16, color: AppColors.textSecondary),
+                  SizedBox(width: 8),
+                  Expanded(child: Text(user.email ?? '',
+                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13))),
+                  Container(
+                    padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: badgeColor.withValues(alpha: 0.15),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(badgeText,
+                        style: TextStyle(color: badgeColor, fontSize: 9, fontWeight: FontWeight.w800)),
+                  ),
+                ],
+              );
+            }),
+            SizedBox(height: 8),
+            // Bouton upgrade si compte rapide/google/phone (pas officiel)
+            if (SupabaseService().accountType != 'official')
+              _accountActionBtn(t.profileUpgradeTitle, Icons.verified_user, AppColors.neonGreen, () {
+                _showUpgradeDialog(t);
+              }),
+            if (SupabaseService().accountType != 'official')
+              SizedBox(height: 8),
+            _accountActionBtn(t.profileChangePassword, Icons.lock_outline, AppColors.neonBlue, () {
+              _showChangePasswordDialog(t);
+            }),
             SizedBox(height: 8),
             _accountActionBtn(t.profileLogout, Icons.logout, AppColors.neonRed, () async {
               await _profileService.signOut();
@@ -494,6 +527,261 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ],
         ],
+      ),
+    );
+  }
+
+  void _showUpgradeDialog(AppLocalizations t) {
+    final fullNameCtrl = TextEditingController();
+    final emailCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    String? error;
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(t.profileUpgradeTitle,
+              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16)),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(t.profileUpgradeSubtitle,
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                SizedBox(height: 16),
+                if (error != null) ...[
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.neonRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(error!, style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                  ),
+                  SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: fullNameCtrl,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: t.profileFullName,
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.person, color: AppColors.textMuted, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 12),
+                TextField(
+                  controller: emailCtrl,
+                  keyboardType: TextInputType.emailAddress,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: t.authEmail,
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.email_outlined, color: AppColors.textMuted, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: t.profilePhoneNumber,
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.phone, color: AppColors.textMuted, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t.commonCancel, style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      final name = fullNameCtrl.text.trim();
+                      final email = emailCtrl.text.trim();
+                      final phone = phoneCtrl.text.trim();
+                      if (name.isEmpty || (email.isEmpty && phone.isEmpty)) {
+                        setS(() => error = t.profileUpgradeSubtitle);
+                        return;
+                      }
+                      setS(() { loading = true; error = null; });
+                      final err = await SupabaseService().upgradeToOfficialAccount(
+                        fullName: name,
+                        email: email.isNotEmpty ? email : null,
+                        phone: phone.isNotEmpty ? phone : null,
+                      );
+                      if (!ctx.mounted) return;
+                      if (err != null) {
+                        setS(() { loading = false; error = err; });
+                      } else {
+                        Navigator.pop(ctx);
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(t.profileUpgradeSuccess),
+                              backgroundColor: AppColors.neonGreen,
+                            ),
+                          );
+                          setState(() {});
+                        }
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonGreen,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: loading
+                  ? SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
+                  : Text(t.commonConfirm, style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChangePasswordDialog(AppLocalizations t) {
+    final newCtrl = TextEditingController();
+    final confirmCtrl = TextEditingController();
+    String? error;
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Text(t.profileChangePassword,
+              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (error != null) ...[
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(error!, style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                ),
+                SizedBox(height: 12),
+              ],
+              TextField(
+                controller: newCtrl,
+                obscureText: true,
+                style: TextStyle(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  labelText: t.profileNewPassword,
+                  labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  filled: true,
+                  fillColor: AppColors.bgElevated,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.divider),
+                  ),
+                ),
+              ),
+              SizedBox(height: 12),
+              TextField(
+                controller: confirmCtrl,
+                obscureText: true,
+                style: TextStyle(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  labelText: t.profileConfirmPassword,
+                  labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  filled: true,
+                  fillColor: AppColors.bgElevated,
+                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(10),
+                    borderSide: BorderSide(color: AppColors.divider),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text(t.commonCancel, style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      final pwd = newCtrl.text.trim();
+                      final confirm = confirmCtrl.text.trim();
+                      if (pwd.length < 6) {
+                        setS(() => error = t.profilePasswordTooShort);
+                        return;
+                      }
+                      if (pwd != confirm) {
+                        setS(() => error = t.profilePasswordMismatch);
+                        return;
+                      }
+                      setS(() { loading = true; error = null; });
+                      final err = await SupabaseService().changePassword(pwd);
+                      if (!ctx.mounted) return;
+                      if (err != null) {
+                        setS(() { loading = false; error = err; });
+                      } else {
+                        Navigator.pop(ctx);
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(t.profilePasswordChanged),
+                            backgroundColor: AppColors.neonGreen,
+                          ),
+                        );
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonBlue,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+              ),
+              child: loading
+                  ? SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text(t.profileChange, style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
       ),
     );
   }

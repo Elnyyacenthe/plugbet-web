@@ -57,6 +57,7 @@
 // ============================================================
 
 import 'dart:async';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/football_models.dart';
 
@@ -124,6 +125,19 @@ class SupabaseService {
     }
   }
 
+  /// Change le mot de passe de l'utilisateur connecte.
+  /// Retourne null en cas de succes, ou le message d'erreur.
+  Future<String?> changePassword(String newPassword) async {
+    try {
+      await _client.auth.updateUser(UserAttributes(password: newPassword));
+      return null;
+    } on AuthException catch (e) {
+      return _translateAuthError(e.message);
+    } catch (e) {
+      return 'Erreur: $e';
+    }
+  }
+
   /// Inscription email/password
   Future<(AuthResponse?, String?)> signUpWithEmail(String email, String password) async {
     try {
@@ -134,6 +148,151 @@ class SupabaseService {
     } catch (e) {
       return (null, 'Erreur d\'inscription : $e');
     }
+  }
+
+  // ============================================================
+  // AUTH – Compte rapide (username + password, sans vrai email)
+  // ============================================================
+  /// Cree un compte avec un email genere (username@plugbet.local)
+  Future<(AuthResponse?, String?)> quickSignUp(String username, String password) async {
+    final fakeEmail = '${username.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}@plugbet.local';
+    try {
+      final response = await _client.auth.signUp(
+        email: fakeEmail,
+        password: password,
+        data: {'username': username, 'account_type': 'quick'},
+      );
+      return (response, null);
+    } on AuthException catch (e) {
+      final msg = e.message.toLowerCase();
+      if (msg.contains('already') || msg.contains('registered')) {
+        return (null, 'Ce nom d\'utilisateur est deja pris');
+      }
+      return (null, _translateAuthError(e.message));
+    } catch (e) {
+      return (null, 'Erreur: $e');
+    }
+  }
+
+  /// Connexion compte rapide
+  Future<(AuthResponse?, String?)> quickSignIn(String username, String password) async {
+    final fakeEmail = '${username.toLowerCase().replaceAll(RegExp(r'[^a-z0-9]'), '')}@plugbet.local';
+    return signInWithEmail(fakeEmail, password);
+  }
+
+  // ============================================================
+  // AUTH – Google Sign-In (google_sign_in v7+)
+  // ============================================================
+  /// Web/Server client ID (configurer dans Google Cloud Console + Supabase)
+  static const _googleServerClientId = ''; // TODO: ajouter ton server client ID
+
+  /// Initialise GoogleSignIn une seule fois.
+  static bool _googleInitialized = false;
+  Future<void> _ensureGoogleInit() async {
+    if (_googleInitialized) return;
+    await GoogleSignIn.instance.initialize(
+      serverClientId: _googleServerClientId.isEmpty ? null : _googleServerClientId,
+    );
+    _googleInitialized = true;
+  }
+
+  Future<(AuthResponse?, String?)> signInWithGoogle() async {
+    try {
+      await _ensureGoogleInit();
+
+      final account = await GoogleSignIn.instance.authenticate();
+      final idToken = account.authentication.idToken;
+
+      if (idToken == null) {
+        return (null, 'Erreur Google: impossible de recuperer le token');
+      }
+
+      final response = await _client.auth.signInWithIdToken(
+        provider: OAuthProvider.google,
+        idToken: idToken,
+      );
+
+      // Marquer comme compte Google
+      await _client.auth.updateUser(UserAttributes(
+        data: {'account_type': 'google'},
+      ));
+
+      return (response, null);
+    } on AuthException catch (e) {
+      return (null, _translateAuthError(e.message));
+    } catch (e) {
+      final msg = e.toString();
+      if (msg.contains('cancel') || msg.contains('aborted')) {
+        return (null, null); // user cancelled
+      }
+      return (null, 'Erreur Google: $e');
+    }
+  }
+
+  // ============================================================
+  // AUTH – Phone OTP
+  // ============================================================
+  /// Envoie un OTP au numero de telephone.
+  /// Le format doit etre international (+237..., +33..., etc.)
+  Future<String?> sendPhoneOtp(String phone) async {
+    try {
+      await _client.auth.signInWithOtp(phone: phone);
+      return null;
+    } on AuthException catch (e) {
+      return _translateAuthError(e.message);
+    } catch (e) {
+      return 'Erreur: $e';
+    }
+  }
+
+  /// Verifie l'OTP et connecte l'utilisateur
+  Future<(AuthResponse?, String?)> verifyPhoneOtp(String phone, String otp) async {
+    try {
+      final response = await _client.auth.verifyOTP(
+        phone: phone,
+        token: otp,
+        type: OtpType.sms,
+      );
+      return (response, null);
+    } on AuthException catch (e) {
+      return (null, _translateAuthError(e.message));
+    } catch (e) {
+      return (null, 'Erreur: $e');
+    }
+  }
+
+  // ============================================================
+  // AUTH – Upgrade compte officiel
+  // ============================================================
+  /// Met a jour les infos du profil pour le transformer en compte officiel.
+  /// email, phone, fullName sont optionnels et ne modifient que s'ils sont fournis.
+  Future<String?> upgradeToOfficialAccount({
+    String? email,
+    String? phone,
+    String? fullName,
+  }) async {
+    try {
+      final attrs = UserAttributes(
+        email: email,
+        phone: phone,
+        data: {
+          if (fullName != null) 'full_name': fullName,
+          'account_type': 'official',
+        },
+      );
+      await _client.auth.updateUser(attrs);
+      return null;
+    } on AuthException catch (e) {
+      return _translateAuthError(e.message);
+    } catch (e) {
+      return 'Erreur: $e';
+    }
+  }
+
+  /// Type de compte actuel (quick, official, google, phone, null)
+  String? get accountType {
+    final meta = _client.auth.currentUser?.userMetadata;
+    return meta?['account_type'] as String?;
   }
 
   String _translateAuthError(String msg) {

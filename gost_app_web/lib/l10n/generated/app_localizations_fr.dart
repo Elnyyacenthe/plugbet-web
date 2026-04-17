@@ -869,6 +869,100 @@ class AppLocalizationsFr extends AppLocalizations {
   String get splashAlmostReady => 'Presque pret...';
 
   @override
+  String get authQuickAccount => 'Compte rapide';
+
+  @override
+  String get authQuickAccountSubtitle => 'Pseudo + mot de passe, sans email';
+
+  @override
+  String get authGoogleSignIn => 'Continuer avec Google';
+
+  @override
+  String get authPhoneSignIn => 'Continuer avec telephone';
+
+  @override
+  String get authPhoneNumber => 'Numero de telephone';
+
+  @override
+  String get authPhoneHint => '+237 6XX XXX XXX';
+
+  @override
+  String get authSendOtp => 'Envoyer le code';
+
+  @override
+  String authOtpSent(String phone) {
+    return 'Code envoye a $phone';
+  }
+
+  @override
+  String get authOtpCode => 'Code de verification';
+
+  @override
+  String get authVerify => 'Verifier';
+
+  @override
+  String get authOr => 'ou';
+
+  @override
+  String get authAccountCreated => 'Compte cree avec succes !';
+
+  @override
+  String get authLoginSuccess => 'Connexion reussie !';
+
+  @override
+  String get authEnterEmailFirst => 'Entrez votre email d\'abord';
+
+  @override
+  String get authPseudo => 'Pseudo';
+
+  @override
+  String get profileUpgradeTitle => 'Passer en compte officiel';
+
+  @override
+  String get profileUpgradeSubtitle =>
+      'Remplissez vos infos pour securiser votre compte';
+
+  @override
+  String get profileFullName => 'Nom complet';
+
+  @override
+  String get profilePhoneNumber => 'Numero de telephone';
+
+  @override
+  String get profileUpgradeSuccess => 'Compte officiel active !';
+
+  @override
+  String get profileOfficialBadge => 'OFFICIEL';
+
+  @override
+  String get profileQuickBadge => 'RAPIDE';
+
+  @override
+  String get profileChangePassword => 'Modifier le mot de passe';
+
+  @override
+  String get profileCurrentPassword => 'Mot de passe actuel';
+
+  @override
+  String get profileNewPassword => 'Nouveau mot de passe';
+
+  @override
+  String get profileConfirmPassword => 'Confirmer le nouveau mot de passe';
+
+  @override
+  String get profilePasswordChanged => 'Mot de passe modifie avec succes !';
+
+  @override
+  String get profilePasswordMismatch =>
+      'Les mots de passe ne correspondent pas';
+
+  @override
+  String get profilePasswordTooShort => 'Minimum 6 caracteres';
+
+  @override
+  String get profileChange => 'Modifier';
+
+  @override
   String get updateAvailableTitle => 'Mise a jour disponible';
 
   @override

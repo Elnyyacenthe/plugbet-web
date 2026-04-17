@@ -1760,6 +1760,186 @@ abstract class AppLocalizations {
   /// **'Presque pret...'**
   String get splashAlmostReady;
 
+  /// No description provided for @authQuickAccount.
+  ///
+  /// In fr, this message translates to:
+  /// **'Compte rapide'**
+  String get authQuickAccount;
+
+  /// No description provided for @authQuickAccountSubtitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pseudo + mot de passe, sans email'**
+  String get authQuickAccountSubtitle;
+
+  /// No description provided for @authGoogleSignIn.
+  ///
+  /// In fr, this message translates to:
+  /// **'Continuer avec Google'**
+  String get authGoogleSignIn;
+
+  /// No description provided for @authPhoneSignIn.
+  ///
+  /// In fr, this message translates to:
+  /// **'Continuer avec telephone'**
+  String get authPhoneSignIn;
+
+  /// No description provided for @authPhoneNumber.
+  ///
+  /// In fr, this message translates to:
+  /// **'Numero de telephone'**
+  String get authPhoneNumber;
+
+  /// No description provided for @authPhoneHint.
+  ///
+  /// In fr, this message translates to:
+  /// **'+237 6XX XXX XXX'**
+  String get authPhoneHint;
+
+  /// No description provided for @authSendOtp.
+  ///
+  /// In fr, this message translates to:
+  /// **'Envoyer le code'**
+  String get authSendOtp;
+
+  /// No description provided for @authOtpSent.
+  ///
+  /// In fr, this message translates to:
+  /// **'Code envoye a {phone}'**
+  String authOtpSent(String phone);
+
+  /// No description provided for @authOtpCode.
+  ///
+  /// In fr, this message translates to:
+  /// **'Code de verification'**
+  String get authOtpCode;
+
+  /// No description provided for @authVerify.
+  ///
+  /// In fr, this message translates to:
+  /// **'Verifier'**
+  String get authVerify;
+
+  /// No description provided for @authOr.
+  ///
+  /// In fr, this message translates to:
+  /// **'ou'**
+  String get authOr;
+
+  /// No description provided for @authAccountCreated.
+  ///
+  /// In fr, this message translates to:
+  /// **'Compte cree avec succes !'**
+  String get authAccountCreated;
+
+  /// No description provided for @authLoginSuccess.
+  ///
+  /// In fr, this message translates to:
+  /// **'Connexion reussie !'**
+  String get authLoginSuccess;
+
+  /// No description provided for @authEnterEmailFirst.
+  ///
+  /// In fr, this message translates to:
+  /// **'Entrez votre email d\'abord'**
+  String get authEnterEmailFirst;
+
+  /// No description provided for @authPseudo.
+  ///
+  /// In fr, this message translates to:
+  /// **'Pseudo'**
+  String get authPseudo;
+
+  /// No description provided for @profileUpgradeTitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Passer en compte officiel'**
+  String get profileUpgradeTitle;
+
+  /// No description provided for @profileUpgradeSubtitle.
+  ///
+  /// In fr, this message translates to:
+  /// **'Remplissez vos infos pour securiser votre compte'**
+  String get profileUpgradeSubtitle;
+
+  /// No description provided for @profileFullName.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nom complet'**
+  String get profileFullName;
+
+  /// No description provided for @profilePhoneNumber.
+  ///
+  /// In fr, this message translates to:
+  /// **'Numero de telephone'**
+  String get profilePhoneNumber;
+
+  /// No description provided for @profileUpgradeSuccess.
+  ///
+  /// In fr, this message translates to:
+  /// **'Compte officiel active !'**
+  String get profileUpgradeSuccess;
+
+  /// No description provided for @profileOfficialBadge.
+  ///
+  /// In fr, this message translates to:
+  /// **'OFFICIEL'**
+  String get profileOfficialBadge;
+
+  /// No description provided for @profileQuickBadge.
+  ///
+  /// In fr, this message translates to:
+  /// **'RAPIDE'**
+  String get profileQuickBadge;
+
+  /// No description provided for @profileChangePassword.
+  ///
+  /// In fr, this message translates to:
+  /// **'Modifier le mot de passe'**
+  String get profileChangePassword;
+
+  /// No description provided for @profileCurrentPassword.
+  ///
+  /// In fr, this message translates to:
+  /// **'Mot de passe actuel'**
+  String get profileCurrentPassword;
+
+  /// No description provided for @profileNewPassword.
+  ///
+  /// In fr, this message translates to:
+  /// **'Nouveau mot de passe'**
+  String get profileNewPassword;
+
+  /// No description provided for @profileConfirmPassword.
+  ///
+  /// In fr, this message translates to:
+  /// **'Confirmer le nouveau mot de passe'**
+  String get profileConfirmPassword;
+
+  /// No description provided for @profilePasswordChanged.
+  ///
+  /// In fr, this message translates to:
+  /// **'Mot de passe modifie avec succes !'**
+  String get profilePasswordChanged;
+
+  /// No description provided for @profilePasswordMismatch.
+  ///
+  /// In fr, this message translates to:
+  /// **'Les mots de passe ne correspondent pas'**
+  String get profilePasswordMismatch;
+
+  /// No description provided for @profilePasswordTooShort.
+  ///
+  /// In fr, this message translates to:
+  /// **'Minimum 6 caracteres'**
+  String get profilePasswordTooShort;
+
+  /// No description provided for @profileChange.
+  ///
+  /// In fr, this message translates to:
+  /// **'Modifier'**
+  String get profileChange;
+
   /// No description provided for @updateAvailableTitle.
   ///
   /// In fr, this message translates to:

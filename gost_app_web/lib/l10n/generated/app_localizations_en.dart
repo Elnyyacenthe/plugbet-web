@@ -854,6 +854,99 @@ class AppLocalizationsEn extends AppLocalizations {
   String get splashAlmostReady => 'Almost ready...';
 
   @override
+  String get authQuickAccount => 'Quick account';
+
+  @override
+  String get authQuickAccountSubtitle => 'Username + password, no email needed';
+
+  @override
+  String get authGoogleSignIn => 'Continue with Google';
+
+  @override
+  String get authPhoneSignIn => 'Continue with phone';
+
+  @override
+  String get authPhoneNumber => 'Phone number';
+
+  @override
+  String get authPhoneHint => '+237 6XX XXX XXX';
+
+  @override
+  String get authSendOtp => 'Send code';
+
+  @override
+  String authOtpSent(String phone) {
+    return 'Code sent to $phone';
+  }
+
+  @override
+  String get authOtpCode => 'Verification code';
+
+  @override
+  String get authVerify => 'Verify';
+
+  @override
+  String get authOr => 'or';
+
+  @override
+  String get authAccountCreated => 'Account created successfully!';
+
+  @override
+  String get authLoginSuccess => 'Login successful!';
+
+  @override
+  String get authEnterEmailFirst => 'Enter your email first';
+
+  @override
+  String get authPseudo => 'Username';
+
+  @override
+  String get profileUpgradeTitle => 'Upgrade to official account';
+
+  @override
+  String get profileUpgradeSubtitle =>
+      'Fill in your info to secure your account';
+
+  @override
+  String get profileFullName => 'Full name';
+
+  @override
+  String get profilePhoneNumber => 'Phone number';
+
+  @override
+  String get profileUpgradeSuccess => 'Official account activated!';
+
+  @override
+  String get profileOfficialBadge => 'OFFICIAL';
+
+  @override
+  String get profileQuickBadge => 'QUICK';
+
+  @override
+  String get profileChangePassword => 'Change password';
+
+  @override
+  String get profileCurrentPassword => 'Current password';
+
+  @override
+  String get profileNewPassword => 'New password';
+
+  @override
+  String get profileConfirmPassword => 'Confirm new password';
+
+  @override
+  String get profilePasswordChanged => 'Password changed successfully!';
+
+  @override
+  String get profilePasswordMismatch => 'Passwords do not match';
+
+  @override
+  String get profilePasswordTooShort => 'Minimum 6 characters';
+
+  @override
+  String get profileChange => 'Change';
+
+  @override
   String get updateAvailableTitle => 'Update available';
 
   @override
