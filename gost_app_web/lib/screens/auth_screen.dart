@@ -9,6 +9,7 @@ import '../theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../services/supabase_service.dart';
 import '../ludo/providers/ludo_provider.dart';
+import '../utils/logger.dart';
 
 class AuthScreen extends StatefulWidget {
   final bool startWithSignUp;
@@ -20,6 +21,32 @@ class AuthScreen extends StatefulWidget {
 
 enum _AuthMode { quick, email, phone }
 
+// Codes pays courants
+const _countryCodes = [
+  ('+237', '🇨🇲', 'CM'),
+  ('+33', '🇫🇷', 'FR'),
+  ('+1', '🇺🇸', 'US'),
+  ('+44', '🇬🇧', 'GB'),
+  ('+225', '🇨🇮', 'CI'),
+  ('+221', '🇸🇳', 'SN'),
+  ('+234', '🇳🇬', 'NG'),
+  ('+250', '🇷🇼', 'RW'),
+  ('+243', '🇨🇩', 'CD'),
+  ('+32', '🇧🇪', 'BE'),
+  ('+41', '🇨🇭', 'CH'),
+  ('+49', '🇩🇪', 'DE'),
+  ('+34', '🇪🇸', 'ES'),
+  ('+39', '🇮🇹', 'IT'),
+  ('+351', '🇵🇹', 'PT'),
+  ('+212', '🇲🇦', 'MA'),
+  ('+216', '🇹🇳', 'TN'),
+  ('+213', '🇩🇿', 'DZ'),
+  ('+91', '🇮🇳', 'IN'),
+  ('+55', '🇧🇷', 'BR'),
+];
+
+const _log = Logger('AUTH');
+
 class _AuthScreenState extends State<AuthScreen>
     with SingleTickerProviderStateMixin {
   late bool _isSignUp;
@@ -30,6 +57,7 @@ class _AuthScreenState extends State<AuthScreen>
 
   // Phone OTP
   bool _otpSent = false;
+  String _countryCode = '+237';
 
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
@@ -110,15 +138,12 @@ class _AuthScreenState extends State<AuthScreen>
                 SizedBox(height: 16),
                 _buildHeader(t),
                 SizedBox(height: 28),
-                // Mode selector
                 _buildModeSelector(t),
                 SizedBox(height: 24),
-                // Google button (toujours visible)
                 _buildGoogleButton(t),
                 SizedBox(height: 16),
                 _buildDivider(t),
                 SizedBox(height: 16),
-                // Form
                 FadeTransition(
                   opacity: _fadeAnim,
                   child: _mode == _AuthMode.phone
@@ -180,17 +205,19 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   // ════════════════════════════════════════════════════════════
-  // MODE SELECTOR (Quick / Email / Phone)
+  // MODE SELECTOR
   // ════════════════════════════════════════════════════════════
   Widget _buildModeSelector(AppLocalizations t) {
     return Row(
       children: [
-        _modeChip(t.authQuickAccount, Icons.flash_on, _AuthMode.quick, AppColors.neonYellow),
+        _modeChip(t.authQuickAccount, Icons.flash_on, _AuthMode.quick,
+            AppColors.neonYellow),
         SizedBox(width: 8),
-        _modeChip('Email', Icons.email_outlined, _AuthMode.email, AppColors.neonBlue),
+        _modeChip(
+            'Email', Icons.email_outlined, _AuthMode.email, AppColors.neonBlue),
         SizedBox(width: 8),
-        _modeChip(t.authPhoneSignIn.replaceAll('Continuer avec ', '').replaceAll('Continue with ', ''),
-            Icons.phone_android, _AuthMode.phone, AppColors.neonGreen),
+        _modeChip(t.authPhoneNumber.split(' ').first, Icons.phone_android,
+            _AuthMode.phone, AppColors.neonGreen),
       ],
     );
   }
@@ -203,16 +230,21 @@ class _AuthScreenState extends State<AuthScreen>
         child: Container(
           padding: EdgeInsets.symmetric(vertical: 10),
           decoration: BoxDecoration(
-            color: selected ? color.withValues(alpha: 0.15) : AppColors.bgCard,
+            color:
+                selected ? color.withValues(alpha: 0.15) : AppColors.bgCard,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-              color: selected ? color.withValues(alpha: 0.6) : AppColors.divider,
+              color: selected
+                  ? color.withValues(alpha: 0.6)
+                  : AppColors.divider,
               width: selected ? 1.5 : 0.5,
             ),
           ),
           child: Column(
             children: [
-              Icon(icon, size: 18, color: selected ? color : AppColors.textMuted),
+              Icon(icon,
+                  size: 18,
+                  color: selected ? color : AppColors.textMuted),
               SizedBox(height: 4),
               Text(label,
                   style: TextStyle(
@@ -240,10 +272,14 @@ class _AuthScreenState extends State<AuthScreen>
         style: OutlinedButton.styleFrom(
           foregroundColor: AppColors.textPrimary,
           side: BorderSide(color: AppColors.divider),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
-        icon: Image.asset('assets/google_logo.png', width: 20, height: 20,
-            errorBuilder: (_, __, ___) => Icon(Icons.g_mobiledata, size: 24, color: Colors.red)),
+        icon: Image.asset('assets/google_logo.png',
+            width: 20,
+            height: 20,
+            errorBuilder: (_, __, ___) =>
+                Icon(Icons.g_mobiledata, size: 24, color: Colors.red)),
         label: Text(t.authGoogleSignIn,
             style: TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
       ),
@@ -273,35 +309,20 @@ class _AuthScreenState extends State<AuthScreen>
       key: _formKey,
       child: Column(
         children: [
-          // Error
           if (_errorMessage != null) ...[
             _errorBox(),
             SizedBox(height: 14),
           ],
 
-          // Username (inscription quick ou email)
-          if (_isSignUp) ...[
-            _field(
-              controller: _usernameController,
-              hint: isQuick ? t.authPseudo : t.authUsername,
-              icon: Icons.person_outline,
-              validator: (v) {
-                if (v == null || v.trim().isEmpty) return t.authPseudo;
-                if (v.trim().length < 3) return t.profilePasswordTooShort;
-                return null;
-              },
-            ),
-            SizedBox(height: 12),
-          ],
-
-          // Username for quick login
-          if (!_isSignUp && isQuick) ...[
+          // Username (toujours en mode quick, seulement inscription en email)
+          if (isQuick || _isSignUp) ...[
             _field(
               controller: _usernameController,
               hint: t.authPseudo,
               icon: Icons.person_outline,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return t.authPseudo;
+                if (v == null || v.trim().isEmpty) return 'Pseudo requis';
+                if (v.trim().length < 3) return 'Min 3 caractères';
                 return null;
               },
             ),
@@ -316,8 +337,8 @@ class _AuthScreenState extends State<AuthScreen>
               icon: Icons.email_outlined,
               keyboardType: TextInputType.emailAddress,
               validator: (v) {
-                if (v == null || v.trim().isEmpty) return t.authEmail;
-                if (!v.contains('@') || !v.contains('.')) return t.authEmail;
+                if (v == null || v.trim().isEmpty) return 'Email requis';
+                if (!v.contains('@') || !v.contains('.')) return 'Email invalide';
                 return null;
               },
             ),
@@ -342,8 +363,8 @@ class _AuthScreenState extends State<AuthScreen>
               ),
             ),
             validator: (v) {
-              if (v == null || v.isEmpty) return t.authPassword;
-              if (v.length < 6) return t.profilePasswordTooShort;
+              if (v == null || v.isEmpty) return 'Mot de passe requis';
+              if (v.length < 6) return 'Min 6 caractères';
               return null;
             },
           ),
@@ -371,11 +392,8 @@ class _AuthScreenState extends State<AuthScreen>
           ],
 
           SizedBox(height: 20),
-
-          // Submit
           _submitButton(t, isQuick),
 
-          // Bonus coins
           if (_isSignUp) ...[
             SizedBox(height: 14),
             _bonusCoinsRow(t),
@@ -386,7 +404,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   // ════════════════════════════════════════════════════════════
-  // PHONE FORM
+  // PHONE FORM — avec selecteur code pays
   // ════════════════════════════════════════════════════════════
   Widget _buildPhoneForm(AppLocalizations t) {
     return Column(
@@ -397,12 +415,76 @@ class _AuthScreenState extends State<AuthScreen>
         ],
 
         if (!_otpSent) ...[
-          // Phone number input
-          _field(
-            controller: _phoneController,
-            hint: t.authPhoneHint,
-            icon: Icons.phone_android,
-            keyboardType: TextInputType.phone,
+          // Phone number avec code pays separe
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Country code dropdown
+              Container(
+                height: 52,
+                padding: EdgeInsets.symmetric(horizontal: 8),
+                decoration: BoxDecoration(
+                  color: AppColors.bgCard,
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: AppColors.divider),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: _countryCode,
+                    isDense: true,
+                    dropdownColor: AppColors.bgCard,
+                    style: TextStyle(
+                        color: AppColors.textPrimary, fontSize: 14),
+                    items: _countryCodes.map((c) {
+                      final (code, flag, _) = c;
+                      return DropdownMenuItem(
+                        value: code,
+                        child: Text('$flag $code',
+                            style: TextStyle(fontSize: 13)),
+                      );
+                    }).toList(),
+                    onChanged: (v) {
+                      if (v != null) setState(() => _countryCode = v);
+                    },
+                  ),
+                ),
+              ),
+              SizedBox(width: 10),
+              // Phone number field
+              Expanded(
+                child: SizedBox(
+                  height: 52,
+                  child: TextField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    style:
+                        TextStyle(color: AppColors.textPrimary, fontSize: 15),
+                    decoration: InputDecoration(
+                      hintText: '6XX XXX XXX',
+                      hintStyle:
+                          TextStyle(color: AppColors.textMuted, fontSize: 14),
+                      filled: true,
+                      fillColor: AppColors.bgCard,
+                      contentPadding: EdgeInsets.symmetric(
+                          horizontal: 16, vertical: 16),
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.divider),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(color: AppColors.divider),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        borderSide: BorderSide(
+                            color: AppColors.neonGreen, width: 1.5),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
           ),
           SizedBox(height: 20),
           SizedBox(
@@ -445,7 +527,7 @@ class _AuthScreenState extends State<AuthScreen>
                 SizedBox(width: 8),
                 Expanded(
                   child: Text(
-                      t.authOtpSent(_phoneController.text.trim()),
+                      t.authOtpSent(_fullPhone),
                       style: TextStyle(
                           color: AppColors.neonGreen, fontSize: 13)),
                 ),
@@ -483,9 +565,21 @@ class _AuthScreenState extends State<AuthScreen>
                       TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
             ),
           ),
+          SizedBox(height: 12),
+          TextButton(
+            onPressed: () => setState(() => _otpSent = false),
+            child: Text('← ${t.profileChange} ${t.authPhoneNumber.toLowerCase()}',
+                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          ),
         ],
       ],
     );
+  }
+
+  /// Numero complet avec code pays
+  String get _fullPhone {
+    final num = _phoneController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    return '$_countryCode$num';
   }
 
   // ════════════════════════════════════════════════════════════
@@ -568,13 +662,15 @@ class _AuthScreenState extends State<AuthScreen>
           backgroundColor: color,
           foregroundColor: Colors.white,
           disabledBackgroundColor: AppColors.bgElevated,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
         ),
         child: _isLoading
             ? SizedBox(
                 width: 22,
                 height: 22,
-                child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
+                child: CircularProgressIndicator(
+                    strokeWidth: 2.5, color: Colors.white))
             : Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
@@ -587,7 +683,8 @@ class _AuthScreenState extends State<AuthScreen>
                   SizedBox(width: 8),
                   Text(
                     _isSignUp ? t.authSignUp : t.authSignIn,
-                    style: TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                    style:
+                        TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
                   ),
                 ],
               ),
@@ -601,11 +698,13 @@ class _AuthScreenState extends State<AuthScreen>
       decoration: BoxDecoration(
         color: AppColors.neonYellow.withValues(alpha: 0.08),
         borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.2)),
+        border:
+            Border.all(color: AppColors.neonYellow.withValues(alpha: 0.2)),
       ),
       child: Row(
         children: [
-          Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 18),
+          Icon(Icons.monetization_on,
+              color: AppColors.neonYellow, size: 18),
           SizedBox(width: 8),
           Expanded(
             child: Text(t.authBonusCoins,
@@ -661,17 +760,30 @@ class _AuthScreenState extends State<AuthScreen>
 
     try {
       if (_mode == _AuthMode.quick) {
-        // Quick account
         if (_isSignUp) {
-          final (result, error) = await supabase.quickSignUp(username, password);
+          _log.info('Quick signup: $username');
+          final (result, error) =
+              await supabase.quickSignUp(username, password);
           if (error != null) {
+            _log.warn('Quick signup error: $error');
             setState(() => _errorMessage = error);
           } else if (result != null) {
+            _log.info('Quick signup OK, tentative auto-signin...');
+            // Auto-signin apres signup (contourne email confirmation)
+            final (loginResult, loginError) =
+                await supabase.quickSignIn(username, password);
+            if (loginError != null) {
+              _log.warn('Auto-signin failed: $loginError');
+              // Quand meme un succes si le signup a marche
+            }
             await _updateUsernameAndPop(username, t.authAccountCreated);
           }
         } else {
-          final (result, error) = await supabase.quickSignIn(username, password);
+          _log.info('Quick signin: $username');
+          final (result, error) =
+              await supabase.quickSignIn(username, password);
           if (error != null) {
+            _log.warn('Quick signin error: $error');
             setState(() => _errorMessage = error);
           } else if (result != null) {
             _successAndPop(t.authLoginSuccess);
@@ -681,10 +793,15 @@ class _AuthScreenState extends State<AuthScreen>
         // Email mode
         final email = _emailController.text.trim();
         if (_isSignUp) {
-          final (result, error) = await supabase.signUpWithEmail(email, password);
+          _log.info('Email signup: $email');
+          final (result, error) =
+              await supabase.signUpWithEmail(email, password);
           if (error != null) {
+            _log.warn('Email signup error: $error');
             setState(() => _errorMessage = error);
           } else if (result != null) {
+            // Auto-signin
+            await supabase.signInWithEmail(email, password);
             if (username.isNotEmpty) {
               await _updateUsernameAndPop(username, t.authAccountCreated);
             } else {
@@ -692,8 +809,11 @@ class _AuthScreenState extends State<AuthScreen>
             }
           }
         } else {
-          final (result, error) = await supabase.signInWithEmail(email, password);
+          _log.info('Email signin: $email');
+          final (result, error) =
+              await supabase.signInWithEmail(email, password);
           if (error != null) {
+            _log.warn('Email signin error: $error');
             setState(() => _errorMessage = error);
           } else if (result != null) {
             _successAndPop(t.authLoginSuccess);
@@ -701,6 +821,7 @@ class _AuthScreenState extends State<AuthScreen>
         }
       }
     } catch (e) {
+      _log.error('handleSubmit', e, StackTrace.current);
       setState(() => _errorMessage = 'Erreur: $e');
     }
 
@@ -708,6 +829,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Future<void> _handleGoogleSignIn() async {
+    _log.info('Google sign-in...');
     setState(() {
       _isLoading = true;
       _errorMessage = null;
@@ -717,6 +839,7 @@ class _AuthScreenState extends State<AuthScreen>
     if (!mounted) return;
 
     if (error != null) {
+      _log.warn('Google error: $error');
       setState(() {
         _isLoading = false;
         _errorMessage = error;
@@ -724,52 +847,55 @@ class _AuthScreenState extends State<AuthScreen>
     } else if (result != null) {
       _successAndPop(AppLocalizations.of(context)!.authLoginSuccess);
     } else {
-      // User cancelled
       setState(() => _isLoading = false);
     }
   }
 
   Future<void> _handleSendOtp() async {
-    final phone = _phoneController.text.trim();
-    if (phone.isEmpty || phone.length < 8) {
+    final num = _phoneController.text.trim().replaceAll(RegExp(r'[^0-9]'), '');
+    if (num.isEmpty || num.length < 6) {
       setState(() => _errorMessage = 'Numero invalide');
       return;
     }
 
+    _log.info('Sending OTP to $_fullPhone');
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
-    final error = await SupabaseService().sendPhoneOtp(phone);
+    final error = await SupabaseService().sendPhoneOtp(_fullPhone);
     if (!mounted) return;
 
     setState(() => _isLoading = false);
     if (error != null) {
+      _log.warn('OTP send error: $error');
       setState(() => _errorMessage = error);
     } else {
+      _log.info('OTP sent OK');
       setState(() => _otpSent = true);
     }
   }
 
   Future<void> _handleVerifyOtp() async {
-    final phone = _phoneController.text.trim();
     final otp = _otpController.text.trim();
     if (otp.isEmpty || otp.length < 4) {
       setState(() => _errorMessage = 'Code invalide');
       return;
     }
 
+    _log.info('Verifying OTP for $_fullPhone');
     setState(() {
       _isLoading = true;
       _errorMessage = null;
     });
 
     final (result, error) =
-        await SupabaseService().verifyPhoneOtp(phone, otp);
+        await SupabaseService().verifyPhoneOtp(_fullPhone, otp);
     if (!mounted) return;
 
     if (error != null) {
+      _log.warn('OTP verify error: $error');
       setState(() {
         _isLoading = false;
         _errorMessage = error;
