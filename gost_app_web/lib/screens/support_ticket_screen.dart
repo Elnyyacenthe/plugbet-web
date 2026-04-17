@@ -2,9 +2,10 @@
 // Plugbet – Service Client : conversation d'un ticket
 // ============================================================
 
-import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
+import '../services/support_service.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 const _kCategoryLabels = {
@@ -24,7 +25,7 @@ class SupportTicketScreen extends StatefulWidget {
 }
 
 class _SupportTicketScreenState extends State<SupportTicketScreen> {
-  final _client     = Supabase.instance.client;
+  final _service    = SupportService();
   final _msgCtrl    = TextEditingController();
   final _scrollCtrl = ScrollController();
 
@@ -58,65 +59,33 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
   Future<void> _loadMessages() async {
     setState(() { _loading = true; _error = null; });
     try {
-      final data = await _client
-          .from('support_messages')
-          .select('*')
-          .eq('ticket_id', _ticketId)
-          .order('created_at', ascending: true);
+      final messages = await _service.getTicketMessages(_ticketId);
+      if (!mounted) return;
       setState(() {
-        _messages = List<Map<String, dynamic>>.from(data);
+        _messages = messages;
         _loading  = false;
       });
       _scrollToBottom();
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
   void _subscribeRealtime() {
-    _channel = _client
-        .channel('support_ticket_$_ticketId')
-        .onPostgresChanges(
-          event : PostgresChangeEvent.insert,
-          schema: 'public',
-          table : 'support_messages',
-          filter: PostgresChangeFilter(
-            type : PostgresChangeFilterType.eq,
-            column: 'ticket_id',
-            value : _ticketId,
-          ),
-          callback: (payload) {
-            final row = payload.newRecord;
-            setState(() => _messages.add(Map<String, dynamic>.from(row)));
-            _scrollToBottom();
-          },
-        )
-        .onPostgresChanges(
-          event : PostgresChangeEvent.update,
-          schema: 'public',
-          table : 'support_tickets',
-          filter: PostgresChangeFilter(
-            type : PostgresChangeFilterType.eq,
-            column: 'id',
-            value : _ticketId,
-          ),
-          callback: (payload) {
-            final s = payload.newRecord['status'] as String?;
-            if (s != null) setState(() => _status = s);
-          },
-        )
-        .subscribe();
+    _channel = _service.subscribeTicket(
+      _ticketId,
+      onMessage: (row) {
+        if (!mounted) return;
+        setState(() => _messages.add(row));
+        _scrollToBottom();
+      },
+      onStatusChange: (s) {
+        if (mounted) setState(() => _status = s);
+      },
+    );
   }
 
-  /// Marquer le ticket comme lu par le user
-  Future<void> _markRead() async {
-    try {
-      await _client
-          .from('support_tickets')
-          .update({'unread_user': false})
-          .eq('id', _ticketId);
-    } catch (_) {}
-  }
+  Future<void> _markRead() => _service.markRead(_ticketId);
 
   Future<void> _sendMessage() async {
     final text = _msgCtrl.text.trim();
@@ -125,14 +94,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
     setState(() => _sending = true);
     _msgCtrl.clear();
     try {
-      final uid = _client.auth.currentUser!.id;
-      await _client.from('support_messages').insert({
-        'ticket_id': _ticketId,
-        'sender_id': uid,
-        'is_admin' : false,
-        'content'  : text,
-      });
-      // Le trigger SQL met à jour le ticket automatiquement
+      await _service.sendMessage(_ticketId, text);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -247,7 +209,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
             borderRadius: BorderRadius.circular(6),
             border: Border.all(color: AppColors.neonGreen.withValues(alpha: 0.3)),
           ),
-          child: Text('Support Plugbet',
+          child: Text(AppLocalizations.of(context)!.supportPlugbet,
               style: TextStyle(color: AppColors.neonGreen, fontSize: 9, fontWeight: FontWeight.w700)),
         ),
       ]),
@@ -313,7 +275,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
                 if (isAdmin)
                   Padding(
                     padding: EdgeInsets.only(left: 4, bottom: 3),
-                    child: Text('Support Plugbet',
+                    child: Text(AppLocalizations.of(context)!.supportPlugbet,
                         style: TextStyle(color: AppColors.neonGreen, fontSize: 10, fontWeight: FontWeight.w700)),
                   ),
                 Container(
@@ -360,7 +322,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
           children: [
             Icon(Icons.lock_outline, color: AppColors.textMuted, size: 16),
             SizedBox(width: 8),
-            Text('Ticket fermé — impossible d\'envoyer de message.',
+            Text(AppLocalizations.of(context)!.supportTicketClosed,
                 style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
           ],
         ),

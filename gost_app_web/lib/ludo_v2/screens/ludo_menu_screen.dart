@@ -8,6 +8,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../providers/ludo_game_provider.dart';
 import '../services/ludo_service.dart';
 import 'ludo_game_screen.dart';
@@ -162,7 +163,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Ludo', style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
+        title: Text(AppLocalizations.of(context)!.ludoTitle, style: TextStyle(fontWeight: FontWeight.w800, color: AppColors.textPrimary)),
       ),
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
@@ -186,7 +187,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
                 // Nombre de joueurs
                 Row(
                   children: [
-                    Text('Joueurs:', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                    Text('${AppLocalizations.of(context)!.gamePlayers}:', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
                     SizedBox(width: 12),
                     _chip('2', _playerCount == 2, () => setState(() => _playerCount = 2)),
                     SizedBox(width: 8),
@@ -197,7 +198,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
                 // Mise
                 Row(
                   children: [
-                    Text('Mise:', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+                    Text('${AppLocalizations.of(context)!.gameBetLabel}:', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
                     SizedBox(width: 12),
                     SizedBox(
                       width: 80,
@@ -232,7 +233,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
                     ),
                     child: _loading
                         ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                        : Text('CRÉER', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800, fontSize: 15)),
+                        : Text(AppLocalizations.of(context)!.gameCreateAction, style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800, fontSize: 15)),
                   ),
                 ),
               ],
@@ -271,7 +272,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
                       padding: EdgeInsets.symmetric(vertical: 14),
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    child: Text('REJOINDRE', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
+                    child: Text(AppLocalizations.of(context)!.gameJoinAction, style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800, fontSize: 15)),
                   ),
                 ),
               ],
@@ -296,7 +297,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
           children: [
             CircularProgressIndicator(color: AppColors.neonGreen),
             SizedBox(height: 24),
-            Text('En attente des joueurs...', style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
+            Text(AppLocalizations.of(context)!.ludoWaitingPlayers, style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
             SizedBox(height: 16),
             Container(
               padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
@@ -314,7 +315,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
                     icon: Icon(Icons.copy, color: AppColors.neonGreen),
                     onPressed: () {
                       Clipboard.setData(ClipboardData(text: _waitingCode!));
-                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Code copié !')));
+                      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.gameCodeCopied)));
                     },
                   ),
                 ],
@@ -328,7 +329,7 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
                 if (_waitingRoomId != null) _svc.deleteRoom(_waitingRoomId!);
                 setState(() { _waitingRoomId = null; _waitingCode = null; });
               },
-              child: Text('Annuler', style: TextStyle(color: AppColors.neonRed)),
+              child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.neonRed)),
             ),
           ],
         ),

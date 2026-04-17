@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../services/fantasy_service.dart';
 
 class FantasyLeaguesScreen extends StatefulWidget {
@@ -40,7 +41,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           backgroundColor: AppColors.bgCard,
-          title: Text('Créer une ligue',
+          title: Text(AppLocalizations.of(context)!.fantasyCreateLeague,
               style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
@@ -80,12 +81,12 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Annuler', style: TextStyle(color: AppColors.textSecondary)),
+              child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.textSecondary)),
             ),
             ElevatedButton(
               style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonGreen),
               onPressed: () => Navigator.pop(ctx, true),
-              child: Text('Créer',
+              child: Text(AppLocalizations.of(context)!.gameCreate,
                   style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
             ),
           ],
@@ -102,7 +103,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ligue créée !'), backgroundColor: AppColors.neonGreen),
+          SnackBar(content: Text(AppLocalizations.of(context)!.fantasyLeagueCreated), backgroundColor: AppColors.neonGreen),
         );
       }
     } on FantasyException catch (e) {
@@ -120,7 +121,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Rejoindre par code',
+        title: Text(AppLocalizations.of(context)!.fantasyJoinByCode,
             style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: codeCtrl,
@@ -150,7 +151,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonBlue),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Rejoindre',
+            child: Text(AppLocalizations.of(context)!.gameJoin,
                 style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
           ),
         ],
@@ -163,7 +164,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
       await _load();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ligue rejointe !'), backgroundColor: AppColors.neonBlue),
+          SnackBar(content: Text(AppLocalizations.of(context)!.fantasyLeagueJoined), backgroundColor: AppColors.neonBlue),
         );
       }
     } on FantasyException catch (e) {
@@ -196,7 +197,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Mes Ligues'),
+        title: Text(AppLocalizations.of(context)!.fantasyMyLeagues),
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -305,7 +306,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
                         Clipboard.setData(ClipboardData(text: code));
                         ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(
-                              content: Text('Code copié !'),
+                              content: Text(AppLocalizations.of(context)!.gameCodeCopied),
                               duration: Duration(seconds: 2)),
                         );
                       },
@@ -322,7 +323,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
                       ),
                     )
                   else
-                    Text('Ligue publique',
+                    Text(AppLocalizations.of(context)!.fantasyPublicLeague,
                         style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
                 ],
               ),
@@ -355,13 +356,13 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
           Icon(Icons.emoji_events_outlined,
               color: AppColors.textMuted, size: 56),
           SizedBox(height: 16),
-          Text('Aucune ligue pour l\'instant',
+          Text(AppLocalizations.of(context)!.fantasyNoLeagues,
               style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 16,
                   fontWeight: FontWeight.w600)),
           SizedBox(height: 8),
-          Text('Créez ou rejoignez une ligue\npour affronter vos amis',
+          Text(AppLocalizations.of(context)!.fantasyNoLeaguesHint,
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
         ],
@@ -462,7 +463,7 @@ class _LeagueStandingsScreenState extends State<_LeagueStandingsScreen> {
                 child: CircularProgressIndicator(color: AppColors.neonGreen))
             : _standings.isEmpty
                 ? Center(
-                    child: Text('Aucun membre dans cette ligue.',
+                    child: Text(AppLocalizations.of(context)!.fantasyNoMembers,
                         style: TextStyle(color: AppColors.textSecondary)))
                 : ListView.separated(
                     padding: EdgeInsets.fromLTRB(16, 16, 16, 80),

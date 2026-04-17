@@ -10,6 +10,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/player_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
@@ -542,7 +543,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Trop d\'inactivité – tu as été exclu de la partie'),
+        content: Text(AppLocalizations.of(context)!.gameInactivityKicked),
         backgroundColor: Colors.red,
         duration: Duration(seconds: 3),
       ),
@@ -635,12 +636,12 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                   style: TextStyle(color: AppColors.neonYellow, fontSize: 24, fontWeight: FontWeight.w900)),
               ],
               SizedBox(height: 8),
-              Text('Prochaine manche dans 5s...', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              Text(AppLocalizations.of(context)!.gameNextRound, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
             ]),
             actions: [
               TextButton(
                 onPressed: () { autoTimer.cancel(); Navigator.pop(ctx); Navigator.pop(context); },
-                child: Text('Quitter', style: TextStyle(color: AppColors.neonRed))),
+                child: Text(AppLocalizations.of(context)!.gameQuit, style: TextStyle(color: AppColors.neonRed))),
             ],
           ),
         );
@@ -675,7 +676,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Quitter la partie?',
+        title: Text(AppLocalizations.of(context)!.gameLeaveQuestion,
             style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
           'Cette action sera considérée comme un forfait et tu perdras ta mise.\nConfirmer ?',
@@ -684,7 +685,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Annuler',
+            child: Text(AppLocalizations.of(context)!.commonCancel,
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
@@ -692,7 +693,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
               Navigator.pop(ctx);
               Navigator.pop(context);
             },
-            child: Text('Forfait',
+            child: Text(AppLocalizations.of(context)!.gameForfeit,
                 style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
           ),
         ],

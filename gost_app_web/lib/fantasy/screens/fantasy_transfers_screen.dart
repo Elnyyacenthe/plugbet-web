@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../models/fpl_models.dart';
 import '../providers/fpl_provider.dart';
 import '../services/fantasy_service.dart';
@@ -156,7 +157,7 @@ class _FantasyTransfersScreenState extends State<FantasyTransfersScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Transferts'),
+        title: Text(AppLocalizations.of(context)!.fantasyTransfersTitle),
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -204,7 +205,7 @@ class _FantasyTransfersScreenState extends State<FantasyTransfersScreen> {
                       Icon(Icons.account_balance_wallet,
                           color: AppColors.neonGreen, size: 16),
                       SizedBox(width: 6),
-                      Text('Budget: $budget coins',
+                      Text('${AppLocalizations.of(context)!.fantasyBudget}: $budget coins',
                           style: TextStyle(
                               color: AppColors.neonGreen,
                               fontWeight: FontWeight.w700,

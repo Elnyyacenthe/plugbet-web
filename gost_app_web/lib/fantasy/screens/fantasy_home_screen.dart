@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../providers/fpl_provider.dart';
 import '../models/fpl_models.dart';
 import '../widgets/fpl_player_card.dart';
@@ -96,7 +97,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Créer mon équipe',
+        title: Text(AppLocalizations.of(context)!.fantasyCreateTeam,
             style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: ctrl,
@@ -118,12 +119,12 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuler', style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonGreen),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Créer', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
+            child: Text(AppLocalizations.of(context)!.gameCreate, style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -142,7 +143,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
       });
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Équipe créée ! Ajoutez vos joueurs via Transferts.'),
+          content: Text(AppLocalizations.of(context)!.fantasyTeamCreated),
           backgroundColor: AppColors.neonGreen,
           duration: Duration(seconds: 3),
         ),
@@ -164,7 +165,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Une erreur inattendue s\'est produite.'),
+          content: Text(AppLocalizations.of(context)!.fantasyUnexpectedError),
           backgroundColor: Colors.red,
         ),
       );
@@ -413,7 +414,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
               children: [
                 CircularProgressIndicator(color: AppColors.neonGreen),
                 SizedBox(height: 8),
-                Text('Chargement des données joueurs...',
+                Text(AppLocalizations.of(context)!.fantasyLoadingPlayers,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 11)),
               ],
             ),
@@ -432,7 +433,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
               children: [
                 Icon(Icons.people_outline, color: AppColors.textMuted, size: 40),
                 SizedBox(height: 8),
-                Text('Aucun joueur sélectionné',
+                Text(AppLocalizations.of(context)!.fantasyNoPlayerSelected,
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                 SizedBox(height: 4),
                 TextButton(
@@ -441,7 +442,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
                         MaterialPageRoute(builder: (_) => const FantasyTransfersScreen()));
                     if (result == true && mounted) _loadMyTeam();
                   },
-                  child: Text('Ajouter des joueurs →',
+                  child: Text('${AppLocalizations.of(context)!.fantasyAddPlayers} →',
                       style: TextStyle(color: AppColors.neonGreen, fontSize: 12)),
                 ),
               ],
@@ -559,7 +560,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Rejoindre une ligue',
+        title: Text(AppLocalizations.of(context)!.fantasyJoinLeague,
             style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
         content: TextField(
           controller: codeCtrl,
@@ -584,12 +585,12 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuler', style: TextStyle(color: AppColors.textSecondary)),
+            child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonBlue),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Rejoindre',
+            child: Text(AppLocalizations.of(context)!.gameJoin,
                 style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
           ),
         ],
@@ -600,7 +601,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
       await FantasyService.instance.joinLeagueByCode(codeCtrl.text.trim());
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Ligue rejointe !'), backgroundColor: AppColors.neonBlue),
+          SnackBar(content: Text(AppLocalizations.of(context)!.fantasyLeagueJoined), backgroundColor: AppColors.neonBlue),
         );
       }
     } on FantasyException catch (e) {
@@ -908,7 +909,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
     if (team == null || fpl.bootstrap == null || _myPicks.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Ajoutez des joueurs à votre équipe d\'abord.'),
+          content: Text(AppLocalizations.of(context)!.fantasyAddPlayersFirst),
           backgroundColor: Colors.orange,
         ),
       );

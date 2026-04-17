@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../models/roulette_models.dart';
 import '../services/roulette_service.dart';
 import 'game_screen.dart';
@@ -88,8 +89,8 @@ class _RLTLobbyScreenState extends State<RLTLobbyScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(backgroundColor: AppColors.bgBlueNight,
         title: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
-          Text('Salle Roulette', style: TextStyle(fontSize: 16)),
-          Text('Code: ${_room!.code}', style: TextStyle(fontSize: 12, color: AppColors.neonGreen)),
+          Text(AppLocalizations.of(context)!.gameWaitingRoom, style: TextStyle(fontSize: 16)),
+          Text('${AppLocalizations.of(context)!.gameCode}: ${_room!.code}', style: TextStyle(fontSize: 12, color: AppColors.neonGreen)),
         ]),
         actions: [IconButton(icon: Icon(Icons.copy, size: 18), onPressed: () {
           Clipboard.setData(ClipboardData(text: _room!.code));

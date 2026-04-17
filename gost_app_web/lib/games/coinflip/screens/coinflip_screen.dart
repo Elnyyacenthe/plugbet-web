@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../services/coinflip_service.dart';
 import 'game_screen.dart';
@@ -93,20 +94,20 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
           child: AlertDialog(
             backgroundColor: AppColors.bgCard,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            title: Text('En attente...', style: TextStyle(color: AppColors.textPrimary)),
+            title: Text(AppLocalizations.of(context)!.gameWaiting, style: TextStyle(color: AppColors.textPrimary)),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
               CircularProgressIndicator(color: AppColors.neonGreen),
               SizedBox(height: 16),
-              Text('Code: $code', style: TextStyle(color: AppColors.neonGreen,
+              Text('${AppLocalizations.of(context)!.gameCode}: $code', style: TextStyle(color: AppColors.neonGreen,
                   fontSize: 24, fontWeight: FontWeight.w900, letterSpacing: 4)),
               SizedBox(height: 8),
-              Text('Partage ce code à ton adversaire',
+              Text(AppLocalizations.of(context)!.gameShareCodeHint,
                   style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
             ]),
             actions: [
               TextButton(
                 onPressed: () { _svc.unsubscribe(ch); Navigator.pop(ctx); },
-                child: Text('Annuler', style: TextStyle(color: AppColors.neonRed))),
+                child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.neonRed))),
             ],
           ),
         );
@@ -122,7 +123,7 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
       appBar: AppBar(backgroundColor: AppColors.bgBlueNight,
         title: Row(children: [
           Text('🪙', style: TextStyle(fontSize: 22)), SizedBox(width: 8),
-          Text('Pile ou Face', style: TextStyle(fontWeight: FontWeight.w800))]),
+          Text(AppLocalizations.of(context)!.gameCoinflipTitle, style: TextStyle(fontWeight: FontWeight.w800))]),
         actions: [Padding(padding: EdgeInsets.only(right: 12), child: Center(
           child: Text('${wallet.coins}', style: TextStyle(
             color: AppColors.neonYellow, fontWeight: FontWeight.w700))))]),
@@ -139,7 +140,7 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
               child: Column(children: [
                 Text('🪙', style: TextStyle(fontSize: 60)),
                 SizedBox(height: 12),
-                Text('DUEL', style: TextStyle(color: AppColors.neonYellow,
+                Text(AppLocalizations.of(context)!.gameDuel, style: TextStyle(color: AppColors.neonYellow,
                     fontSize: 28, fontWeight: FontWeight.w900, letterSpacing: 3)),
                 Text('2 joueurs • 1 pièce • Le gagnant prend tout',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
@@ -158,7 +159,7 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonYellow,
                   padding: EdgeInsets.symmetric(vertical: 14),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                child: Text('LANCER LE DUEL', style: TextStyle(
+                child: Text(AppLocalizations.of(context)!.gameStartDuel, style: TextStyle(
                     color: Colors.black, fontWeight: FontWeight.w900, fontSize: 16))),
             ]),
             SizedBox(height: 20),
@@ -177,7 +178,7 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonBlue,
                     padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                  child: Text('GO', style: TextStyle(fontWeight: FontWeight.w800))),
+                  child: Text(AppLocalizations.of(context)!.gameGo, style: TextStyle(fontWeight: FontWeight.w800))),
               ]),
             ]),
           ])),

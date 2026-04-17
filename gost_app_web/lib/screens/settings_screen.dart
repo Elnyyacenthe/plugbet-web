@@ -6,10 +6,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/supabase_service.dart';
 import '../services/hive_service.dart';
 import '../ludo/services/audio_service.dart';
 import '../providers/theme_provider.dart';
+import '../providers/locale_provider.dart';
 import 'support_screen.dart';
 
 class SettingsScreen extends StatefulWidget {
@@ -62,7 +64,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
     _soundEnabled  = _b('sound_enabled', true);
     _sfxVolume     = _d('sfx_volume', 0.8);
     _musicVolume   = _d('music_volume', 0.5);
-    _aiDifficulty  = _s('ai_difficulty', 'Moyen');
+    final stored = _s('ai_difficulty', 'medium');
+    // Retrocompat : ancienne valeur FR -> code
+    _aiDifficulty = switch (stored) {
+      'Facile' => 'easy',
+      'Moyen' => 'medium',
+      'Difficile' => 'hard',
+      _ => stored,
+    };
     _notificationsEnabled = _b('notifications', true);
     _goalAlerts           = _b('goal_alerts', true);
     _matchStartAlerts     = _b('match_start_alerts', true);
@@ -82,6 +91,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   }
 
   void _save(String key, dynamic val) => _h.saveSetting(key, val);
+
+  // Helpers pour le selecteur de langue
+  String _labelFromCode(String code, AppLocalizations t) {
+    switch (code) {
+      case 'fr': return t.settingsLanguageFrench;
+      case 'en': return t.settingsLanguageEnglish;
+      default:   return t.settingsLanguageSystem;
+    }
+  }
+
+  String _codeFromLabel(String label, AppLocalizations t) {
+    if (label == t.settingsLanguageFrench) return 'fr';
+    if (label == t.settingsLanguageEnglish) return 'en';
+    return 'system';
+  }
 
   void _showInfoDialog(String title, String body) {
     showDialog(
@@ -119,6 +143,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // ────────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
@@ -129,7 +154,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ── Titre ─────────────────────────────────────
               Padding(
                 padding: EdgeInsets.fromLTRB(4, 16, 4, 20),
-                child: Text('Paramètres',
+                child: Text(t.tabSettings,
                     style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.w800,
@@ -140,9 +165,9 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ══════════════════════════════════════════════
               // 1. AUDIO
               // ══════════════════════════════════════════════
-              _sectionHeader('Audio', Icons.volume_up, AppColors.neonBlue),
+              _sectionHeader(t.settingsSectionAudio, Icons.volume_up, AppColors.neonBlue),
               _card(Column(children: [
-                _switchRow('Sons activés', 'Activer ou couper tous les sons',
+                _switchRow(t.settingsSoundOn, t.settingsSoundOnSubtitle,
                     _soundEnabled, (v) => setState(() {
                   _soundEnabled = v;
                   _save('sound_enabled', v);
@@ -150,13 +175,13 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 })),
                 if (_soundEnabled) ...[
                   const _Divider(),
-                  _sliderRow('Volume effets sonores', _sfxVolume, (v) => setState(() {
+                  _sliderRow(t.settingsSfxVolume, _sfxVolume, (v) => setState(() {
                     _sfxVolume = v;
                     _save('sfx_volume', v);
                     AudioService.instance.reloadSettings();
                   })),
                   const _Divider(),
-                  _sliderRow('Volume musique de fond', _musicVolume, (v) => setState(() {
+                  _sliderRow(t.settingsMusicVolume, _musicVolume, (v) => setState(() {
                     _musicVolume = v;
                     _save('music_volume', v);
                     AudioService.instance.reloadSettings();
@@ -169,15 +194,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ══════════════════════════════════════════════
               // 2. THÈME
               // ══════════════════════════════════════════════
-              _sectionHeader('Apparence', Icons.palette, AppColors.neonYellow),
+              _sectionHeader(t.settingsSectionAppearance, Icons.palette, AppColors.neonYellow),
               _card(Column(children: [
                 Builder(builder: (ctx) {
                   final tp = ctx.watch<ThemeProvider>();
                   return _switchRow(
-                    'Mode clair',
-                    'Basculer entre le thème sombre et clair',
+                    t.settingsLightMode,
+                    t.settingsLightModeSubtitle,
                     !tp.isDark,
                     (v) => tp.toggle(),
+                  );
+                }),
+                const _Divider(),
+                // Selecteur de langue (FR / EN / System)
+                Builder(builder: (ctx) {
+                  final lp = ctx.watch<LocaleProvider>();
+                  return _dropdownRow(
+                    t.settingsLanguage,
+                    t.settingsLanguageSubtitle,
+                    [t.settingsLanguageSystem, t.settingsLanguageFrench, t.settingsLanguageEnglish],
+                    _labelFromCode(lp.currentCode, t),
+                    (label) {
+                      final code = _codeFromLabel(label, t);
+                      ctx.read<LocaleProvider>().setLanguage(code);
+                    },
                   );
                 }),
               ])),
@@ -187,11 +227,30 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ══════════════════════════════════════════════
               // 3. GAMEPLAY
               // ══════════════════════════════════════════════
-              _sectionHeader('Gameplay', Icons.sports_esports, AppColors.neonGreen),
+              _sectionHeader(t.settingsSectionGameplay, Icons.sports_esports, AppColors.neonGreen),
               _card(Column(children: [
-                _dropdownRow('Difficulté IA', 'Checkers & Solitaire',
-                    ['Facile', 'Moyen', 'Difficile'], _aiDifficulty,
-                    (v) => setState(() { _aiDifficulty = v; _save('ai_difficulty', v); })),
+                Builder(builder: (ctx) {
+                  final labelByCode = {
+                    'easy': t.settingsDifficultyEasy,
+                    'medium': t.settingsDifficultyMedium,
+                    'hard': t.settingsDifficultyHard,
+                  };
+                  return _dropdownRow(
+                    t.settingsAiDifficulty,
+                    t.settingsAiDifficultySubtitle,
+                    labelByCode.values.toList(),
+                    labelByCode[_aiDifficulty] ?? t.settingsDifficultyMedium,
+                    (label) {
+                      final code = labelByCode.entries
+                          .firstWhere((e) => e.value == label, orElse: () => const MapEntry('medium', ''))
+                          .key;
+                      setState(() {
+                        _aiDifficulty = code;
+                        _save('ai_difficulty', code);
+                      });
+                    },
+                  );
+                }),
               ])),
 
               SizedBox(height: 20),
@@ -199,36 +258,36 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ══════════════════════════════════════════════
               // 4. NOTIFICATIONS & SOCIAL
               // ══════════════════════════════════════════════
-              _sectionHeader('Notifications & Social', Icons.notifications, AppColors.neonOrange),
+              _sectionHeader(t.settingsSectionNotifs, Icons.notifications, AppColors.neonOrange),
               _card(Column(children: [
-                _switchRow('Notifications push', 'Invites, tour à jouer, victoire d\'ami',
+                _switchRow(t.settingsPushNotif, t.settingsPushNotifSubtitle,
                     _notificationsEnabled, (v) => setState(() {
                   _notificationsEnabled = v; _save('notifications', v);
                 })),
                 if (_notificationsEnabled) ...[
                   const _Divider(),
-                  _switchRow('Sons de notification', '', _notifSounds,
+                  _switchRow(t.settingsNotifSounds, '', _notifSounds,
                       (v) => setState(() { _notifSounds = v; _save('notif_sounds', v); }), indent: true),
                   const _Divider(),
-                  _switchRow('Alertes buts', 'Pour vos équipes favorites', _goalAlerts,
+                  _switchRow(t.settingsGoalAlerts, t.settingsGoalAlertsSubtitle, _goalAlerts,
                       (v) => setState(() { _goalAlerts = v; _save('goal_alerts', v); }), indent: true),
                   const _Divider(),
-                  _switchRow('Début de match', 'Coup d\'envoi de vos favoris', _matchStartAlerts,
+                  _switchRow(t.settingsMatchStart, t.settingsMatchStartSubtitle, _matchStartAlerts,
                       (v) => setState(() { _matchStartAlerts = v; _save('match_start_alerts', v); }), indent: true),
                 ],
                 const _Divider(),
-                _switchRow('Vibrations', 'Retour haptique global',
+                _switchRow(t.settingsVibrations, t.settingsVibrationsSubtitle,
                     _vibrationEnabled, (v) => setState(() { _vibrationEnabled = v; _save('game_vibration', v); })),
                 if (_vibrationEnabled) ...[
                   const _Divider(),
-                  _switchRow('Vibrations sur événements', 'Dé, capture, Cora, victoire',
+                  _switchRow(t.settingsVibrationsEvents, t.settingsVibrationsEventsSubtitle,
                       _vibrationOnEvents, (v) => setState(() { _vibrationOnEvents = v; _save('vibration_events', v); }), indent: true),
                 ],
                 const _Divider(),
-                _switchRow('Chat en jeu', 'Messagerie pendant les parties multijoueur',
+                _switchRow(t.settingsInGameChat, t.settingsInGameChatSubtitle,
                     _inGameChat, (v) => setState(() { _inGameChat = v; _save('in_game_chat', v); })),
                 const _Divider(),
-                _switchRow('Invites automatiques', 'Proposer amis pour rejoindre la partie',
+                _switchRow(t.settingsAutoInvite, t.settingsAutoInviteSubtitle,
                     _autoInvite, (v) => setState(() { _autoInvite = v; _save('auto_invite', v); })),
               ])),
 
@@ -237,18 +296,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ══════════════════════════════════════════════
               // 6. ACCESSIBILITÉ & CONFORT
               // ══════════════════════════════════════════════
-              _sectionHeader('Accessibilité & Confort', Icons.accessibility, AppColors.neonGreen),
+              _sectionHeader(t.settingsSectionAccessibility, Icons.accessibility, AppColors.neonGreen),
               _card(Column(children: [
-                _switchRow('Mode gaucher', 'Inverser les commandes de glissement',
+                _switchRow(t.settingsLeftyMode, t.settingsLeftyModeSubtitle,
                     _leftyMode, (v) => setState(() { _leftyMode = v; _save('lefty_mode', v); })),
                 const _Divider(),
-                _switchRow('Contraste élevé', 'Meilleure lisibilité pour malvoyants',
+                _switchRow(t.settingsHighContrast, t.settingsHighContrastSubtitle,
                     _highContrast, (v) => setState(() {
                   _highContrast = v; _save('high_contrast', v);
                   context.read<ThemeProvider>().notifyAccessibilityChanged();
                 })),
                 const _Divider(),
-                _switchRow('Texte agrandi', 'Augmenter la taille du texte dans les menus',
+                _switchRow(t.settingsLargeText, t.settingsLargeTextSubtitle,
                     _largeText, (v) => setState(() {
                   _largeText = v; _save('large_text', v);
                   context.read<ThemeProvider>().notifyAccessibilityChanged();
@@ -260,14 +319,14 @@ class _SettingsScreenState extends State<SettingsScreen> {
               // ══════════════════════════════════════════════
               // 7. INFOS & SUPPORT
               // ══════════════════════════════════════════════
-              _sectionHeader('Infos & Support', Icons.info_outline, AppColors.textMuted),
+              _sectionHeader(t.settingsSectionAbout, Icons.info_outline, AppColors.textMuted),
               _card(Column(children: [
-                _infoRow('Application', 'Plugbet'),
+                _infoRow(t.settingsApplication, 'Plugbet'),
                 const _Divider(),
-                _infoRow('Version', '1.0.0'),
+                _infoRow(t.settingsVersion, '1.0.0'),
                 const _Divider(),
-                _linkRow('Règles des jeux', Icons.rule, () => _showInfoDialog(
-                  'Règles des jeux',
+                _linkRow(t.settingsGameRules, Icons.rule, () => _showInfoDialog(
+                  t.settingsGameRules,
                   '• Ludo : Lancez le dé, déplacez vos 4 pions. '
                   'Un 6 permet de sortir un pion et de rejouer. '
                   'Premier à ramener tous ses pions gagne.\n\n'
@@ -289,15 +348,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
                     child: Row(children: [
                       Icon(Icons.support_agent, size: 18, color: AppColors.neonGreen),
                       SizedBox(width: 12),
-                      Expanded(child: Text('Nous contacter / Support',
+                      Expanded(child: Text(t.settingsContactSupport,
                           style: TextStyle(fontSize: 14, color: AppColors.neonGreen, fontWeight: FontWeight.w600))),
                       Icon(Icons.chevron_right, size: 18, color: AppColors.neonGreen),
                     ]),
                   ),
                 ),
                 const _Divider(),
-                _linkRow('Politique de confidentialité', Icons.privacy_tip_outlined, () => _showInfoDialog(
-                  'Politique de confidentialité',
+                _linkRow(t.settingsPrivacyPolicy, Icons.privacy_tip_outlined, () => _showInfoDialog(
+                  t.settingsPrivacyPolicy,
                   'Plugbet respecte votre vie privée.\n\n'
                   '• Données collectées : identifiant anonyme, nom d\'utilisateur choisi, '
                   'statistiques de jeu et solde de coins.\n\n'
@@ -308,8 +367,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   'Contact : support@plugbet.app',
                 )),
                 const _Divider(),
-                _linkRow('Conditions d\'utilisation', Icons.description_outlined, () => _showInfoDialog(
-                  'Conditions d\'utilisation',
+                _linkRow(t.settingsTerms, Icons.description_outlined, () => _showInfoDialog(
+                  t.settingsTerms,
                   '1. En utilisant Plugbet, vous acceptez ces conditions.\n\n'
                   '2. Les coins sont une monnaie virtuelle sans valeur réelle. '
                   'Aucun échange contre de l\'argent réel n\'est possible.\n\n'

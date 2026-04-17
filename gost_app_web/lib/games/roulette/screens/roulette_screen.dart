@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../services/roulette_service.dart';
 import 'lobby_screen.dart';
@@ -78,7 +79,7 @@ class _RouletteScreenState extends State<RouletteScreen> {
               ElevatedButton(onPressed: _loading ? null : _create,
                 style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonGreen,
                   padding: EdgeInsets.symmetric(vertical: 14), shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                child: Text('CRÉER', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800))),
+                child: Text(AppLocalizations.of(context)!.gameCreateAction, style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800))),
             ]),
             SizedBox(height: 20),
             _card('Rejoindre', [
@@ -92,7 +93,7 @@ class _RouletteScreenState extends State<RouletteScreen> {
                   style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonBlue,
                     padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14))),
-                  child: Text('GO', style: TextStyle(fontWeight: FontWeight.w800))),
+                  child: Text(AppLocalizations.of(context)!.gameGo, style: TextStyle(fontWeight: FontWeight.w800))),
               ]),
             ]),
           ],

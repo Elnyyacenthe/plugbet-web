@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/player_provider.dart';
 import '../models/player_models.dart';
@@ -25,6 +26,7 @@ class AppDrawer extends StatelessWidget {
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
     final wallet = context.watch<WalletProvider>();
+    final t = AppLocalizations.of(context)!;
     final username = wallet.username.isNotEmpty
         ? wallet.username
         : (user?.email ?? '');
@@ -134,7 +136,7 @@ class AppDrawer extends StatelessWidget {
                           ),
                           child: Icon(rank.icon, size: 14, color: rank.color),
                         ),
-                        title: Text('Mon Profil',
+                        title: Text(t.drawerMyProfile,
                             style: TextStyle(
                                 fontSize: 14,
                                 fontWeight: FontWeight.w600,
@@ -151,17 +153,17 @@ class AppDrawer extends StatelessWidget {
                       );
                     },
                   ),
-                  _menuItem(Icons.leaderboard_rounded, 'Classement', () {
+                  _menuItem(Icons.leaderboard_rounded, t.drawerLeaderboard, () {
                     Navigator.pop(context);
                     Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const LeaderboardScreen()));
                   }),
-                  _menuItem(Icons.people_alt_rounded, 'Amis', () {
+                  _menuItem(Icons.people_alt_rounded, t.profileTabFriends, () {
                     Navigator.pop(context);
                     Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const FriendsScreen()));
                   }),
-                  _menuItem(Icons.star_rounded, 'Favoris', () {
+                  _menuItem(Icons.star_rounded, t.drawerFavorites, () {
                     Navigator.pop(context);
                     Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const FavoritesScreen()));
@@ -171,16 +173,16 @@ class AppDrawer extends StatelessWidget {
 
                   // --- Info ---
                   _sectionHeader('INFO'),
-                  _menuItem(Icons.help_outline, 'Aide', () {
+                  _menuItem(Icons.help_outline, t.drawerHelp, () {
                     Navigator.pop(context);
                     _showAideDialog(context);
                   }),
-                  _menuItem(Icons.privacy_tip_outlined, 'Confidentialité', () {
+                  _menuItem(Icons.privacy_tip_outlined, t.drawerPrivacy, () {
                     Navigator.pop(context);
                     launchUrl(Uri.parse('https://plugbet.com/privacy'),
                         mode: LaunchMode.externalApplication);
                   }),
-                  _menuItem(Icons.support_agent, 'Nous contacter', () {
+                  _menuItem(Icons.support_agent, t.drawerContact, () {
                     Navigator.pop(context);
                     Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const SupportScreen()));
@@ -211,7 +213,7 @@ class AppDrawer extends StatelessWidget {
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Aide', style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(AppLocalizations.of(context)!.drawerHelp, style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
           'Plugbet – Chat & Bet\n\n'
           '• Matchs : scores en direct\n'
@@ -224,7 +226,7 @@ class AppDrawer extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: Text('OK', style: TextStyle(color: AppColors.neonGreen)),
+            child: Text(AppLocalizations.of(context)!.commonOk, style: TextStyle(color: AppColors.neonGreen)),
           ),
         ],
       ),

@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../providers/matches_provider.dart';
 import '../providers/favorites_provider.dart';
 import '../widgets/match_card.dart';
@@ -23,7 +24,7 @@ class FavoritesScreen extends StatelessWidget {
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
         ),
-        title: Text('Mes Favoris'),
+        title: Text(AppLocalizations.of(context)!.favoritesTitle),
       ),
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),

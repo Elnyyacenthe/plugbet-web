@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../providers/fpl_provider.dart';
 
 class FantasyConnectScreen extends StatefulWidget {
@@ -48,7 +49,7 @@ class _FantasyConnectScreenState extends State<FantasyConnectScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Connecter mon équipe FPL'),
+        title: Text(AppLocalizations.of(context)!.fantasyConnectTitle),
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -74,7 +75,7 @@ class _FantasyConnectScreenState extends State<FantasyConnectScreen> {
                   Row(children: [
                     Icon(Icons.info_outline, color: AppColors.neonGreen, size: 18),
                     SizedBox(width: 8),
-                    Text('Où trouver mon Entry ID ?',
+                    Text(AppLocalizations.of(context)!.fantasyEntryIdHelp,
                         style: TextStyle(color: AppColors.neonGreen, fontWeight: FontWeight.w700)),
                   ]),
                   SizedBox(height: 10),
@@ -89,7 +90,7 @@ class _FantasyConnectScreenState extends State<FantasyConnectScreen> {
               ),
             ),
             SizedBox(height: 32),
-            Text('Entry ID FPL',
+            Text(AppLocalizations.of(context)!.fantasyEntryIdLabel,
                 style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w600)),
             SizedBox(height: 8),
             TextField(
@@ -127,7 +128,7 @@ class _FantasyConnectScreenState extends State<FantasyConnectScreen> {
                 child: _loading
                     ? SizedBox(width: 20, height: 20,
                         child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.bgDark))
-                    : Text('Connecter', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
+                    : Text(AppLocalizations.of(context)!.fantasyConnect, style: TextStyle(fontWeight: FontWeight.w800, fontSize: 16)),
               ),
             ),
             SizedBox(height: 16),
@@ -139,7 +140,7 @@ class _FantasyConnectScreenState extends State<FantasyConnectScreen> {
                     fpl.disconnectEntry();
                     Navigator.pop(context);
                   },
-                  child: Text('Se déconnecter',
+                  child: Text(AppLocalizations.of(context)!.fantasyDisconnect,
                       style: TextStyle(color: AppColors.neonRed)),
                 );
               },

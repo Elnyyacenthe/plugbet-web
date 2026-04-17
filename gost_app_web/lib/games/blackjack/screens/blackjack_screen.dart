@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../services/blackjack_service.dart';
 import 'lobby_screen.dart';
@@ -142,7 +143,7 @@ class _BlackjackScreenState extends State<BlackjackScreen> {
         children: [
           // Joueurs
           Row(children: [
-            Text('Joueurs:', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
+            Text('${AppLocalizations.of(context)!.gamePlayers}:', style: TextStyle(color: AppColors.textSecondary, fontSize: 14)),
             Spacer(),
             for (final n in [2, 3, 4])
               Padding(
@@ -191,7 +192,7 @@ class _BlackjackScreenState extends State<BlackjackScreen> {
               ),
               child: _loading
                   ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2))
-                  : Text('CRÉER LA TABLE', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)),
+                  : Text(AppLocalizations.of(context)!.gameCreateTable, style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)),
             ),
           ),
         ],
@@ -236,7 +237,7 @@ class _BlackjackScreenState extends State<BlackjackScreen> {
               padding: EdgeInsets.symmetric(horizontal: 20, vertical: 14),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
             ),
-            child: Text('REJOINDRE', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Text(AppLocalizations.of(context)!.gameJoinAction, style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ],
       ),

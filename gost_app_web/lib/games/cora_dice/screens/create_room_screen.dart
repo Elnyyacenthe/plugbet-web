@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../services/cora_service.dart';
 import '../../../ludo/models/ludo_models.dart';
 
@@ -120,7 +121,7 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Créer une partie'),
+        title: Text(AppLocalizations.of(context)!.gameCreateRoom),
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),

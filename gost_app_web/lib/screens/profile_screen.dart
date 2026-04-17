@@ -3,13 +3,20 @@
 // ============================================================
 
 import 'dart:async';
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/player_provider.dart';
 import '../models/player_models.dart';
+import '../services/messaging_service.dart';
+import '../services/profile_service.dart';
+import '../utils/logger.dart';
+import '../widgets/profile/transaction_tile.dart';
+import '../widgets/user_avatar.dart';
 import 'auth_screen.dart';
 import 'user_search_screen.dart';
 
@@ -22,6 +29,10 @@ class ProfileScreen extends StatefulWidget {
 
 class _ProfileScreenState extends State<ProfileScreen>
     with SingleTickerProviderStateMixin {
+  static const _log = Logger('PROFILE');
+  final _profileService = ProfileService();
+  final _messagingService = MessagingService();
+
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _transactions = [];
   bool _txLoading = true;
@@ -35,6 +46,10 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Timer? _friendsTimer;
   bool _isVisible = false;
+
+  // Avatar (photo de profil visible par tout le monde)
+  String? _myAvatarUrl;
+  bool _uploadingAvatar = false;
 
   @override
   void initState() {
@@ -67,8 +82,51 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.dispose();
   }
 
+  /// Charge l'URL de l'avatar actuel
+  Future<void> _loadMyAvatar() async {
+    final url = await _messagingService.getMyAvatarUrl();
+    if (mounted) setState(() => _myAvatarUrl = url);
+  }
+
+  /// Ouvre le picker et uploade une nouvelle photo de profil
+  Future<void> _pickAvatar() async {
+    if (_uploadingAvatar) return;
+    try {
+      final picked = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 85,
+        maxWidth: 800,
+      );
+      if (picked == null || !mounted) return;
+      setState(() => _uploadingAvatar = true);
+      final url = await _messagingService.uploadAvatar(File(picked.path));
+      if (!mounted) return;
+      setState(() {
+        _uploadingAvatar = false;
+        if (url != null) _myAvatarUrl = url;
+      });
+      if (url != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text('Photo de profil mise a jour'),
+            backgroundColor: AppColors.neonGreen,
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } catch (e, s) {
+      _log.error('pickAvatar', e, s);
+      if (mounted) setState(() => _uploadingAvatar = false);
+    }
+  }
+
   Future<void> _loadData() async {
-    await Future.wait([_loadTransactions(), _loadStats(), _loadFriends()]);
+    await Future.wait([
+      _loadTransactions(),
+      _loadStats(),
+      _loadFriends(),
+      _loadMyAvatar(),
+    ]);
   }
 
   Future<void> _loadFriends() async {
@@ -87,131 +145,83 @@ class _ProfileScreenState extends State<ProfileScreen>
           _friendsLoading = false;
         });
       }
-    } catch (e) {
-      debugPrint('[PROFILE] loadFriends: $e');
+    } catch (e, s) {
+      _log.error('loadFriends', e, s);
       if (mounted) setState(() => _friendsLoading = false);
     }
   }
 
-  Future<List<Map<String, dynamic>>> _loadSentRequests() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return [];
-    try {
-      final data = await Supabase.instance.client
-          .from('friend_requests')
-          .select('id, to_id, status, created_at')
-          .eq('from_id', uid)
-          .order('created_at', ascending: false);
-      // Enrichir avec username
-      final results = <Map<String, dynamic>>[];
-      for (final row in (data as List)) {
-        final toId = row['to_id'] as String? ?? '';
-        String username = 'Joueur';
-        try {
-          final p = await Supabase.instance.client
-              .from('user_profiles')
-              .select('username')
-              .eq('id', toId)
-              .maybeSingle();
-          if (p != null) username = p['username'] as String? ?? 'Joueur';
-        } catch (_) {}
-        results.add({
-          ...row,
-          'to_username': username,
-        });
-      }
-      return results;
-    } catch (_) {
-      return [];
-    }
-  }
+  Future<List<Map<String, dynamic>>> _loadSentRequests() =>
+      _profileService.getSentFriendRequests();
 
   Future<void> _loadTransactions() async {
-    try {
-      final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null) {
-        if (mounted) setState(() => _txLoading = false);
-        return;
-      }
-
-      // Charger les défis Ludo (paris gagnés/perdus)
-      final ludo = await Supabase.instance.client
-          .from('ludo_challenges')
-          .select('id, bet_amount, status, created_at, from_user, to_user')
-          .or('from_user.eq.$uid,to_user.eq.$uid')
-          .order('created_at', ascending: false)
-          .limit(50);
-
-      final txList = <Map<String, dynamic>>[];
-
-      for (final row in ludo) {
-        final bet = row['bet_amount'] as int? ?? 0;
-        final status = row['status'] as String? ?? '';
-        final isChallenger = row['from_user'] == uid;
-        final date = DateTime.tryParse(row['created_at'] as String? ?? '') ?? DateTime.now();
-
-        String label;
-        int amount;
-        String type;
-
-        if (status == 'completed') {
-          // Simplifié : on assume que le challenger a gagné si le statut est completed
-          label = 'Ludo – Partie terminée';
-          amount = bet;
-          type = 'game';
-        } else if (status == 'cancelled') {
-          label = 'Ludo – Partie annulée';
-          amount = 0;
-          type = 'refund';
-        } else {
-          label = isChallenger ? 'Ludo – Défi lancé' : 'Ludo – Défi reçu';
-          amount = -bet;
-          type = 'bet';
-        }
-
-        txList.add({
-          'label': label,
-          'amount': amount,
-          'type': type,
-          'date': date,
-        });
-      }
-
-      if (mounted) setState(() { _transactions = txList; _txLoading = false; });
-    } catch (e) {
-      debugPrint('[PROFILE] loadTransactions: $e');
+    final uid = _profileService.currentUserId;
+    if (uid == null) {
       if (mounted) setState(() => _txLoading = false);
+      return;
+    }
+
+    final ludo = await _profileService.getLudoTransactions();
+    final txList = <Map<String, dynamic>>[];
+
+    for (final row in ludo) {
+      final bet = row['bet_amount'] as int? ?? 0;
+      final status = row['status'] as String? ?? '';
+      final isChallenger = row['from_user'] == uid;
+      final date = DateTime.tryParse(row['created_at'] as String? ?? '') ??
+          DateTime.now();
+
+      String label;
+      int amount;
+      String type;
+
+      if (status == 'completed') {
+        label = 'Ludo – Partie terminee';
+        amount = bet;
+        type = 'game';
+      } else if (status == 'cancelled') {
+        label = 'Ludo – Partie annulee';
+        amount = 0;
+        type = 'refund';
+      } else {
+        label = isChallenger ? 'Ludo – Defi lance' : 'Ludo – Defi recu';
+        amount = -bet;
+        type = 'bet';
+      }
+
+      txList.add({
+        'label': label,
+        'amount': amount,
+        'type': type,
+        'date': date,
+      });
+    }
+
+    if (mounted) {
+      setState(() {
+        _transactions = txList;
+        _txLoading = false;
+      });
     }
   }
 
   Future<void> _loadStats() async {
-    try {
-      final uid = Supabase.instance.client.auth.currentUser?.id;
-      if (uid == null) return;
-
-      final profile = await Supabase.instance.client
-          .from('user_profiles')
-          .select()
-          .eq('id', uid)
-          .maybeSingle();
-
-      if (profile != null && mounted) {
-        setState(() => _stats = profile);
-      }
-    } catch (e) {
-      debugPrint('[PROFILE] loadStats: $e');
+    final profile = await _profileService.getMyProfile();
+    if (profile != null && mounted) {
+      setState(() => _stats = profile);
     }
   }
 
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
+    final t = AppLocalizations.of(context)!;
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Mon Profil'),
+        title: Text(t.tabProfile),
         automaticallyImplyLeading: false,
         bottom: TabBar(
           controller: _tabCtrl,
@@ -220,8 +230,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           unselectedLabelColor: AppColors.textMuted,
           labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
           tabs: [
-            const Tab(text: 'PROFIL', icon: Icon(Icons.person, size: 16)),
-            const Tab(text: 'HISTORIQUE', icon: Icon(Icons.history, size: 16)),
+            Tab(text: t.profileTabInfo.toUpperCase(), icon: const Icon(Icons.person, size: 16)),
+            Tab(text: t.profileTabHistory.toUpperCase(), icon: const Icon(Icons.history, size: 16)),
             Tab(
               icon: Badge(
                 isLabelVisible: _pendingReceived.isNotEmpty,
@@ -229,7 +239,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                 backgroundColor: AppColors.neonRed,
                 child: const Icon(Icons.people, size: 16),
               ),
-              text: 'AMIS',
+              text: t.profileTabFriends.toUpperCase(),
             ),
           ],
         ),
@@ -252,7 +262,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   // TAB 1 : PROFIL
   // ═══════════════════════════════════════════════════════════
   Widget _buildProfileTab(WalletProvider wallet) {
-    final user = Supabase.instance.client.auth.currentUser;
+    final user = _profileService.currentUser;
     final email = user?.email ?? 'Anonyme';
     final username = wallet.username.isNotEmpty ? wallet.username : 'Joueur';
     final coins = wallet.coins;
@@ -274,21 +284,55 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
             child: Column(
               children: [
-                Container(
-                  width: 72, height: 72,
-                  decoration: BoxDecoration(
-                    color: AppColors.neonGreen.withValues(alpha: 0.2),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AppColors.neonGreen, width: 2),
-                  ),
-                  child: Center(
-                    child: Text(
-                      username.isNotEmpty ? username[0].toUpperCase() : '?',
-                      style: TextStyle(
-                          color: AppColors.neonGreen,
-                          fontSize: 28,
-                          fontWeight: FontWeight.w900),
-                    ),
+                // Avatar avec bouton camera pour changer la photo
+                GestureDetector(
+                  onTap: _uploadingAvatar ? null : _pickAvatar,
+                  child: Stack(
+                    clipBehavior: Clip.none,
+                    children: [
+                      UserAvatar(
+                        avatarUrl: _myAvatarUrl,
+                        username: username,
+                        size: 92,
+                        showOnlineDot: false,
+                      ),
+                      if (_uploadingAvatar)
+                        Positioned.fill(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: Colors.black54,
+                            ),
+                            child: const Center(
+                              child: SizedBox(
+                                width: 28,
+                                height: 28,
+                                child: CircularProgressIndicator(
+                                  color: Colors.white,
+                                  strokeWidth: 3,
+                                ),
+                              ),
+                            ),
+                          ),
+                        )
+                      else
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            width: 32,
+                            height: 32,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              color: AppColors.neonGreen,
+                              border: Border.all(
+                                  color: AppColors.bgCard, width: 3),
+                            ),
+                            child: const Icon(Icons.camera_alt,
+                                size: 16, color: Colors.black),
+                          ),
+                        ),
+                    ],
                   ),
                 ),
                 SizedBox(height: 12),
@@ -375,9 +419,10 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   Widget _buildAccountActions() {
-    final user = Supabase.instance.client.auth.currentUser;
-    final isAnonymous = user?.email == null || user!.email!.isEmpty;
+    final user = _profileService.currentUser;
+    final isAnonymous = _profileService.isAnonymous;
     final isLoggedIn = user != null;
+    final t = AppLocalizations.of(context)!;
 
     return Container(
       padding: EdgeInsets.all(14),
@@ -408,8 +453,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             _accountRow(Icons.email_outlined, user.email ?? '',
                 AppColors.textSecondary, null),
             SizedBox(height: 8),
-            _accountActionBtn('Se déconnecter', Icons.logout, AppColors.neonRed, () async {
-              await Supabase.instance.client.auth.signOut();
+            _accountActionBtn(t.profileLogout, Icons.logout, AppColors.neonRed, () async {
+              await _profileService.signOut();
               if (mounted) {
                 context.read<WalletProvider>().refresh();
                 setState(() {});
@@ -417,13 +462,13 @@ class _ProfileScreenState extends State<ProfileScreen>
             }),
           ] else ...[
             // Anonyme ou pas connecté
-            Text('Vous êtes en mode anonyme',
+            Text(t.profileAnonymous,
                 style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
             SizedBox(height: 10),
             Row(
               children: [
                 Expanded(
-                  child: _accountActionBtn('Se connecter', Icons.login, AppColors.neonGreen, () async {
+                  child: _accountActionBtn(t.authSignIn, Icons.login, AppColors.neonGreen, () async {
                     final ok = await Navigator.push<bool>(context,
                         MaterialPageRoute(builder: (_) => AuthScreen(startWithSignUp: false)));
                     if (ok == true && mounted) {
@@ -545,84 +590,23 @@ class _ProfileScreenState extends State<ProfileScreen>
     }
 
     return ListView.separated(
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.all(16),
       itemCount: _transactions.length,
-      separatorBuilder: (_, __) => SizedBox(height: 6),
+      separatorBuilder: (_, __) => const SizedBox(height: 6),
       itemBuilder: (_, i) {
         final tx = _transactions[i];
-        final amount = tx['amount'] as int;
-        final label = tx['label'] as String;
-        final date = tx['date'] as DateTime;
-        final type = tx['type'] as String;
-
-        final isPositive = amount > 0;
-        final color = isPositive ? AppColors.neonGreen : amount < 0 ? AppColors.neonRed : AppColors.textMuted;
-        final icon = type == 'game'
-            ? Icons.emoji_events
-            : type == 'bet'
-                ? Icons.casino
-                : type == 'refund'
-                    ? Icons.replay
-                    : Icons.swap_horiz;
-
-        return Container(
-          padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-          decoration: BoxDecoration(
-            gradient: AppColors.cardGradient,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
-          ),
-          child: Row(
-            children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  color: color.withValues(alpha: 0.15),
-                  borderRadius: BorderRadius.circular(10),
-                ),
-                child: Icon(icon, color: color, size: 18),
-              ),
-              SizedBox(width: 12),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(label,
-                        style: TextStyle(
-                            color: AppColors.textPrimary,
-                            fontWeight: FontWeight.w600,
-                            fontSize: 13)),
-                    SizedBox(height: 2),
-                    Text(_formatDate(date),
-                        style: TextStyle(
-                            color: AppColors.textMuted, fontSize: 10)),
-                  ],
-                ),
-              ),
-              Text(
-                amount == 0
-                    ? '—'
-                    : '${isPositive ? '+' : ''}$amount',
-                style: TextStyle(
-                    color: color,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w800),
-              ),
-              if (amount != 0)
-                Icon(Icons.monetization_on,
-                    color: AppColors.neonYellow, size: 14),
-            ],
-          ),
+        return TransactionTile(
+          label: tx['label'] as String,
+          amount: tx['amount'] as int,
+          date: tx['date'] as DateTime,
+          type: tx['type'] as String,
         );
       },
     );
   }
 
-  String _formatDate(DateTime d) {
-    return '${d.day.toString().padLeft(2, '0')}/'
-        '${d.month.toString().padLeft(2, '0')}/'
-        '${d.year}';
-  }
+  String _formatDate(DateTime d) =>
+      '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
 
   // ═══════════════════════════════════════════════════════════
   // TAB 3 : AMIS

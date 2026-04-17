@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../models/blackjack_models.dart';
 import '../services/blackjack_service.dart';
 import 'game_screen.dart';
@@ -112,8 +113,8 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Salle d\'attente', style: TextStyle(fontSize: 16)),
-            Text('Code: ${_room!.code}', style: TextStyle(
+            Text(AppLocalizations.of(context)!.gameWaitingRoom, style: TextStyle(fontSize: 16)),
+            Text('${AppLocalizations.of(context)!.gameCode}: ${_room!.code}', style: TextStyle(
               fontSize: 12, color: AppColors.neonGreen, fontWeight: FontWeight.w700)),
           ],
         ),
@@ -123,7 +124,7 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
             onPressed: () {
               Clipboard.setData(ClipboardData(text: _room!.code));
               ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Code copié !'), duration: Duration(seconds: 1)),
+                SnackBar(content: Text(AppLocalizations.of(context)!.gameCodeCopied), duration: Duration(seconds: 1)),
               );
             },
           ),
@@ -239,7 +240,7 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
         children: [
           Icon(Icons.person_add_outlined, size: 20, color: AppColors.textMuted.withValues(alpha: 0.5)),
           SizedBox(width: 8),
-          Text('En attente...', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+          Text(AppLocalizations.of(context)!.gameWaiting, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
         ],
       ),
     );

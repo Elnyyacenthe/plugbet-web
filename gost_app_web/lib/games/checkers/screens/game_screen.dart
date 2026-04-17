@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/player_provider.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
@@ -237,7 +238,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Quitter la partie ?',
+        title: Text(AppLocalizations.of(context)!.gameLeaveQuestion,
             style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
         content: Text(
           isMultiplayer
@@ -248,7 +249,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Annuler',
+            child: Text(AppLocalizations.of(context)!.commonCancel,
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
@@ -256,7 +257,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
               Navigator.pop(ctx);
               Navigator.pop(context);
             },
-            child: Text('Forfait',
+            child: Text(AppLocalizations.of(context)!.gameForfeit,
                 style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
           ),
         ],
@@ -578,7 +579,7 @@ class _GameOverDialog extends StatelessWidget {
               backgroundColor: color, foregroundColor: Colors.black,
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
-            child: Text('RETOUR', style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Text(AppLocalizations.of(context)!.gameBack, style: TextStyle(fontWeight: FontWeight.w800)),
           ),
         ),
       ]),

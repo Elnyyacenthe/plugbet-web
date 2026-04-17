@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
 import 'game_screen.dart';
@@ -159,7 +160,7 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Salle d\'attente', style: TextStyle(fontSize: 16)),
+            Text(AppLocalizations.of(context)!.gameWaitingRoom, style: TextStyle(fontSize: 16)),
             Text(
               'Code: ${_room!.code}',
               style: TextStyle(
@@ -181,7 +182,7 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
               Clipboard.setData(ClipboardData(text: _room!.code));
               ScaffoldMessenger.of(context).showSnackBar(
                 SnackBar(
-                  content: Text('Code copié !'),
+                  content: Text(AppLocalizations.of(context)!.gameCodeCopied),
                   backgroundColor: AppColors.neonGreen,
                   duration: Duration(seconds: 1),
                 ),
@@ -628,7 +629,7 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Quitter la salle?',
+        title: Text(AppLocalizations.of(context)!.gameLeaveRoomQuestion,
             style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
           'Voulez-vous vraiment quitter cette salle?',
@@ -637,14 +638,14 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Annuler'),
+            child: Text(AppLocalizations.of(context)!.commonCancel),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               Navigator.pop(context);
             },
-            child: Text('Quitter',
+            child: Text(AppLocalizations.of(context)!.gameQuit,
                 style: TextStyle(color: AppColors.neonRed)),
           ),
         ],

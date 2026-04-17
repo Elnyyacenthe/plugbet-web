@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
@@ -611,7 +612,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Annuler',
+            child: Text(AppLocalizations.of(context)!.commonCancel,
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
@@ -649,7 +650,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
               backgroundColor: Colors.orange,
               foregroundColor: Colors.white,
             ),
-            child: Text('Rejoindre',
+            child: Text(AppLocalizations.of(context)!.gameJoin,
                 style: TextStyle(fontWeight: FontWeight.w700)),
           ),
         ],

@@ -5,6 +5,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../services/checkers_service.dart';
 import '../models/checkers_models.dart';
@@ -63,10 +64,10 @@ class _CheckersScreenState extends State<CheckersScreen> {
           children: [
             Icon(Icons.lock_outline, size: 64, color: AppColors.neonOrange),
             SizedBox(height: 16),
-            Text('Connexion requise',
+            Text(AppLocalizations.of(context)!.gameConnectRequired,
                 style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppColors.textPrimary)),
             SizedBox(height: 8),
-            Text('Connectez-vous pour jouer aux Dames',
+            Text(AppLocalizations.of(context)!.gameConnectToPlay,
                 textAlign: TextAlign.center,
                 style: TextStyle(color: AppColors.textSecondary)),
           ],
@@ -138,7 +139,7 @@ class _CheckersScreenState extends State<CheckersScreen> {
                   builder: (_, wallet, __) => Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('Bonjour, ${wallet.username.isNotEmpty ? wallet.username : 'Joueur'}',
+                      Text(AppLocalizations.of(context)!.gameHello(wallet.username.isNotEmpty ? wallet.username : 'Player'),
                           style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                       SizedBox(height: 4),
                       Row(children: [
@@ -193,7 +194,7 @@ class _CheckersScreenState extends State<CheckersScreen> {
       context: context,
       builder: (_) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text('Code de la room', style: TextStyle(color: AppColors.textPrimary)),
+        title: Text(AppLocalizations.of(context)!.gameRoomCodeTitle, style: TextStyle(color: AppColors.textPrimary)),
         content: TextField(
           controller: ctrl,
           maxLength: 6,
@@ -210,7 +211,7 @@ class _CheckersScreenState extends State<CheckersScreen> {
           ),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: Text('Annuler')),
+          TextButton(onPressed: () => Navigator.pop(context), child: Text(AppLocalizations.of(context)!.commonCancel)),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonBlue),
             onPressed: () async {
@@ -222,10 +223,10 @@ class _CheckersScreenState extends State<CheckersScreen> {
                 Navigator.push(context, MaterialPageRoute(builder: (_) => CheckersLobbyScreen(room: room)));
               } else if (mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Room introuvable ou fonds insuffisants')));
+                    SnackBar(content: Text(AppLocalizations.of(context)!.gameRoomNotFound)));
               }
             },
-            child: Text('Rejoindre'),
+            child: Text(AppLocalizations.of(context)!.gameJoin),
           ),
         ],
       ),
@@ -236,7 +237,7 @@ class _CheckersScreenState extends State<CheckersScreen> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Text('Rooms publiques',
+        Text(AppLocalizations.of(context)!.gamePublicRooms,
             style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
         SizedBox(height: 12),
         if (_loading)
@@ -249,9 +250,9 @@ class _CheckersScreenState extends State<CheckersScreen> {
                 children: [
                   Icon(Icons.sports_esports_outlined, size: 48, color: AppColors.textMuted.withValues(alpha: 0.4)),
                   SizedBox(height: 12),
-                  Text('Aucune room disponible', style: TextStyle(color: AppColors.textSecondary)),
+                  Text(AppLocalizations.of(context)!.gameNoRoomsAvailable, style: TextStyle(color: AppColors.textSecondary)),
                   SizedBox(height: 4),
-                  Text('Créez une room pour commencer !', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                  Text(AppLocalizations.of(context)!.gameCreateRoomPrompt, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
                 ],
               ),
             ),
@@ -265,7 +266,7 @@ class _CheckersScreenState extends State<CheckersScreen> {
                     Navigator.push(context, MaterialPageRoute(builder: (_) => CheckersLobbyScreen(room: joined)));
                   } else if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(content: Text('Impossible de rejoindre (fonds insuffisants ?)')));
+                        SnackBar(content: Text(AppLocalizations.of(context)!.gameRoomJoinFailed)));
                   }
                 },
               )),

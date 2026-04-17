@@ -10,12 +10,19 @@ import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:image_picker/image_picker.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/chat_models.dart';
 import '../providers/messaging_provider.dart';
+import '../widgets/user_avatar.dart';
+import '../widgets/chat/date_separator.dart';
+import '../widgets/chat/message_bubble.dart';
+import '../widgets/chat/typing_dots.dart';
+import '../widgets/chat/chat_combo_badge.dart';
 
 class ChatDetailScreen extends StatefulWidget {
   final String conversationId;
   final String otherUsername;
+  final String? otherAvatarUrl;
   final bool isOnline;
   final DateTime? lastSeenAt;
 
@@ -23,6 +30,7 @@ class ChatDetailScreen extends StatefulWidget {
     super.key,
     required this.conversationId,
     required this.otherUsername,
+    this.otherAvatarUrl,
     this.isOnline = false,
     this.lastSeenAt,
   });
@@ -101,7 +109,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Impossible d\'ouvrir la galerie'), backgroundColor: Colors.red),
+          SnackBar(content: Text(AppLocalizations.of(context)!.chatCannotOpenGallery), backgroundColor: Colors.red),
         );
       }
     }
@@ -123,7 +131,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Impossible d\'ouvrir la caméra'), backgroundColor: Colors.red),
+          SnackBar(content: Text(AppLocalizations.of(context)!.chatCannotOpenCamera), backgroundColor: Colors.red),
         );
       }
     }
@@ -235,15 +243,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 Navigator.pop(ctx);
                 _showReactions(msg);
               }),
-              _optionTile(Icons.copy, 'Copier', () {
+              _optionTile(Icons.copy, AppLocalizations.of(context)!.commonCopy, () {
                 Navigator.pop(ctx);
                 Clipboard.setData(ClipboardData(text: msg.content));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Copié'), duration: Duration(seconds: 1)),
+                  SnackBar(content: Text(AppLocalizations.of(context)!.commonCopied), duration: Duration(seconds: 1)),
                 );
               }),
               if (isMe)
-                _optionTile(Icons.delete_outline, 'Supprimer', () {
+                _optionTile(Icons.delete_outline, AppLocalizations.of(context)!.commonDelete, () {
                   Navigator.pop(ctx);
                   _confirmDelete(msg);
                 }, color: AppColors.neonRed),
@@ -269,21 +277,21 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Supprimer ce message ?',
+        title: Text(AppLocalizations.of(context)!.chatDeleteMessageTitle,
             style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
-        content: Text('Cette action est irréversible.',
+        content: Text(AppLocalizations.of(context)!.chatDeleteMessageConfirm,
             style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
+            child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.textMuted)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               _provider.deleteMessage(msg.id);
             },
-            child: Text('Supprimer', style: TextStyle(color: AppColors.neonRed)),
+            child: Text(AppLocalizations.of(context)!.commonDelete, style: TextStyle(color: AppColors.neonRed)),
           ),
         ],
       ),
@@ -311,7 +319,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     children: [
                       SizedBox(
                         width: 20, height: 12,
-                        child: _TypingDots(),
+                        child: const TypingDots(),
                       ),
                       SizedBox(width: 8),
                       Text('${widget.otherUsername} écrit...',
@@ -337,7 +345,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         children: [
                           Icon(Icons.chat_bubble_outline, color: AppColors.textMuted.withValues(alpha: 0.3), size: 48),
                           SizedBox(height: 12),
-                          Text('Envoyez le premier message !',
+                          Text(AppLocalizations.of(context)!.chatSendFirstMessage,
                               style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.5), fontSize: 14)),
                         ],
                       ),
@@ -357,7 +365,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       // Séparateur de date
                       Widget? dateSeparator;
                       if (index == 0 || !_sameDay(messages[index - 1].createdAt, msg.createdAt)) {
-                        dateSeparator = _DateSeparator(date: msg.createdAt);
+                        dateSeparator = DateSeparator(date: msg.createdAt);
                       }
 
                       return Column(
@@ -368,7 +376,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                             onDoubleTap: () {
                               if (!msg.isDeleted) _showReactions(msg);
                             },
-                            child: _MessageBubble(
+                            child: MessageBubble(
                               message: msg,
                               isMe: isMe,
                               allMessages: messages,
@@ -401,7 +409,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text('Réponse',
+                            Text(AppLocalizations.of(context)!.chatReply,
                                 style: TextStyle(color: AppColors.neonGreen, fontSize: 11, fontWeight: FontWeight.w700)),
                             Text(reply.content,
                                 maxLines: 1, overflow: TextOverflow.ellipsis,
@@ -432,47 +440,46 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       backgroundColor: AppColors.bgBlueNight,
       title: Row(
         children: [
-          Stack(
-            children: [
-              Container(
-                width: 36, height: 36,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  gradient: LinearGradient(colors: [
-                    AppColors.neonBlue.withValues(alpha: 0.3),
-                    AppColors.neonPurple.withValues(alpha: 0.3),
-                  ]),
-                ),
-                child: Center(
-                  child: Text(
-                    widget.otherUsername.isNotEmpty ? widget.otherUsername[0].toUpperCase() : '?',
-                    style: TextStyle(color: AppColors.textPrimary, fontSize: 15, fontWeight: FontWeight.w700),
-                  ),
-                ),
-              ),
-              if (widget.isOnline)
-                Positioned(
-                  right: 0, bottom: 0,
-                  child: Container(
-                    width: 10, height: 10,
-                    decoration: BoxDecoration(
-                      color: AppColors.neonGreen,
-                      shape: BoxShape.circle,
-                      border: Border.all(color: AppColors.bgBlueNight, width: 2),
-                    ),
-                  ),
-                ),
-            ],
+          UserAvatar(
+            avatarUrl: widget.otherAvatarUrl,
+            username: widget.otherUsername,
+            size: 36,
+            isOnline: widget.isOnline,
           ),
           SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(widget.otherUsername,
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
+                Row(
+                  children: [
+                    Flexible(
+                      child: Text(widget.otherUsername,
+                          style: TextStyle(
+                              fontSize: 16, fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis),
+                    ),
+                    // Badge combo (rebuild seulement quand le combo change)
+                    Selector<MessagingProvider, int>(
+                      selector: (_, p) {
+                        final conv = p.conversations.cast<Conversation?>().firstWhere(
+                              (c) => c?.id == widget.conversationId,
+                              orElse: () => null,
+                            );
+                        return conv?.comboCount ?? 0;
+                      },
+                      builder: (_, combo, __) {
+                        if (combo <= 0) return const SizedBox.shrink();
+                        return Padding(
+                          padding: const EdgeInsets.only(left: 8),
+                          child: ChatComboBadge(combo: combo),
+                        );
+                      },
+                    ),
+                  ],
+                ),
                 if (widget.isOnline)
-                  Text('En ligne', style: TextStyle(fontSize: 11, color: AppColors.neonGreen))
+                  Text(AppLocalizations.of(context)!.chatOnline, style: TextStyle(fontSize: 11, color: AppColors.neonGreen))
                 else if (widget.lastSeenAt != null)
                   Text(_formatLastSeen(widget.lastSeenAt),
                       style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
@@ -588,287 +595,6 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             ),
           ],
         ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// Séparateur de date
-// ============================================================
-class _DateSeparator extends StatelessWidget {
-  final DateTime date;
-  const _DateSeparator({required this.date});
-
-  String _format() {
-    final now = DateTime.now();
-    if (date.year == now.year && date.month == now.month && date.day == now.day) {
-      return "Aujourd'hui";
-    }
-    final yesterday = now.subtract(Duration(days: 1));
-    if (date.year == yesterday.year && date.month == yesterday.month && date.day == yesterday.day) {
-      return 'Hier';
-    }
-    return '${date.day.toString().padLeft(2, '0')}/${date.month.toString().padLeft(2, '0')}/${date.year}';
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.symmetric(vertical: 12),
-      child: Center(
-        child: Container(
-          padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-          decoration: BoxDecoration(
-            color: AppColors.bgElevated.withValues(alpha: 0.8),
-            borderRadius: BorderRadius.circular(10),
-          ),
-          child: Text(_format(),
-              style: TextStyle(color: AppColors.textMuted, fontSize: 11, fontWeight: FontWeight.w600)),
-        ),
-      ),
-    );
-  }
-}
-
-// ============================================================
-// Bulle de message WhatsApp-like
-// ============================================================
-class _MessageBubble extends StatelessWidget {
-  final PrivateMessage message;
-  final bool isMe;
-  final List<PrivateMessage> allMessages;
-
-  const _MessageBubble({
-    required this.message,
-    required this.isMe,
-    required this.allMessages,
-  });
-
-  String _formatTime(DateTime dt) =>
-      '${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
-
-  @override
-  Widget build(BuildContext context) {
-    return Padding(
-      padding: EdgeInsets.only(bottom: message.reactions.isEmpty ? 4 : 14),
-      child: Row(
-        mainAxisAlignment: isMe ? MainAxisAlignment.end : MainAxisAlignment.start,
-        crossAxisAlignment: CrossAxisAlignment.end,
-        children: [
-          if (isMe) SizedBox(width: 50),
-          Flexible(
-            child: Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                  decoration: BoxDecoration(
-                    color: isMe
-                        ? AppColors.neonGreen.withValues(alpha: 0.15)
-                        : AppColors.bgElevated,
-                    borderRadius: BorderRadius.only(
-                      topLeft: Radius.circular(16),
-                      topRight: Radius.circular(16),
-                      bottomLeft: Radius.circular(isMe ? 16 : 4),
-                      bottomRight: Radius.circular(isMe ? 4 : 16),
-                    ),
-                    border: Border.all(
-                      color: isMe
-                          ? AppColors.neonGreen.withValues(alpha: 0.2)
-                          : AppColors.divider.withValues(alpha: 0.3),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      // Reply preview
-                      if (message.replyToId != null) _buildReplyPreview(),
-
-                      // Content
-                      if (message.isDeleted)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.block, size: 14, color: AppColors.textMuted),
-                            SizedBox(width: 4),
-                            Text('Message supprimé',
-                                style: TextStyle(color: AppColors.textMuted, fontSize: 13, fontStyle: FontStyle.italic)),
-                          ],
-                        )
-                      else if (message.messageType == MessageType.image && message.mediaUrl != null)
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(10),
-                          child: Image.network(
-                            message.mediaUrl!,
-                            width: 220,
-                            fit: BoxFit.cover,
-                            loadingBuilder: (_, child, progress) {
-                              if (progress == null) return child;
-                              return SizedBox(
-                                width: 220, height: 150,
-                                child: Center(child: CircularProgressIndicator(
-                                  strokeWidth: 2, color: AppColors.neonGreen)),
-                              );
-                            },
-                            errorBuilder: (_, __, ___) => Container(
-                              width: 220, height: 100,
-                              color: AppColors.bgCard,
-                              child: Icon(Icons.broken_image, color: AppColors.textMuted),
-                            ),
-                          ),
-                        )
-                      else if (message.messageType == MessageType.voice)
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.mic, size: 18, color: AppColors.neonGreen),
-                            SizedBox(width: 6),
-                            Text('${message.mediaDuration ?? 0}s',
-                                style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
-                            SizedBox(width: 8),
-                            Container(
-                              width: 120, height: 3,
-                              decoration: BoxDecoration(
-                                color: AppColors.neonGreen.withValues(alpha: 0.4),
-                                borderRadius: BorderRadius.circular(2)),
-                            ),
-                          ],
-                        )
-                      else
-                        Text(message.content,
-                            style: TextStyle(color: AppColors.textPrimary, fontSize: 14)),
-
-                      SizedBox(height: 3),
-
-                      // Time + status
-                      Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          if (message.isEdited) ...[
-                            Text('modifié ', style: TextStyle(color: AppColors.textMuted, fontSize: 9, fontStyle: FontStyle.italic)),
-                          ],
-                          Text(_formatTime(message.createdAt),
-                              style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
-                          if (isMe && !message.isDeleted) ...[
-                            SizedBox(width: 3),
-                            Icon(
-                              message.isRead ? Icons.done_all : Icons.done,
-                              size: 13,
-                              color: message.isRead ? AppColors.neonGreen : AppColors.textMuted,
-                            ),
-                          ],
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // Reactions overlay
-                if (message.reactions.isNotEmpty)
-                  Positioned(
-                    bottom: -10,
-                    right: isMe ? null : 8,
-                    left: isMe ? 8 : null,
-                    child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: AppColors.bgCard,
-                        borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppColors.divider, width: 0.5),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: _buildReactionChips(),
-                      ),
-                    ),
-                  ),
-              ],
-            ),
-          ),
-          if (!isMe) SizedBox(width: 50),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildReplyPreview() {
-    // Chercher le message original dans la liste
-    final original = allMessages.where((m) => m.id == message.replyToId).firstOrNull;
-    final previewText = original?.content ?? '...';
-
-    return Container(
-      margin: EdgeInsets.only(bottom: 6),
-      padding: EdgeInsets.fromLTRB(8, 4, 8, 4),
-      decoration: BoxDecoration(
-        color: AppColors.bgDark.withValues(alpha: 0.3),
-        borderRadius: BorderRadius.circular(8),
-        border: Border(left: BorderSide(color: AppColors.neonGreen, width: 3)),
-      ),
-      child: Text(
-        previewText,
-        maxLines: 1,
-        overflow: TextOverflow.ellipsis,
-        style: TextStyle(color: AppColors.textMuted, fontSize: 12),
-      ),
-    );
-  }
-
-  List<Widget> _buildReactionChips() {
-    final grouped = <String, int>{};
-    for (final r in message.reactions) {
-      grouped[r.emoji] = (grouped[r.emoji] ?? 0) + 1;
-    }
-    return grouped.entries.map((e) => Padding(
-      padding: EdgeInsets.symmetric(horizontal: 2),
-      child: Text('${e.key}${e.value > 1 ? e.value : ''}',
-          style: TextStyle(fontSize: 12)),
-    )).toList();
-  }
-}
-
-// ============================================================
-// Animation "en train d'écrire" (3 points)
-// ============================================================
-class _TypingDots extends StatefulWidget {
-  @override
-  State<_TypingDots> createState() => _TypingDotsState();
-}
-
-class _TypingDotsState extends State<_TypingDots> with SingleTickerProviderStateMixin {
-  late AnimationController _ctrl;
-
-  @override
-  void initState() {
-    super.initState();
-    _ctrl = AnimationController(vsync: this, duration: Duration(milliseconds: 1200))..repeat();
-  }
-
-  @override
-  void dispose() {
-    _ctrl.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _ctrl,
-      builder: (_, __) => Row(
-        mainAxisSize: MainAxisSize.min,
-        children: List.generate(3, (i) {
-          final offset = (_ctrl.value * 3 - i).clamp(0.0, 1.0);
-          final opacity = (1 - (offset - 0.5).abs() * 2).clamp(0.3, 1.0);
-          return Container(
-            width: 5, height: 5,
-            margin: EdgeInsets.only(right: i < 2 ? 3 : 0),
-            decoration: BoxDecoration(
-              color: AppColors.neonGreen.withValues(alpha: opacity),
-              shape: BoxShape.circle,
-            ),
-          );
-        }),
       ),
     );
   }

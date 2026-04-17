@@ -21,14 +21,23 @@ import 'screens/games_screen.dart';
 import 'providers/messaging_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/theme_provider.dart';
+import 'providers/locale_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/player_provider.dart';
 import 'widgets/drawer_menu.dart';
 import 'ludo/providers/ludo_provider.dart';
 import 'ludo/services/audio_service.dart';
 import 'services/notification_service.dart';
+import 'services/push_service.dart';
+import 'services/shorebird_service.dart';
+import 'l10n/generated/app_localizations.dart';
+import 'utils/logger.dart';
+import 'package:sentry_flutter/sentry_flutter.dart';
 import 'fantasy/providers/fpl_provider.dart';
 import 'fantasy/screens/fantasy_home_screen.dart';
+
+const _kSentryDsn =
+    'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
 
 /// Contourne le problème de certificats SSL sur Android 7.0+
 /// Les anciens appareils n'ont pas les certificats racine récents
@@ -43,6 +52,39 @@ class PlugbetHttpOverrides extends HttpOverrides {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Neutraliser tous les debugPrint en release
+  // (evite le spam de logs en prod + micro gain CPU)
+  if (kReleaseMode) {
+    debugPrint = (String? message, {int? wrapWidth}) {};
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // SENTRY — Monitoring des erreurs en production
+  // Ne capture qu'en release (pas en dev) pour ne pas polluer.
+  // ═══════════════════════════════════════════════════════════
+  if (kReleaseMode) {
+    await SentryFlutter.init((options) {
+      options.dsn = _kSentryDsn;
+      options.environment = 'production';
+      options.tracesSampleRate = 0.1; // 10% des traces de perf
+      options.sendDefaultPii = false; // pas de donnees personnelles
+    });
+
+    // Bridge Logger.error → Sentry
+    configureErrorReporter((tag, msg, error, stack) {
+      Sentry.captureException(
+        error ?? Exception(msg?.toString() ?? 'unknown'),
+        stackTrace: stack,
+        withScope: (scope) {
+          scope.setTag('logger_tag', tag);
+          if (msg != null) {
+            scope.setContexts('logger', {'message': msg.toString()});
+          }
+        },
+      );
+    });
+  }
 
   // Fix SSL pour Android 7.0 (certificats obsolètes)
   if (!kIsWeb) {
@@ -76,12 +118,14 @@ void main() async {
   // Connexion anonyme (non bloquante)
   supabaseService.signInAnonymously();
 
-  // --- Audio Ludo ---
-  AudioService.instance.init();
-
-  // --- Notifications locales ---
-  NotificationService.instance.init();
-  NotificationService.instance.requestPermission();
+  // Audio + Notifications + Push: DIFFERES apres le 1er frame
+  WidgetsBinding.instance.addPostFrameCallback((_) async {
+    AudioService.instance.init();
+    NotificationService.instance.init();
+    NotificationService.instance.requestPermission();
+    PushService.instance.init();
+    ShorebirdService.instance.checkForUpdate();
+  });
 
   // --- 3. Services API Football ---
   const defaultApiKey = 'd15a7ed3db45d031275651a2fc70f7456b42f02f88f740f2086fcf9b716eeab7';
@@ -125,13 +169,17 @@ class PlugbetApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
+        // ── ESSENTIELS (crees au demarrage) ──
         ChangeNotifierProvider(
+          lazy: false,
           create: (_) => ThemeProvider(hiveService),
         ),
         ChangeNotifierProvider(
-          create: (_) => NotificationProvider(),
+          lazy: false,
+          create: (_) => LocaleProvider(hiveService),
         ),
         ChangeNotifierProvider(
+          lazy: false,
           create: (_) => MatchesProvider(
             apiSportsService: apiSportsService,
             apiService: apiService,
@@ -140,44 +188,60 @@ class PlugbetApp extends StatelessWidget {
           ),
         ),
         ChangeNotifierProvider(
+          lazy: false,
+          create: (_) => WalletProvider(),
+        ),
+        ChangeNotifierProvider.value(
+          value: liveScoreManager,
+        ),
+
+        // ── LAZY (crees seulement quand un ecran les demande) ──
+        ChangeNotifierProvider(
+          lazy: true,
+          create: (_) => NotificationProvider(),
+        ),
+        ChangeNotifierProvider(
+          lazy: true,
           create: (_) => FavoritesProvider(
             hiveService: hiveService,
             supabaseService: supabaseService,
           )..loadFavorites(),
         ),
         ChangeNotifierProvider(
+          lazy: true,
           create: (_) => LudoProvider(),
         ),
         ChangeNotifierProvider(
+          lazy: true,
           create: (_) => MessagingProvider(),
         ),
         ChangeNotifierProvider(
-          create: (_) => WalletProvider(),
-        ),
-        ChangeNotifierProvider(
+          lazy: true,
           create: (_) => PlayerProvider(),
         ),
         ChangeNotifierProvider(
+          lazy: true,
           create: (_) => FplProvider(),
         ),
-        ChangeNotifierProvider.value(
-          value: liveScoreManager,
-        ),
       ],
-      child: Consumer<ThemeProvider>(
-        builder: (_, themeProv, child) {
+      child: Consumer2<ThemeProvider, LocaleProvider>(
+        builder: (_, themeProv, localeProv, child) {
           // Mettre à jour _isDark AVANT le build pour que les getters soient corrects
           AppColors.updateBrightness(
             themeProv.isDark ? Brightness.dark : Brightness.light,
           );
           return MaterialApp(
-            // Key forcée : reconstruit tout l'arbre quand le thème change
-            key: ValueKey(themeProv.isDark),
+            // Key forcée : reconstruit tout l'arbre quand le thème ou la langue change
+            key: ValueKey('${themeProv.isDark}_${localeProv.currentCode}'),
             title: 'Plugbet',
             debugShowCheckedModeBanner: false,
             theme: AppTheme.lightTheme,
             darkTheme: AppTheme.darkTheme,
             themeMode: themeProv.mode,
+            // i18n : FR + EN (suit la langue choisie dans les reglages)
+            localizationsDelegates: AppLocalizations.localizationsDelegates,
+            supportedLocales: AppLocalizations.supportedLocales,
+            locale: localeProv.locale, // null = suit le device
             builder: (ctx, widget) {
               return MediaQuery(
                 data: MediaQuery.of(ctx).copyWith(
@@ -223,25 +287,27 @@ class _AppEntryState extends State<_AppEntry> {
     if (_showSplash) {
       return SplashScreen(
         onInit: () async {
-          // Les matchs se chargent déjà depuis le constructeur du provider.
-          // On attend que le cache soit affiché (quasi instantané) puis on continue.
-          // PAS de spin-loop : ça bloque le thread UI sur Huawei.
+          // Attend que les matchs soient reellement charges (pas juste le cache)
+          // Timeout max 8s pour ne jamais bloquer l'utilisateur
           final provider = context.read<MatchesProvider>();
-          // Si le cache est déjà chargé, on peut partir tout de suite
-          if (provider.allMatches.isNotEmpty) return;
-          // Sinon attendre max 2s avec des pauses longues (pas de spin-loop)
-          for (int i = 0; i < 4; i++) {
-            await Future.delayed(const Duration(milliseconds: 500));
-            if (provider.state != LoadingState.idle &&
-                provider.state != LoadingState.loading) {
-              break;
-            }
+          final sw = Stopwatch()..start();
+          while (sw.elapsedMilliseconds < 8000) {
+            // Conditions de sortie :
+            // - loaded et on a des matchs (cache+API OK)
+            // - offline (on a ce qu'on peut avoir)
+            // - error (on affiche l'erreur)
+            final s = provider.state;
+            final hasData = provider.allMatches.isNotEmpty;
+            if (s == LoadingState.loaded && hasData) break;
+            if (s == LoadingState.offline) break;
+            if (s == LoadingState.error) break;
+            await Future.delayed(const Duration(milliseconds: 250));
           }
         },
         onReady: () {
           if (mounted) {
             setState(() => _showSplash = false);
-            // Démarrer le tracking des scores en direct après le splash
+            // Demarrer le tracking des scores en direct apres le splash
             widget.liveScoreManager.startLiveTracking();
           }
         },
@@ -298,6 +364,11 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       _matchesProvider.addListener(_detectGoals);
       // Lier le wallet (coins) au module Fantasy
       context.read<FplProvider>().attachWallet(context.read<WalletProvider>());
+      // Si un patch Shorebird a ete telecharge, demander la permission
+      // de redemarrer (apres un petit delai pour ne pas spammer au boot).
+      Future.delayed(const Duration(seconds: 3), () {
+        if (mounted) ShorebirdService.instance.showRestartDialogIfReady(context);
+      });
     });
   }
 
@@ -390,6 +461,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
     return Scaffold(
       key: _scaffoldKey,
       drawer: AppDrawer(
@@ -417,10 +489,10 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
           currentIndex: _currentIndex,
           onTap: (index) => setState(() => _currentIndex = index),
           items: [
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.sports_soccer_outlined),
-              activeIcon: Icon(Icons.sports_soccer),
-              label: 'Matchs',
+            BottomNavigationBarItem(
+              icon: const Icon(Icons.sports_soccer_outlined),
+              activeIcon: const Icon(Icons.sports_soccer),
+              label: t.tabMatches,
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.emoji_events_outlined),
@@ -430,7 +502,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 ).createShader(bounds),
                 child: Icon(Icons.emoji_events, color: Colors.white),
               ),
-              label: 'Fantasy',
+              label: t.tabFantasy,
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.sports_esports_outlined),
@@ -440,7 +512,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 ).createShader(bounds),
                 child: Icon(Icons.sports_esports, color: Colors.white),
               ),
-              label: 'Jeux',
+              label: t.tabGames,
             ),
             BottomNavigationBarItem(
               icon: Consumer<MessagingProvider>(
@@ -470,7 +542,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                   );
                 },
               ),
-              label: 'Chat',
+              label: t.tabChat,
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.person_outline),
@@ -480,12 +552,12 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
                 ).createShader(bounds),
                 child: Icon(Icons.person, color: Colors.white),
               ),
-              label: 'Profil',
+              label: t.tabProfile,
             ),
-            const BottomNavigationBarItem(
-              icon: Icon(Icons.settings_outlined),
-              activeIcon: Icon(Icons.settings),
-              label: 'Réglages',
+            BottomNavigationBarItem(
+              icon: const Icon(Icons.settings_outlined),
+              activeIcon: const Icon(Icons.settings),
+              label: t.tabSettings,
             ),
           ],
         ),

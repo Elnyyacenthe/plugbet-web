@@ -2,9 +2,11 @@
 // Plugbet – Service de notifications locales (v20+)
 // ============================================================
 
-import 'package:flutter/foundation.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:permission_handler/permission_handler.dart';
+import '../utils/logger.dart';
+
+const _log = Logger('NOTIF');
 
 class NotificationService {
   NotificationService._();
@@ -31,19 +33,19 @@ class NotificationService {
         ),
       );
       _initialized = true;
-      debugPrint('[NOTIF] Service initialisé');
+      _log.info('Service initialisé');
     } catch (e) {
-      debugPrint('[NOTIF] Init échoué (rebuild nécessaire): $e');
+      _log.info('Init échoué (rebuild nécessaire): $e');
     }
   }
 
   Future<bool> requestPermission() async {
     try {
       final status = await Permission.notification.request();
-      debugPrint('[NOTIF] Permission: $status');
+      _log.info('Permission: $status');
       return status.isGranted;
     } catch (e) {
-      debugPrint('[NOTIF] Permission request échoué: $e');
+      _log.info('Permission request échoué: $e');
       return false;
     }
   }
@@ -107,6 +109,41 @@ class NotificationService {
       title: 'Nouvelle demande d\'ami',
       body: '$fromUsername veut être votre ami',
       notificationDetails: const NotificationDetails(android: androidDetails),
+    );
+  }
+
+  /// Notification generique (utilise par PushService pour les messages FCM en foreground)
+  Future<void> showPushNotification({
+    required String title,
+    required String body,
+    String? payload,
+  }) async {
+    if (!_initialized) await init();
+
+    const androidDetails = AndroidNotificationDetails(
+      'push_messages',
+      'Notifications push',
+      channelDescription: 'Notifications recues via Firebase',
+      importance: Importance.high,
+      priority: Priority.high,
+      icon: '@mipmap/ic_launcher',
+    );
+
+    const iosDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
+    await _plugin.show(
+      id: DateTime.now().millisecondsSinceEpoch ~/ 1000,
+      title: title,
+      body: body,
+      notificationDetails: const NotificationDetails(
+        android: androidDetails,
+        iOS: iosDetails,
+      ),
+      payload: payload,
     );
   }
 

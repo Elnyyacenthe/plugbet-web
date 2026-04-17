@@ -7,15 +7,15 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:cached_network_image/cached_network_image.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../providers/matches_provider.dart';
 import '../providers/notification_provider.dart';
 import '../models/football_models.dart';
 import '../widgets/carousel_card.dart';
 import '../widgets/loading_shimmer.dart';
-import '../widgets/score_display.dart';
-import '../widgets/team_crest.dart';
+import '../widgets/home/league_row.dart';
+import '../widgets/home/finished_section.dart';
 import 'match_detail_screen.dart';
 
 // ============================================================
@@ -346,19 +346,34 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: _buildTopCarousel(_cachedTopMatches),
                       ),
 
-                    // Sections par ligue (scroll horizontal chacune)
-                    ...leaguesToShow.map((entry) => SliverToBoxAdapter(
-                      child: _LeagueRow(
-                        competition: entry.key,
-                        matches: entry.value,
-                        onMatchTap: _navigateToDetail,
+                    // Sections par ligue (lazy — seules les visibles sont construites)
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                          final entry = leaguesToShow[index];
+                          return LeagueRow(
+                            key: ValueKey(entry.key.id),
+                            competition: entry.key,
+                            matches: entry.value,
+                            onMatchTap: _navigateToDetail,
+                          );
+                        },
+                        childCount: leaguesToShow.length,
+                        // Ameliore la detection de reordering/changement
+                        findChildIndexCallback: (key) {
+                          if (key is ValueKey<int>) {
+                            return leaguesToShow
+                                .indexWhere((e) => e.key.id == key.value);
+                          }
+                          return null;
+                        },
                       ),
-                    )),
+                    ),
 
                     // Section termines repliable
                     if (finishedToShow.isNotEmpty)
                       SliverToBoxAdapter(
-                        child: _FinishedSection(
+                        child: FinishedSection(
                           groups: finishedToShow,
                           onMatchTap: _navigateToDetail,
                         ),
@@ -412,7 +427,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     ),
                   ),
                   Text(
-                    'LIVE',
+                    AppLocalizations.of(context)!.homeTabLive,
                     style: TextStyle(
                       fontSize: 10,
                       fontWeight: FontWeight.w600,
@@ -529,12 +544,13 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Widget _buildDayTabs(MatchesProvider provider) {
+    final t = AppLocalizations.of(context)!;
     final liveCount = provider.allMatches.where((m) => m.status.isLive).length;
     final tabs = <(_DayFilter, String, int?)>[
-      (_DayFilter.live, 'LIVE', liveCount > 0 ? liveCount : null),
-      (_DayFilter.yesterday, 'HIER', null),
-      (_DayFilter.today, 'AUJOURD\'HUI', null),
-      (_DayFilter.tomorrow, 'DEMAIN', null),
+      (_DayFilter.live, t.homeTabLive, liveCount > 0 ? liveCount : null),
+      (_DayFilter.yesterday, t.homeTabYesterday, null),
+      (_DayFilter.today, t.homeTabToday, null),
+      (_DayFilter.tomorrow, t.homeTabTomorrow, null),
     ];
 
     return SizedBox(
@@ -670,7 +686,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: AppColors.textMuted.withValues(alpha: 0.4)),
             SizedBox(height: 16),
             Text(
-              'Aucun match prevu aujourd\'hui',
+              AppLocalizations.of(context)!.matchNoMatches,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600,
                   color: AppColors.textPrimary),
@@ -685,7 +701,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ElevatedButton.icon(
               onPressed: provider.refreshMatches,
               icon: Icon(Icons.refresh),
-              label: Text('Actualiser'),
+              label: Text(AppLocalizations.of(context)!.commonRefresh),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonGreen,
                 foregroundColor: AppColors.bgDark,
@@ -710,7 +726,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 color: AppColors.textMuted.withValues(alpha: 0.5)),
             SizedBox(height: 16),
             Text(
-              provider.errorMessage ?? 'Erreur de chargement',
+              provider.errorMessage ?? AppLocalizations.of(context)!.commonError,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 16, color: AppColors.textSecondary),
             ),
@@ -718,7 +734,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ElevatedButton.icon(
               onPressed: provider.refreshMatches,
               icon: Icon(Icons.refresh),
-              label: Text('Reessayer'),
+              label: Text(AppLocalizations.of(context)!.commonRetry),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonGreen,
                 foregroundColor: AppColors.bgDark,
@@ -874,366 +890,6 @@ class _NotificationPanel extends StatelessWidget {
           ),
         );
       },
-    );
-  }
-}
-
-// ============================================================
-// Ligne horizontale d'une ligue (header + scroll de matchs)
-// ============================================================
-class _LeagueRow extends StatelessWidget {
-  final Competition competition;
-  final List<FootballMatch> matches;
-  final void Function(int matchId) onMatchTap;
-
-  const _LeagueRow({
-    required this.competition,
-    required this.matches,
-    required this.onMatchTap,
-  });
-
-  bool get _hasLive => matches.any((m) => m.status.isLive);
-
-  @override
-  Widget build(BuildContext context) {
-    final logoUrl = competition.emblemUrl;
-    final hasLogo = logoUrl != null && logoUrl.isNotEmpty;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        // Header de la ligue
-        Padding(
-          padding: EdgeInsets.fromLTRB(16, 16, 16, 6),
-          child: Row(
-            children: [
-              // Logo
-              if (hasLogo)
-                ClipRRect(
-                  borderRadius: BorderRadius.circular(6),
-                  child: CachedNetworkImage(
-                    imageUrl: logoUrl,
-                    width: 22,
-                    height: 22,
-                    fit: BoxFit.contain,
-                    errorWidget: (_, __, ___) => _defaultLeagueIcon(),
-                  ),
-                )
-              else
-                _defaultLeagueIcon(),
-              SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      competition.name,
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w700,
-                        color: AppColors.textPrimary,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    if (competition.areaName != null)
-                      Text(
-                        competition.areaName!,
-                        style: TextStyle(
-                          fontSize: 11,
-                          color: AppColors.textMuted,
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-              // Badge live
-              if (_hasLive)
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: AppColors.neonRed.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(6),
-                    border: Border.all(
-                      color: AppColors.neonRed.withValues(alpha: 0.4),
-                      width: 0.5,
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Container(
-                        width: 6, height: 6,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.neonRed,
-                        ),
-                      ),
-                      SizedBox(width: 4),
-                      Text(
-                        'LIVE',
-                        style: TextStyle(
-                          fontSize: 10,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.neonRed,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              SizedBox(width: 6),
-              // Nombre de matchs
-              Container(
-                padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                decoration: BoxDecoration(
-                  color: AppColors.neonBlue.withValues(alpha: 0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: Text(
-                  '${matches.length}',
-                  style: TextStyle(
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.neonBlue,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-
-        // Scroll horizontal des matchs
-        SizedBox(
-          height: 112,
-          child: ListView.builder(
-            scrollDirection: Axis.horizontal,
-            padding: EdgeInsets.symmetric(horizontal: 12),
-            itemCount: matches.length,
-            itemBuilder: (context, index) {
-              return _MiniMatchCard(
-                match: matches[index],
-                onTap: () => onMatchTap(matches[index].id),
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _defaultLeagueIcon() {
-    return Container(
-      width: 22, height: 22,
-      decoration: BoxDecoration(
-        color: AppColors.neonBlue.withValues(alpha: 0.15),
-        borderRadius: BorderRadius.circular(6),
-      ),
-      child: Icon(Icons.emoji_events, size: 13, color: AppColors.neonBlue),
-    );
-  }
-}
-
-// ============================================================
-// Mini card de match pour le scroll horizontal par ligue
-// Compact : equipes + score/heure + statut
-// ============================================================
-class _MiniMatchCard extends StatelessWidget {
-  final FootballMatch match;
-  final VoidCallback onTap;
-
-  const _MiniMatchCard({
-    required this.match,
-    required this.onTap,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final isLive = match.status.isLive;
-    final isUpcoming = match.status.isUpcoming;
-    final screenWidth = MediaQuery.of(context).size.width;
-    final cardWidth = (screenWidth * 0.38).clamp(125.0, 180.0);
-
-    return GestureDetector(
-      onTap: onTap,
-      child: Container(
-        width: cardWidth,
-        margin: EdgeInsets.only(right: 10, top: 4, bottom: 8),
-        padding: EdgeInsets.symmetric(horizontal: screenWidth < 360 ? 8 : 10, vertical: 8),
-        decoration: BoxDecoration(
-          gradient: isLive ? AppColors.liveGradient : AppColors.cardGradient,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isLive
-                ? AppColors.neonRed.withValues(alpha: 0.4)
-                : AppColors.divider.withValues(alpha: 0.6),
-            width: isLive ? 0.8 : 0.5,
-          ),
-          boxShadow: [
-            BoxShadow(
-              color: isLive
-                  ? AppColors.neonRed.withValues(alpha: 0.1)
-                  : Colors.black.withValues(alpha: 0.15),
-              blurRadius: 8,
-              offset: const Offset(0, 3),
-            ),
-          ],
-        ),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Score ou heure central
-            if (isUpcoming)
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  '${match.dateTime.hour.toString().padLeft(2, '0')}:${match.dateTime.minute.toString().padLeft(2, '0')}',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              )
-            else
-              FittedBox(
-                fit: BoxFit.scaleDown,
-                child: MatchStatusBadge(match: match, showMinute: true),
-              ),
-            SizedBox(height: 6),
-
-            // Equipe domicile
-            _teamRow(match.homeTeam, match.score.homeFullTime, isUpcoming, screenWidth < 360),
-            SizedBox(height: 4),
-
-            // Equipe exterieure
-            _teamRow(match.awayTeam, match.score.awayFullTime, isUpcoming, screenWidth < 360),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _teamRow(Team team, int? score, bool isUpcoming, bool isSmall) {
-    return Row(
-      children: [
-        TeamCrest(team: team, size: isSmall ? 16 : 18),
-        SizedBox(width: isSmall ? 4 : 6),
-        Expanded(
-          child: Text(
-            team.tla ?? team.shortName,
-            style: TextStyle(
-              fontSize: isSmall ? 11 : 12,
-              fontWeight: FontWeight.w600,
-              color: AppColors.textPrimary,
-            ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
-        ),
-        if (!isUpcoming)
-          Text(
-            '${score ?? 0}',
-            style: TextStyle(
-              fontSize: isSmall ? 14 : 16,
-              fontWeight: FontWeight.w800,
-              color: AppColors.textPrimary,
-            ),
-          ),
-      ],
-    );
-  }
-}
-
-// ============================================================
-// Section repliable pour les matchs termines
-// ============================================================
-class _FinishedSection extends StatefulWidget {
-  final List<MapEntry<Competition, List<FootballMatch>>> groups;
-  final void Function(int matchId) onMatchTap;
-
-  const _FinishedSection({
-    required this.groups,
-    required this.onMatchTap,
-  });
-
-  @override
-  State<_FinishedSection> createState() => _FinishedSectionState();
-}
-
-class _FinishedSectionState extends State<_FinishedSection> {
-  bool _isExpanded = false;
-
-  int get _totalCount =>
-      widget.groups.fold(0, (sum, g) => sum + g.value.length);
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        GestureDetector(
-          onTap: () => setState(() => _isExpanded = !_isExpanded),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(20, 20, 20, 8),
-            child: Row(
-              children: [
-                Icon(Icons.check_circle_outline, size: 14,
-                    color: AppColors.textMuted),
-                SizedBox(width: 8),
-                Text(
-                  'TERMINES',
-                  style: TextStyle(
-                    fontSize: 13,
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.textMuted,
-                    letterSpacing: 1.2,
-                  ),
-                ),
-                SizedBox(width: 8),
-                Container(
-                  padding: EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                  decoration: BoxDecoration(
-                    color: AppColors.textMuted.withValues(alpha: 0.15),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Text(
-                    '$_totalCount',
-                    style: TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: AppColors.textMuted,
-                    ),
-                  ),
-                ),
-                const Spacer(),
-                AnimatedRotation(
-                  turns: _isExpanded ? 0.5 : 0.0,
-                  duration: const Duration(milliseconds: 200),
-                  child: Icon(Icons.keyboard_arrow_down, size: 20,
-                      color: AppColors.textMuted),
-                ),
-              ],
-            ),
-          ),
-        ),
-        AnimatedCrossFade(
-          firstChild: Column(
-            children: widget.groups.map((entry) {
-              return _LeagueRow(
-                competition: entry.key,
-                matches: entry.value,
-                onMatchTap: widget.onMatchTap,
-              );
-            }).toList(),
-          ),
-          secondChild: const SizedBox.shrink(),
-          crossFadeState: _isExpanded
-              ? CrossFadeState.showFirst
-              : CrossFadeState.showSecond,
-          duration: const Duration(milliseconds: 250),
-        ),
-      ],
     );
   }
 }

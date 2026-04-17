@@ -3,6 +3,7 @@
 // ============================================================
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../services/checkers_service.dart';
 import 'lobby_screen.dart';
 
@@ -62,7 +63,7 @@ class _CreateCheckersRoomScreenState extends State<CreateCheckersRoomScreen> {
                       onPressed: () => Navigator.pop(context),
                     ),
                     Expanded(
-                      child: Text('Créer une partie',
+                      child: Text(AppLocalizations.of(context)!.gameCreateRoom,
                           textAlign: TextAlign.center,
                           style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700, color: AppColors.textPrimary)),
                     ),

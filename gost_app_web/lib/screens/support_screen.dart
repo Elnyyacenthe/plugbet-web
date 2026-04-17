@@ -3,7 +3,8 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import '../services/support_service.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
 import 'support_ticket_screen.dart';
 
@@ -25,7 +26,7 @@ class SupportScreen extends StatefulWidget {
 }
 
 class _SupportScreenState extends State<SupportScreen> {
-  final _client = Supabase.instance.client;
+  final _service = SupportService();
   List<Map<String, dynamic>> _tickets = [];
   bool _loading = true;
   String? _error;
@@ -38,24 +39,23 @@ class _SupportScreenState extends State<SupportScreen> {
 
   Future<void> _loadTickets() async {
     setState(() { _loading = true; _error = null; });
+    if (_service.currentUserId == null) {
+      setState(() {
+        _error = 'Connectez-vous pour acceder au support.';
+        _loading = false;
+      });
+      return;
+    }
     try {
-      final uid = _client.auth.currentUser?.id;
-      if (uid == null) {
-        setState(() { _error = 'Connectez-vous pour accéder au support.'; _loading = false; });
-        return;
-      }
-      final data = await _client
-          .from('support_tickets')
-          .select('*')
-          .eq('user_id', uid)
-          .order('updated_at', ascending: false);
-      setState(() { _tickets = List<Map<String, dynamic>>.from(data); _loading = false; });
+      final tickets = await _service.getMyTickets();
+      if (mounted) setState(() { _tickets = tickets; _loading = false; });
     } catch (e) {
-      setState(() { _error = e.toString(); _loading = false; });
+      if (mounted) setState(() { _error = e.toString(); _loading = false; });
     }
   }
 
   Future<void> _openNewTicketDialog() async {
+    final t = AppLocalizations.of(context)!;
     final subjectCtrl = TextEditingController();
     String category = 'general';
     final result = await showDialog<bool>(
@@ -64,12 +64,12 @@ class _SupportScreenState extends State<SupportScreen> {
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          title: Text('Nouveau ticket', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
+          title: Text(t.supportNewTicket, style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Catégorie', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              Text(t.supportCategory, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
               SizedBox(height: 6),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 12),
@@ -93,7 +93,7 @@ class _SupportScreenState extends State<SupportScreen> {
                 ),
               ),
               SizedBox(height: 14),
-              Text('Sujet', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+              Text(t.supportSubject, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
               SizedBox(height: 6),
               TextField(
                 controller: subjectCtrl,
@@ -120,7 +120,7 @@ class _SupportScreenState extends State<SupportScreen> {
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
+              child: Text(t.commonCancel, style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
@@ -128,7 +128,7 @@ class _SupportScreenState extends State<SupportScreen> {
                 backgroundColor: AppColors.neonGreen,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
               ),
-              child: Text('Créer', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)),
+              child: Text(t.supportCreate, style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)),
             ),
           ],
         ),
@@ -140,21 +140,13 @@ class _SupportScreenState extends State<SupportScreen> {
     if (subject.isEmpty) return;
 
     try {
-      final uid   = _client.auth.currentUser!.id;
-      final uname = _client.auth.currentUser?.userMetadata?['username'] as String? ?? 'Joueur';
-
-      final res = await _client.from('support_tickets').insert({
-        'user_id' : uid,
-        'username': uname,
-        'subject' : subject,
-        'category': category,
-        'status'  : 'open',
-      }).select().single();
-
-      if (!mounted) return;
-      // Ouvrir directement le ticket créé
+      final ticket = await _service.createTicket(
+        subject: subject,
+        category: category,
+      );
+      if (!mounted || ticket == null) return;
       await Navigator.push(context, MaterialPageRoute(
-        builder: (_) => SupportTicketScreen(ticket: Map<String, dynamic>.from(res)),
+        builder: (_) => SupportTicketScreen(ticket: ticket),
       ));
       _loadTickets();
     } catch (e) {
@@ -193,7 +185,7 @@ class _SupportScreenState extends State<SupportScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final isLoggedIn = _client.auth.currentUser != null;
+    final isLoggedIn = _service.currentUserId != null;
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
@@ -202,7 +194,7 @@ class _SupportScreenState extends State<SupportScreen> {
           children: [
             Icon(Icons.support_agent, color: AppColors.neonGreen, size: 22),
             SizedBox(width: 10),
-            Text('Service Client',
+            Text(AppLocalizations.of(context)!.supportTitle,
                 style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
           ],
         ),
@@ -230,7 +222,7 @@ class _SupportScreenState extends State<SupportScreen> {
               backgroundColor: AppColors.neonGreen,
               foregroundColor: Colors.black,
               icon: Icon(Icons.add),
-              label: Text('Nouveau ticket', style: TextStyle(fontWeight: FontWeight.w800)),
+              label: Text(AppLocalizations.of(context)!.supportNewTicket, style: TextStyle(fontWeight: FontWeight.w800)),
             )
           : null,
     );
@@ -370,7 +362,7 @@ class _SupportScreenState extends State<SupportScreen> {
               child: Icon(Icons.support_agent, color: AppColors.neonGreen, size: 38),
             ),
             SizedBox(height: 20),
-            Text('Aucun ticket ouvert',
+            Text(AppLocalizations.of(context)!.supportNoTickets,
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 18, fontWeight: FontWeight.w700)),
             SizedBox(height: 8),
             Text(
@@ -382,7 +374,7 @@ class _SupportScreenState extends State<SupportScreen> {
             ElevatedButton.icon(
               onPressed: _openNewTicketDialog,
               icon: Icon(Icons.add),
-              label: Text('Créer mon premier ticket',
+              label: Text(AppLocalizations.of(context)!.supportCreateFirstTicket,
                   style: TextStyle(fontWeight: FontWeight.w800)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonGreen,

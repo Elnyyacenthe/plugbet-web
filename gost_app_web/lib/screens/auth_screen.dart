@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../services/supabase_service.dart';
 import '../ludo/providers/ludo_provider.dart';
 
@@ -116,6 +117,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Widget _buildHeader() {
+    final t = AppLocalizations.of(context)!;
     return Column(
       children: [
         // Icone animee
@@ -148,7 +150,7 @@ class _AuthScreenState extends State<AuthScreen>
         ),
         SizedBox(height: 24),
         Text(
-          _isSignUp ? 'Creer un compte' : 'Bienvenue',
+          _isSignUp ? t.authSignUp : 'Bienvenue',
           style: TextStyle(
             fontSize: 28,
             fontWeight: FontWeight.w800,
@@ -173,6 +175,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Widget _buildForm() {
+    final t = AppLocalizations.of(context)!;
     return Form(
       key: _formKey,
       child: Column(
@@ -225,7 +228,7 @@ class _AuthScreenState extends State<AuthScreen>
           // Email
           _buildField(
             controller: _emailController,
-            hint: 'Adresse email',
+            hint: t.authEmail,
             icon: Icons.email_outlined,
             keyboardType: TextInputType.emailAddress,
             validator: (val) {
@@ -243,7 +246,7 @@ class _AuthScreenState extends State<AuthScreen>
           // Mot de passe
           _buildField(
             controller: _passwordController,
-            hint: 'Mot de passe',
+            hint: t.authPassword,
             icon: Icons.lock_outline,
             obscure: _obscurePassword,
             suffixIcon: IconButton(
@@ -265,7 +268,32 @@ class _AuthScreenState extends State<AuthScreen>
             },
           ),
 
-          SizedBox(height: 28),
+          // Mot de passe oublie (seulement en mode connexion)
+          if (!_isSignUp) ...[
+            SizedBox(height: 8),
+            Align(
+              alignment: Alignment.centerRight,
+              child: TextButton(
+                onPressed: _isLoading ? null : _handleForgotPassword,
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  minimumSize: Size.zero,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: Text(
+                  t.authForgotPassword,
+                  style: TextStyle(
+                    color: AppColors.neonGreen,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                    decoration: TextDecoration.underline,
+                  ),
+                ),
+              ),
+            ),
+          ],
+
+          SizedBox(height: 20),
 
           // Bouton principal
           SizedBox(
@@ -300,7 +328,7 @@ class _AuthScreenState extends State<AuthScreen>
                         ),
                         SizedBox(width: 10),
                         Text(
-                          _isSignUp ? 'S\'inscrire' : 'Se connecter',
+                          _isSignUp ? t.authSignUp : t.authSignIn,
                           style: TextStyle(
                             fontSize: 16,
                             fontWeight: FontWeight.w700,
@@ -397,6 +425,7 @@ class _AuthScreenState extends State<AuthScreen>
   }
 
   Widget _buildToggle() {
+    final t = AppLocalizations.of(context)!;
     return Row(
       mainAxisAlignment: MainAxisAlignment.center,
       children: [
@@ -407,7 +436,7 @@ class _AuthScreenState extends State<AuthScreen>
         TextButton(
           onPressed: _isLoading ? null : _toggleMode,
           child: Text(
-            _isSignUp ? 'Se connecter' : 'S\'inscrire',
+            _isSignUp ? t.authSignIn : t.authSignUp,
             style: TextStyle(
               color: _isSignUp ? AppColors.neonGreen : AppColors.neonBlue,
               fontWeight: FontWeight.w700,
@@ -417,6 +446,37 @@ class _AuthScreenState extends State<AuthScreen>
         ),
       ],
     );
+  }
+
+  Future<void> _handleForgotPassword() async {
+    final email = _emailController.text.trim();
+    if (email.isEmpty || !email.contains('@')) {
+      setState(() => _errorMessage = 'Entrez votre email d\'abord');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+      _errorMessage = null;
+    });
+
+    final error = await SupabaseService().sendPasswordResetEmail(email);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (error == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Email de reinitialisation envoye a $email'),
+          backgroundColor: AppColors.neonGreen,
+          behavior: SnackBarBehavior.floating,
+          duration: const Duration(seconds: 4),
+        ),
+      );
+    } else {
+      setState(() => _errorMessage = error);
+    }
   }
 
   Future<void> _handleSubmit() async {

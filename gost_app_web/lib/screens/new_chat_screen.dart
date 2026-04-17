@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/player_models.dart';
 import '../providers/player_provider.dart';
 import '../providers/messaging_provider.dart';
@@ -79,7 +80,7 @@ class _NewChatScreenState extends State<NewChatScreen> {
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Nouveau message'),
+        title: Text(AppLocalizations.of(context)!.newChatTitle),
       ),
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
@@ -127,7 +128,7 @@ class _NewChatScreenState extends State<NewChatScreen> {
                 children: [
                   Icon(Icons.info_outline, size: 14, color: AppColors.textMuted),
                   SizedBox(width: 6),
-                  Text('Seuls vos amis peuvent recevoir des messages',
+                  Text(AppLocalizations.of(context)!.newChatOnlyFriends,
                       style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
                 ],
               ),
@@ -167,10 +168,10 @@ class _NewChatScreenState extends State<NewChatScreen> {
             Icon(Icons.people_outline, size: 48,
                 color: AppColors.textMuted.withValues(alpha: 0.3)),
             SizedBox(height: 12),
-            Text('Aucun ami pour le moment',
+            Text(AppLocalizations.of(context)!.profileNoFriends,
                 style: TextStyle(fontSize: 14, color: AppColors.textMuted)),
             SizedBox(height: 4),
-            Text('Ajoutez des amis depuis l\'écran Amis',
+            Text(AppLocalizations.of(context)!.newChatAddFromFriends,
                 style: TextStyle(fontSize: 12, color: AppColors.textMuted)),
           ],
         ),
@@ -183,7 +184,7 @@ class _NewChatScreenState extends State<NewChatScreen> {
           Icon(Icons.search_off, size: 48,
               color: AppColors.textMuted.withValues(alpha: 0.3)),
           SizedBox(height: 12),
-          Text('Aucun ami trouvé',
+          Text(AppLocalizations.of(context)!.newChatNoFriendsFound,
               style: TextStyle(fontSize: 14, color: AppColors.textMuted)),
         ],
       ),

@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
@@ -192,7 +193,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
                           padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: Text('HIT', style: TextStyle(
+                        child: Text(AppLocalizations.of(context)!.gameHit, style: TextStyle(
                             color: Colors.black, fontWeight: FontWeight.w900, fontSize: 18)),
                       ),
                     ),
@@ -205,7 +206,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
                           padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: Text('STAND', style: TextStyle(
+                        child: Text(AppLocalizations.of(context)!.gameStand, style: TextStyle(
                             color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
                       ),
                     ),
@@ -216,7 +217,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
             if (gs.phase == 'dealer_turn' && !gs.isFinished)
               Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Le dealer joue...', style: TextStyle(
+                child: Text(AppLocalizations.of(context)!.gameDealerPlaying, style: TextStyle(
                     color: Colors.white70, fontSize: 16, fontWeight: FontWeight.w600)),
               ),
           ],
@@ -266,7 +267,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
       ),
       child: Column(
         children: [
-          Text('DEALER', style: TextStyle(color: Colors.white54, fontSize: 12,
+          Text(AppLocalizations.of(context)!.gameDealer, style: TextStyle(color: Colors.white54, fontSize: 12,
               fontWeight: FontWeight.w700, letterSpacing: 2)),
           SizedBox(height: 8),
           BJHandWidget(cards: dealer.cards, hideSecond: hideSecond, cardWidth: 48),
@@ -332,7 +333,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('TOI', style: TextStyle(color: AppColors.neonGreen, fontSize: 12,
+              Text(AppLocalizations.of(context)!.gameYou, style: TextStyle(color: AppColors.neonGreen, fontSize: 12,
                   fontWeight: FontWeight.w700, letterSpacing: 2)),
               Container(
                 padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
@@ -417,13 +418,13 @@ class _BJGameScreenState extends State<BJGameScreen> {
                       color: AppColors.neonGreen, fontSize: 24, fontWeight: FontWeight.w900)),
                 ],
                 SizedBox(height: 8),
-                Text('Prochaine manche dans 5s...', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                Text(AppLocalizations.of(context)!.gameNextRound, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
               ],
             ),
             actions: [
               TextButton(
                 onPressed: () { autoTimer.cancel(); Navigator.pop(ctx); Navigator.pop(context); },
-                child: Text('Quitter', style: TextStyle(color: AppColors.neonRed)),
+                child: Text(AppLocalizations.of(context)!.gameQuit, style: TextStyle(color: AppColors.neonRed)),
               ),
             ],
           ),

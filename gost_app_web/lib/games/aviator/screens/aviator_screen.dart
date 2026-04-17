@@ -4,6 +4,7 @@
 
 import 'package:flutter/material.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import 'aviator_game_screen.dart';
 
 class AviatorScreen extends StatelessWidget {
@@ -116,7 +117,7 @@ class AviatorScreen extends StatelessWidget {
                       ),
                       icon: Icon(Icons.play_circle_outline,
                           color: AppColors.textSecondary),
-                      label: Text('MODE DÉMO',
+                      label: Text(AppLocalizations.of(context)!.gameDemoMode,
                           style: TextStyle(
                               color: AppColors.textSecondary,
                               fontWeight: FontWeight.w700)),
@@ -139,7 +140,7 @@ class AviatorScreen extends StatelessWidget {
                         ),
                       ),
                       icon: Text('✈', style: TextStyle(fontSize: 18)),
-                      label: Text('JOUER',
+                      label: Text(AppLocalizations.of(context)!.gamePlayAction,
                           style: TextStyle(
                               color: Colors.white,
                               fontWeight: FontWeight.w800,

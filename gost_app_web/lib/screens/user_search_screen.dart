@@ -4,10 +4,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/player_models.dart';
 import '../providers/player_provider.dart';
+import '../services/user_search_service.dart';
 import 'user_profile_screen.dart';
 
 class UserSearchScreen extends StatefulWidget {
@@ -19,16 +20,11 @@ class UserSearchScreen extends StatefulWidget {
 
 class _UserSearchScreenState extends State<UserSearchScreen> {
   final _searchController = TextEditingController();
-  final _client = Supabase.instance.client;
+  final _service = UserSearchService();
 
   List<Map<String, dynamic>> _users = [];
   bool _loading = false;
   Timer? _debounce;
-
-  @override
-  void initState() {
-    super.initState();
-  }
 
   @override
   void dispose() {
@@ -39,22 +35,12 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
 
   Future<void> _loadAll() async {
     setState(() => _loading = true);
-    final myId = _client.auth.currentUser?.id;
-    try {
-      final data = await _client
-          .from('user_profiles')
-          .select('id, username, xp, coins, total_wins')
-          .neq('id', myId ?? '')
-          .order('xp', ascending: false)
-          .limit(50);
-      if (mounted) {
-        setState(() {
-          _users = (data as List).cast<Map<String, dynamic>>();
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    final users = await _service.topPlayers();
+    if (mounted) {
+      setState(() {
+        _users = users;
+        _loading = false;
+      });
     }
   }
 
@@ -69,22 +55,12 @@ class _UserSearchScreenState extends State<UserSearchScreen> {
       return;
     }
     setState(() => _loading = true);
-    final myId = _client.auth.currentUser?.id;
-    try {
-      final data = await _client
-          .from('user_profiles')
-          .select('id, username, xp, coins, total_wins')
-          .ilike('username', '%${query.trim()}%')
-          .neq('id', myId ?? '')
-          .limit(30);
-      if (mounted) {
-        setState(() {
-          _users = (data as List).cast<Map<String, dynamic>>();
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
+    final users = await _service.searchByUsername(query);
+    if (mounted) {
+      setState(() {
+        _users = users;
+        _loading = false;
+      });
     }
   }
 
@@ -314,34 +290,21 @@ class _AddFriendBtnState extends State<_AddFriendBtn> {
     _checkExisting();
   }
 
+  final _searchService = UserSearchService();
+
   Future<void> _checkExisting() async {
-    final uid = Supabase.instance.client.auth.currentUser?.id;
-    if (uid == null) return;
-    try {
-      // Vérifier si déjà amis
-      final friendship = await Supabase.instance.client
-          .from('friendships')
-          .select('id')
-          .eq('user_id', uid)
-          .eq('friend_id', widget.userId)
-          .maybeSingle();
-      if (friendship != null) {
-        if (mounted) setState(() => _status = 'friend');
-        return;
-      }
-      // Vérifier si demande déjà envoyée
-      final sent = await Supabase.instance.client
-          .from('friend_requests')
-          .select('id')
-          .eq('from_id', uid)
-          .eq('to_id', widget.userId)
-          .eq('status', 'pending')
-          .maybeSingle();
-      if (sent != null) {
-        if (mounted) setState(() => _status = 'already');
-        return;
-      }
-    } catch (_) {}
+    final relation = await _searchService.relationWith(widget.userId);
+    if (!mounted) return;
+    switch (relation) {
+      case 'friends':
+        setState(() => _status = 'friend');
+        break;
+      case 'request_sent':
+        setState(() => _status = 'already');
+        break;
+      default:
+        break;
+    }
   }
 
   Future<void> _send() async {
@@ -365,7 +328,7 @@ class _AddFriendBtnState extends State<_AddFriendBtn> {
           color: AppColors.neonGreen.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text('Ami', style: TextStyle(
+        child: Text(AppLocalizations.of(context)!.friendsFriend, style: TextStyle(
             color: AppColors.neonGreen, fontSize: 11, fontWeight: FontWeight.w700)),
       );
     }
@@ -376,7 +339,7 @@ class _AddFriendBtnState extends State<_AddFriendBtn> {
           color: AppColors.neonYellow.withValues(alpha: 0.15),
           borderRadius: BorderRadius.circular(8),
         ),
-        child: Text('En attente', style: TextStyle(
+        child: Text(AppLocalizations.of(context)!.friendsPending, style: TextStyle(
             color: AppColors.neonYellow, fontSize: 11, fontWeight: FontWeight.w700)),
       );
     }

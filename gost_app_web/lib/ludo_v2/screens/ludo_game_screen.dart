@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import '../../providers/matches_provider.dart';
 import '../../providers/wallet_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../models/ludo_models.dart';
 import '../providers/ludo_game_provider.dart';
 import '../widgets/dice_widget.dart';
@@ -69,13 +70,13 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: const Text('Quitter la partie ?', style: TextStyle(color: Colors.white)),
-        content: const Text('Tu perdras la partie par forfait.', style: TextStyle(color: Colors.white70)),
+        title: Text(AppLocalizations.of(context)!.ludoQuitQuestion, style: const TextStyle(color: Colors.white)),
+        content: Text(AppLocalizations.of(context)!.ludoForfeitMessage, style: const TextStyle(color: Colors.white70)),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Rester')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(AppLocalizations.of(context)!.gameStay)),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Forfait', style: TextStyle(color: Colors.red)),
+            child: Text(AppLocalizations.of(context)!.gameForfeit, style: const TextStyle(color: Colors.red)),
           ),
         ],
       ),
@@ -148,7 +149,7 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
         backgroundColor: AppColors.bgDark,
         appBar: AppBar(
           backgroundColor: AppColors.bgBlueNight,
-          title: const Text('Ludo', style: TextStyle(fontWeight: FontWeight.w800)),
+          title: Text(AppLocalizations.of(context)!.ludoTitle, style: const TextStyle(fontWeight: FontWeight.w800)),
           centerTitle: true,
           actions: [
             Consumer<LudoV2GameProvider>(
@@ -185,7 +186,7 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
             }
             final game = prov.game;
             if (game == null) {
-              return Center(child: Text('Chargement...', style: TextStyle(color: AppColors.textSecondary)));
+              return Center(child: Text(AppLocalizations.of(context)!.commonLoading, style: TextStyle(color: AppColors.textSecondary)));
             }
 
             final isMyTurn = prov.isMyTurn;

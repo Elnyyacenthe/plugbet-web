@@ -7,6 +7,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
+import '../../l10n/generated/app_localizations.dart';
 import '../providers/fpl_provider.dart';
 import '../services/fantasy_service.dart';
 import '../widgets/fantasy_inapp_pitch.dart';
@@ -217,7 +218,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
             children: [
               Padding(
                 padding: EdgeInsets.all(16),
-                child: Text('Choisir la formation',
+                child: Text(AppLocalizations.of(context)!.fantasyChooseFormation,
                     style: TextStyle(
                         color: AppColors.textPrimary,
                         fontWeight: FontWeight.w800,
@@ -293,7 +294,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
         .toList();
     if (benchers.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Aucun remplaçant disponible.'),
+        content: Text(AppLocalizations.of(context)!.fantasyNoSubstitute),
         backgroundColor: Colors.orange,
       ));
       return;
@@ -382,7 +383,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
   Future<void> _saveAll() async {
     if (!_isValidFormation()) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Il faut exactement 11 titulaires pour sauvegarder.'),
+        content: Text(AppLocalizations.of(context)!.fantasyNeed11),
         backgroundColor: Colors.red,
       ));
       return;
@@ -434,7 +435,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
-        title: Text('Coach · Mon Équipe'),
+        title: Text(AppLocalizations.of(context)!.fantasyCoachTitle),
         leading: IconButton(
           icon: Icon(Icons.arrow_back),
           onPressed: () => Navigator.pop(context),
@@ -454,7 +455,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
               icon: Icon(Icons.save,
                   size: 16,
                   color: valid ? AppColors.neonGreen : AppColors.textMuted),
-              label: Text('Sauver',
+              label: Text(AppLocalizations.of(context)!.fantasySave,
                   style: TextStyle(
                       color: valid ? AppColors.neonGreen : AppColors.textMuted,
                       fontWeight: FontWeight.w700)),
@@ -532,7 +533,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
                 ),
                 Icon(Icons.swap_horiz, size: 18, color: AppColors.neonGreen),
                 SizedBox(width: 4),
-                Text('Changer',
+                Text(AppLocalizations.of(context)!.fantasyChange,
                     style: TextStyle(
                         color: AppColors.neonGreen,
                         fontSize: 11,
@@ -565,7 +566,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
                           fontSize: 11,
                           fontWeight: FontWeight.w600)),
                 ),
-                Text('Tap = permuter',
+                Text(AppLocalizations.of(context)!.fantasyTapToSwap,
                     style: TextStyle(color: AppColors.textMuted, fontSize: 9)),
               ],
             );
@@ -680,7 +681,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
             children: [
               Icon(Icons.auto_awesome, size: 16, color: AppColors.neonYellow),
               SizedBox(width: 8),
-              Text('CHIPS',
+              Text(AppLocalizations.of(context)!.fantasyChips,
                   style: TextStyle(
                       color: AppColors.textMuted,
                       fontSize: 10,
@@ -756,7 +757,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
                             color: AppColors.textMuted.withValues(alpha: 0.2),
                             borderRadius: BorderRadius.circular(6),
                           ),
-                          child: Text('UTILISÉ',
+                          child: Text(AppLocalizations.of(context)!.fantasyUsed,
                               style: TextStyle(
                                   color: AppColors.textMuted,
                                   fontSize: 9,
@@ -771,7 +772,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
                             borderRadius: BorderRadius.circular(8),
                             border: Border.all(color: c.$5.withValues(alpha: 0.5)),
                           ),
-                          child: Text('ACTIVER',
+                          child: Text(AppLocalizations.of(context)!.fantasyActivate,
                               style: TextStyle(
                                   color: c.$5,
                                   fontSize: 10,
@@ -803,13 +804,13 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: Text('Annuler',
+            child: Text(AppLocalizations.of(context)!.commonCancel,
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           ElevatedButton(
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonGreen),
             onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Activer',
+            child: Text(AppLocalizations.of(context)!.fantasyActivate,
                 style: TextStyle(
                     color: Colors.black, fontWeight: FontWeight.w700)),
           ),
@@ -936,7 +937,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
             children: [
               Icon(Icons.summarize, size: 16, color: AppColors.neonGreen),
               SizedBox(width: 8),
-              Text('RÉSUMÉ TACTIQUE',
+              Text(AppLocalizations.of(context)!.fantasyTacticalSummary,
                   style: TextStyle(
                       color: AppColors.neonGreen,
                       fontSize: 10,
@@ -1015,7 +1016,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
         Expanded(
           child: _benchOrder.isEmpty
               ? Center(
-                  child: Text('Aucun remplaçant',
+                  child: Text(AppLocalizations.of(context)!.fantasyNoSubstitute,
                       style: TextStyle(color: AppColors.textMuted)),
                 )
               : ReorderableListView.builder(

@@ -3,11 +3,12 @@
 // ============================================================
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/player_models.dart';
 import '../providers/player_provider.dart';
 import '../providers/messaging_provider.dart';
+import '../services/user_search_service.dart';
 import 'chat_detail_screen.dart';
 
 class UserProfileScreen extends StatefulWidget {
@@ -25,7 +26,7 @@ class UserProfileScreen extends StatefulWidget {
 }
 
 class _UserProfileScreenState extends State<UserProfileScreen> {
-  final _client = Supabase.instance.client;
+  final _service = UserSearchService();
 
   Map<String, dynamic>? _profile;
   bool _loading = true;
@@ -40,52 +41,19 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   }
 
   Future<void> _loadProfile() async {
-    try {
-      final myId = _client.auth.currentUser?.id;
-
-      // Charger profil
-      final profile = await _client
-          .from('user_profiles')
-          .select('id, username, xp, coins, total_wins')
-          .eq('id', widget.userId)
-          .maybeSingle();
-
-      // Vérifier si déjà ami ou demande existante
-      bool alreadyFriend = false;
-      bool requestSent = false;
-
-      if (myId != null) {
-        final friendship = await _client
-            .from('friendships')
-            .select('id')
-            .eq('user_id', myId)
-            .eq('friend_id', widget.userId)
-            .maybeSingle();
-        alreadyFriend = friendship != null;
-
-        if (!alreadyFriend) {
-          final pending = await _client
-              .from('friend_requests')
-              .select('id')
-              .eq('from_id', myId)
-              .eq('to_id', widget.userId)
-              .eq('status', 'pending')
-              .maybeSingle();
-          requestSent = pending != null;
-        }
-      }
-
-      if (mounted) {
-        setState(() {
-          _profile = profile;
-          _alreadyFriend = alreadyFriend;
-          _requestSent = requestSent;
-          _loading = false;
-        });
-      }
-    } catch (_) {
-      if (mounted) setState(() => _loading = false);
-    }
+    final results = await Future.wait([
+      _service.getProfileById(widget.userId),
+      _service.relationWith(widget.userId),
+    ]);
+    if (!mounted) return;
+    final profile = results[0] as Map<String, dynamic>?;
+    final relation = results[1] as String;
+    setState(() {
+      _profile = profile;
+      _alreadyFriend = relation == 'friends';
+      _requestSent = relation == 'request_sent';
+      _loading = false;
+    });
   }
 
   Future<void> _sendFriendRequest() async {
@@ -170,7 +138,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
   Widget _buildContent() {
     if (_profile == null) {
       return Center(
-        child: Text('Profil introuvable',
+        child: Text(AppLocalizations.of(context)!.userProfileNotFound,
             style: TextStyle(color: AppColors.textMuted)),
       );
     }
@@ -320,7 +288,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                 Icon(Icons.check_circle_rounded,
                     color: AppColors.neonGreen, size: 18),
                 SizedBox(width: 8),
-                Text('Déjà ami',
+                Text(AppLocalizations.of(context)!.friendsAlready,
                     style: TextStyle(
                         color: AppColors.neonGreen,
                         fontWeight: FontWeight.w700,
@@ -344,7 +312,7 @@ class _UserProfileScreenState extends State<UserProfileScreen> {
                   borderRadius: BorderRadius.circular(14)),
             ),
             icon: Icon(Icons.chat_bubble_outline_rounded, size: 18),
-            label: Text('Envoyer un message',
+            label: Text(AppLocalizations.of(context)!.friendsSendMessage,
                 style:
                     TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
           ),

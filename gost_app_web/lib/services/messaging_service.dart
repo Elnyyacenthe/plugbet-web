@@ -5,11 +5,13 @@
 // ============================================================
 
 import 'dart:io';
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_models.dart';
+import '../utils/logger.dart';
 
 class MessagingService {
+  static const _log = Logger('MESSAGING');
+
   final SupabaseClient _client;
 
   MessagingService() : _client = Supabase.instance.client;
@@ -40,11 +42,13 @@ class MessagingService {
         try {
           final profile = await _client
               .from('user_profiles')
-              .select('username, is_online, last_seen_at')
+              .select('username, is_online, last_seen_at, avatar_url')
               .eq('id', otherUserId as String)
               .maybeSingle();
-          final key = conv['user1_id'] == myId ? 'user2_username' : 'user1_username';
-          conv[key] = profile?['username'] ?? 'Utilisateur';
+          final userKey = conv['user1_id'] == myId ? 'user2_username' : 'user1_username';
+          final avatarKey = conv['user1_id'] == myId ? 'user2_avatar_url' : 'user1_avatar_url';
+          conv[userKey] = profile?['username'] ?? 'Utilisateur';
+          conv[avatarKey] = profile?['avatar_url'];
           conv['other_online'] = profile?['is_online'] ?? false;
           conv['other_last_seen'] = profile?['last_seen_at'];
         } catch (_) {
@@ -70,7 +74,7 @@ class MessagingService {
 
       return conversations;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur getConversations: $e');
+      _log.error('getConversations', e);
       return [];
     }
   }
@@ -95,7 +99,7 @@ class MessagingService {
 
       return result['id'] as String;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur getOrCreateConversation: $e');
+      _log.error('getOrCreateConversation', e);
       return null;
     }
   }
@@ -142,7 +146,7 @@ class MessagingService {
 
       return messages;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur getMessages: $e');
+      _log.error('getMessages', e);
       return [];
     }
   }
@@ -181,9 +185,17 @@ class MessagingService {
         'updated_at': DateTime.now().toIso8601String(),
       }).eq('id', conversationId);
 
+      // Met a jour le combo (non bloquant : si la RPC echoue, le message part quand meme)
+      _client.rpc('update_chat_combo', params: {
+        'p_conversation_id': conversationId,
+        'p_from_user_id': myId,
+      }).then((_) {}).catchError((e) {
+        _log.warn('update_chat_combo: $e');
+      });
+
       return true;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur sendMessage: $e');
+      _log.error('sendMessage', e);
       return false;
     }
   }
@@ -204,7 +216,7 @@ class MessagingService {
           .neq('from_user_id', myId)
           .eq('is_read', false);
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur markAsRead: $e');
+      _log.error('markAsRead', e);
     }
   }
 
@@ -225,7 +237,7 @@ class MessagingService {
           .eq('from_user_id', myId); // Seul l'auteur peut supprimer
       return true;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur deleteMessage: $e');
+      _log.error('deleteMessage', e);
       return false;
     }
   }
@@ -246,7 +258,7 @@ class MessagingService {
       }, onConflict: 'message_id,user_id');
       return true;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur addReaction: $e');
+      _log.error('addReaction', e);
       return false;
     }
   }
@@ -319,7 +331,7 @@ class MessagingService {
     try {
       await _client.rpc('update_user_presence', params: {'p_online': online});
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur updatePresence: $e');
+      _log.error('updatePresence', e);
     }
   }
 
@@ -340,7 +352,7 @@ class MessagingService {
       final url = _client.storage.from('chat-media').getPublicUrl(path);
       return url;
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur uploadMedia: $e');
+      _log.error('uploadMedia', e);
       return null;
     }
   }
@@ -369,7 +381,7 @@ class MessagingService {
           .map((row) => PrivateMessage.fromJson(row as Map<String, dynamic>))
           .toList();
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur searchMessages: $e');
+      _log.error('searchMessages', e);
       return [];
     }
   }
@@ -410,7 +422,7 @@ class MessagingService {
 
       return (data as List).cast<Map<String, dynamic>>();
     } catch (e) {
-      debugPrint('[MESSAGING] Erreur searchUsers: $e');
+      _log.error('searchUsers', e);
       return [];
     }
   }
@@ -456,7 +468,7 @@ class MessagingService {
               final msg = PrivateMessage.fromJson(payload.newRecord);
               onMessage(msg);
             } catch (e) {
-              debugPrint('[MESSAGING] Erreur parsing realtime message: $e');
+              _log.error('realtime parsing', e);
             }
           },
         )
@@ -492,5 +504,205 @@ class MessagingService {
 
   void unsubscribe(RealtimeChannel channel) {
     _client.removeChannel(channel);
+  }
+
+  // ============================================================
+  // AVATAR — Upload photo de profil
+  // ============================================================
+
+  /// Upload un avatar et met a jour user_profiles.avatar_url
+  /// Retourne l'URL publique ou null en cas d'echec.
+  Future<String?> uploadAvatar(File file) async {
+    final myId = _myId;
+    if (myId == null) return null;
+    try {
+      final ext = file.path.split('.').last.toLowerCase();
+      final path = 'avatars/${myId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+
+      await _client.storage.from('chat-media').upload(
+            path,
+            file,
+            fileOptions: const FileOptions(upsert: true),
+          );
+      final url = _client.storage.from('chat-media').getPublicUrl(path);
+
+      // Met a jour le profil
+      await _client
+          .from('user_profiles')
+          .update({'avatar_url': url}).eq('id', myId);
+
+      return url;
+    } catch (e) {
+      _log.error('uploadAvatar', e);
+      return null;
+    }
+  }
+
+  Future<String?> getMyAvatarUrl() async {
+    final myId = _myId;
+    if (myId == null) return null;
+    try {
+      final res = await _client
+          .from('user_profiles')
+          .select('avatar_url')
+          .eq('id', myId)
+          .maybeSingle();
+      return res?['avatar_url'] as String?;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  // ============================================================
+  // STATUTS / STORIES (24h)
+  // ============================================================
+
+  /// Cree un nouveau statut (image)
+  Future<UserStatus?> createImageStatus(File imageFile, {String? caption}) async {
+    final myId = _myId;
+    if (myId == null) return null;
+    try {
+      // Upload vers storage
+      final ext = imageFile.path.split('.').last.toLowerCase();
+      final path = 'statuses/${myId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await _client.storage.from('chat-media').upload(path, imageFile);
+      final url = _client.storage.from('chat-media').getPublicUrl(path);
+
+      // Insert
+      final inserted = await _client
+          .from('user_statuses')
+          .insert({
+            'user_id': myId,
+            'media_url': url,
+            'media_type': 'image',
+            if (caption != null && caption.isNotEmpty) 'caption': caption,
+          })
+          .select()
+          .single();
+
+      // Enrichit avec username + avatar
+      final profile = await _client
+          .from('user_profiles')
+          .select('username, avatar_url')
+          .eq('id', myId)
+          .maybeSingle();
+
+      return UserStatus.fromJson({
+        ...inserted,
+        'username': profile?['username'] ?? 'Moi',
+        'avatar_url': profile?['avatar_url'],
+        'viewed_by_me': true,
+      });
+    } catch (e) {
+      _log.error('createImageStatus', e);
+      return null;
+    }
+  }
+
+  /// Recupere tous les statuts actifs + vues
+  /// Retourne une liste groupee par utilisateur.
+  Future<List<UserStatusGroup>> getActiveStatusGroups() async {
+    final myId = _myId;
+    if (myId == null) return [];
+    try {
+      // Statuts actifs
+      final statusData = await _client
+          .from('user_statuses')
+          .select()
+          .gt('expires_at', DateTime.now().toIso8601String())
+          .order('created_at', ascending: false);
+
+      if ((statusData as List).isEmpty) return [];
+
+      // Profils des auteurs
+      final userIds = <String>{
+        for (final s in statusData) s['user_id'] as String
+      };
+      final profilesData = await _client
+          .from('user_profiles')
+          .select('id, username, avatar_url')
+          .inFilter('id', userIds.toList());
+      final profileMap = <String, Map<String, dynamic>>{};
+      for (final p in profilesData as List) {
+        profileMap[p['id'] as String] = p as Map<String, dynamic>;
+      }
+
+      // Mes vues
+      final statusIds = statusData.map((s) => s['id'] as String).toList();
+      final viewsData = await _client
+          .from('status_views')
+          .select('status_id')
+          .eq('viewer_id', myId)
+          .inFilter('status_id', statusIds);
+      final viewedIds = <String>{
+        for (final v in viewsData as List) v['status_id'] as String
+      };
+
+      // Construction des UserStatus
+      final statuses = <UserStatus>[];
+      for (final row in statusData) {
+        final m = Map<String, dynamic>.from(row as Map);
+        final profile = profileMap[m['user_id']];
+        statuses.add(UserStatus.fromJson({
+          ...m,
+          'username': profile?['username'] ?? 'Utilisateur',
+          'avatar_url': profile?['avatar_url'],
+          'viewed_by_me': viewedIds.contains(m['id']) || m['user_id'] == myId,
+        }));
+      }
+
+      // Groupement par user
+      final map = <String, List<UserStatus>>{};
+      for (final s in statuses) {
+        map.putIfAbsent(s.userId, () => []).add(s);
+      }
+
+      final groups = map.entries.map((e) {
+        final first = e.value.first;
+        return UserStatusGroup(
+          userId: e.key,
+          username: first.username,
+          avatarUrl: first.avatarUrl,
+          statuses: e.value..sort((a, b) => a.createdAt.compareTo(b.createdAt)),
+        );
+      }).toList();
+
+      // Tri : mes statuts en premier, puis par les plus recents
+      groups.sort((a, b) {
+        if (a.userId == myId) return -1;
+        if (b.userId == myId) return 1;
+        return b.latestAt.compareTo(a.latestAt);
+      });
+
+      return groups;
+    } catch (e) {
+      _log.error('getActiveStatusGroups', e);
+      return [];
+    }
+  }
+
+  /// Marque un statut comme vu
+  Future<void> markStatusViewed(String statusId) async {
+    final myId = _myId;
+    if (myId == null) return;
+    try {
+      await _client.from('status_views').upsert({
+        'status_id': statusId,
+        'viewer_id': myId,
+      });
+    } catch (e) {
+      _log.error('markStatusViewed', e);
+    }
+  }
+
+  /// Supprimer un statut (seulement le sien)
+  Future<bool> deleteStatus(String statusId) async {
+    try {
+      await _client.from('user_statuses').delete().eq('id', statusId);
+      return true;
+    } catch (e) {
+      _log.error('deleteStatus', e);
+      return false;
+    }
   }
 }

@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/player_provider.dart';
 import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
@@ -73,7 +74,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     if (!ok && mounted) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Fonds insuffisants')));
+          .showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.gameInsufficientFunds)));
     }
   }
 
@@ -87,7 +88,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
       builder: (ctx) => AlertDialog(
         backgroundColor: const Color(0xFF1E293B),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: Text('Quitter la partie ?',
+        title: Text(AppLocalizations.of(context)!.gameLeaveQuestion,
             style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
         content: Text(
           _isPractice
@@ -98,7 +99,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Annuler',
+            child: Text(AppLocalizations.of(context)!.commonCancel,
                 style: TextStyle(color: Colors.white54)),
           ),
           TextButton(
@@ -106,7 +107,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
               Navigator.pop(ctx);
               _end(won: false);
             },
-            child: Text('Forfait',
+            child: Text(AppLocalizations.of(context)!.gameForfeit,
                 style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w700)),
           ),
         ],

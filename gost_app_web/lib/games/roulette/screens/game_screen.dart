@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
@@ -169,7 +170,7 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
                 child: ElevatedButton.icon(
                   onPressed: _spinning ? null : _spinWheel,
                   icon: Icon(Icons.casino, size: 20),
-                  label: Text('LANCER LA ROUE',
+                  label: Text(AppLocalizations.of(context)!.gameSpinWheel,
                       style: TextStyle(fontWeight: FontWeight.w900, fontSize: 16)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.orange,
@@ -234,7 +235,7 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
 
         // Numéro exact
         Row(children: [
-          Text('N° exact:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+          Text('${AppLocalizations.of(context)!.gameExactNumber}:', style: TextStyle(color: Colors.white70, fontSize: 13)),
           SizedBox(width: 8),
           SizedBox(width: 60, child: TextField(
             keyboardType: TextInputType.number,
@@ -254,7 +255,7 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
 
         // Montant
         Row(children: [
-          Text('Mise:', style: TextStyle(color: Colors.white70, fontSize: 13)),
+          Text('${AppLocalizations.of(context)!.gameBetLabel}:', style: TextStyle(color: Colors.white70, fontSize: 13)),
           SizedBox(width: 8),
           SizedBox(width: 80, child: TextField(controller: _betCtrl,
             keyboardType: TextInputType.number,
@@ -268,7 +269,7 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
             style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonGreen,
               padding: EdgeInsets.symmetric(vertical: 12),
               shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
-            child: Text('MISER', style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)))),
+            child: Text(AppLocalizations.of(context)!.gameBetButton, style: TextStyle(color: Colors.black, fontWeight: FontWeight.w800)))),
         ]),
       ]),
     );
@@ -319,10 +320,10 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Text('Résultat: ${_game?.gameState.result ?? "?"}',
               style: TextStyle(color: AppColors.neonYellow)),
-          content: Text('Prochaine manche dans 5s...', style: TextStyle(color: AppColors.textSecondary)),
+          content: Text(AppLocalizations.of(context)!.gameNextRound, style: TextStyle(color: AppColors.textSecondary)),
           actions: [
             TextButton(onPressed: () { autoTimer.cancel(); Navigator.pop(ctx); Navigator.pop(context); },
-              child: Text('Quitter', style: TextStyle(color: AppColors.neonRed))),
+              child: Text(AppLocalizations.of(context)!.gameQuit, style: TextStyle(color: AppColors.neonRed))),
           ],
         ),
       );

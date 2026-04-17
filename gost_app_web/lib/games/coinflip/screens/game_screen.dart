@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
@@ -115,13 +116,13 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(backgroundColor: AppColors.bgBlueNight,
-        title: Text('Pile ou Face', style: TextStyle(fontWeight: FontWeight.w800)),
+        title: Text(AppLocalizations.of(context)!.gameCoinflipTitle, style: TextStyle(fontWeight: FontWeight.w800)),
         centerTitle: true,
         actions: [Padding(padding: EdgeInsets.only(right: 12), child: Center(
           child: Container(padding: EdgeInsets.symmetric(horizontal: 10, vertical: 4),
             decoration: BoxDecoration(color: AppColors.neonYellow.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8)),
-            child: Text('Pot: ${_game!.pot}', style: TextStyle(
+            child: Text('${AppLocalizations.of(context)!.gamePot}: ${_game!.pot}', style: TextStyle(
               color: AppColors.neonYellow, fontWeight: FontWeight.w700)))))]),
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
@@ -162,7 +163,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
 
           if (hasChosen && gs.phase == 'choosing')
             Padding(padding: EdgeInsets.only(bottom: 20),
-              child: Text('Tu as choisi: ${myPlayer!.choice?.toUpperCase() ?? "?"}',
+              child: Text('${AppLocalizations.of(context)!.gameYouChose}: ${myPlayer!.choice?.toUpperCase() ?? "?"}',
                 style: TextStyle(color: AppColors.neonGreen, fontSize: 16, fontWeight: FontWeight.w700))),
 
           // Résultat
@@ -173,7 +174,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
                   color: isWinner ? AppColors.neonGreen.withValues(alpha: 0.2) : Colors.red.withValues(alpha: 0.2),
                   borderRadius: BorderRadius.circular(16)),
                 child: Column(children: [
-                  Text('Résultat: ${gs.result?.toUpperCase() ?? "?"}',
+                  Text('${AppLocalizations.of(context)!.gameResult}: ${gs.result?.toUpperCase() ?? "?"}',
                     style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                   SizedBox(height: 8),
                   Text(isWinner ? '+${_game!.pot} coins' : '-${_game!.betAmount} coins',
@@ -279,16 +280,16 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
               style: TextStyle(color: isWinner ? AppColors.neonYellow : Colors.redAccent)),
           ]),
           content: Column(mainAxisSize: MainAxisSize.min, children: [
-            Text('Résultat: ${_game!.gameState.result?.toUpperCase() ?? "?"}',
+            Text('${AppLocalizations.of(context)!.gameResult}: ${_game!.gameState.result?.toUpperCase() ?? "?"}',
               style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
             if (isWinner) Text('+${_game!.pot} coins',
               style: TextStyle(color: AppColors.neonGreen, fontSize: 22, fontWeight: FontWeight.w900)),
             SizedBox(height: 8),
-            Text('Prochaine manche dans 5s...', style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+            Text(AppLocalizations.of(context)!.gameNextRound, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
           ]),
           actions: [
             TextButton(onPressed: () { autoTimer.cancel(); Navigator.pop(ctx); Navigator.pop(context); },
-              child: Text('Quitter', style: TextStyle(color: AppColors.neonRed))),
+              child: Text(AppLocalizations.of(context)!.gameQuit, style: TextStyle(color: AppColors.neonRed))),
           ],
         ),
       );

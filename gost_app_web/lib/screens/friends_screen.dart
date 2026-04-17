@@ -5,6 +5,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/player_models.dart';
 import '../providers/player_provider.dart';
 import 'user_search_screen.dart';
@@ -92,7 +93,7 @@ class _FriendsScreenState extends State<FriendsScreen>
                         child: Row(mainAxisSize: MainAxisSize.min, children: [
                           Icon(Icons.person_add, size: 14, color: AppColors.neonBlue),
                           SizedBox(width: 4),
-                          Text('Ajouter', style: TextStyle(
+                          Text(AppLocalizations.of(context)!.friendsAdd, style: TextStyle(
                               color: AppColors.neonBlue, fontSize: 12, fontWeight: FontWeight.w700)),
                         ]),
                       ),
@@ -385,7 +386,7 @@ class _FriendTile extends StatelessWidget {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content:
-                        Text('Invitation envoyée à ${friend.username} !'),
+                        Text(AppLocalizations.of(context)!.friendsInvitationSent(friend.username)),
                     backgroundColor: AppColors.neonGreen,
                   ),
                 );

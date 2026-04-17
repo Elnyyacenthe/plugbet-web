@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../l10n/generated/app_localizations.dart';
 import '../models/checkers_models.dart';
 import '../services/checkers_service.dart';
 import 'game_screen.dart';
@@ -142,7 +143,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                       Clipboard.setData(
                           ClipboardData(text: _room.privateCode!));
                       ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Code copié !')));
+                          SnackBar(content: Text(AppLocalizations.of(context)!.gameCodeCopied)));
                     },
                     child: Container(
                       padding: EdgeInsets.symmetric(
@@ -186,7 +187,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                     )),
                     Padding(
                       padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text('VS',
+                      child: Text(AppLocalizations.of(context)!.gameVs,
                           style: TextStyle(
                               color: AppColors.textMuted,
                               fontWeight: FontWeight.w900,

@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../models/football_models.dart';
 import '../providers/matches_provider.dart';
 import '../providers/favorites_provider.dart';
@@ -61,7 +62,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen>
             final match = provider.getMatchById(widget.matchId);
             if (match == null) {
               return Center(
-                child: Text('Match introuvable',
+                child: Text(AppLocalizations.of(context)!.matchNotFound,
                     style: TextStyle(color: AppColors.textSecondary)),
               );
             }
@@ -136,7 +137,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen>
       padding: EdgeInsets.fromLTRB(20, 8, 20, 24),
       child: Column(children: [
         if (match.matchday != null)
-          Text('Journée ${match.matchday}',
+          Text(AppLocalizations.of(context)!.matchMatchday('${match.matchday}'),
               style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
         SizedBox(height: 16),
         Row(mainAxisAlignment: MainAxisAlignment.center, children: [
@@ -277,10 +278,10 @@ class _MatchDetailScreenState extends State<MatchDetailScreen>
       child: Row(mainAxisAlignment: MainAxisAlignment.spaceAround, children: [
         _statPill(match.homeTeam.shortName, match.score.homeFullTime?.toString() ?? '-'),
         Column(children: [
-          Text('Score', style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
+          Text(AppLocalizations.of(context)!.matchScore, style: TextStyle(fontSize: 10, color: AppColors.textMuted)),
           SizedBox(height: 4),
           if (match.score.homeHalfTime != null)
-            Text('MT ${match.score.homeHalfTime}-${match.score.awayHalfTime}',
+            Text('${AppLocalizations.of(context)!.matchHalfTime} ${match.score.homeHalfTime}-${match.score.awayHalfTime}',
                 style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
         ]),
         _statPill(match.awayTeam.shortName, match.score.awayFullTime?.toString() ?? '-'),
@@ -416,7 +417,7 @@ class _MatchDetailScreenState extends State<MatchDetailScreen>
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         CircularProgressIndicator(color: AppColors.neonGreen, strokeWidth: 2),
         SizedBox(height: 12),
-        Text('Chargement...', style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
+        Text(AppLocalizations.of(context)!.commonLoading, style: TextStyle(fontSize: 13, color: AppColors.textMuted)),
       ]),
     );
   }
@@ -426,13 +427,13 @@ class _MatchDetailScreenState extends State<MatchDetailScreen>
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Icon(Icons.wifi_off, size: 40, color: AppColors.textMuted),
         SizedBox(height: 12),
-        Text('Impossible de charger les données',
+        Text(AppLocalizations.of(context)!.matchCannotLoadData,
             style: TextStyle(color: AppColors.textMuted)),
         SizedBox(height: 16),
         TextButton.icon(
           onPressed: _loadDetail,
           icon: Icon(Icons.refresh, color: AppColors.neonGreen),
-          label: Text('Réessayer', style: TextStyle(color: AppColors.neonGreen)),
+          label: Text(AppLocalizations.of(context)!.commonRetry, style: TextStyle(color: AppColors.neonGreen)),
         ),
       ]),
     );
@@ -543,7 +544,7 @@ class _EventTile extends StatelessWidget {
               style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
         if ((type == EventType.goal || type == EventType.penalty) &&
             event.assistPlayerName != null && event.assistPlayerName!.isNotEmpty)
-          Text('Passe: ${event.assistPlayerName}',
+          Text('${AppLocalizations.of(context)!.matchAssist}: ${event.assistPlayerName}',
               style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
         Text(isHome ? homeTeamName : awayTeamName,
             style: TextStyle(fontSize: 10, color: color.withValues(alpha: 0.7))),

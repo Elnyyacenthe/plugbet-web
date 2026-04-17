@@ -5,11 +5,16 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../services/messaging_service.dart';
+import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
 import '../models/chat_models.dart';
 import '../providers/messaging_provider.dart';
+import '../widgets/user_avatar.dart';
+import 'add_status_screen.dart';
 import 'chat_detail_screen.dart';
 import 'new_chat_screen.dart';
+import 'status_viewer_screen.dart';
 import 'user_search_screen.dart';
 import 'auth_screen.dart';
 
@@ -22,14 +27,24 @@ class ChatScreen extends StatefulWidget {
 
 class _ChatScreenState extends State<ChatScreen> {
   Timer? _refreshTimer;
+  final _service = MessagingService();
+
+  // Lock global partage entre _pickAvatar et _createStatus pour eviter
+  // l'erreur "Image picker is already active" quand l'utilisateur tape vite.
+  static bool _pickerBusy = false;
+
+  List<UserStatusGroup> _statusGroups = [];
+  String? _myAvatarUrl;
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       context.read<MessagingProvider>().loadConversations();
+      _loadStatuses();
+      _loadMyAvatar();
     });
-    // Rafraîchir la liste des conversations toutes les 8 secondes
+    // Rafraichir la liste des conversations toutes les 8 secondes
     _refreshTimer = Timer.periodic(const Duration(seconds: 8), (_) {
       if (mounted) {
         context.read<MessagingProvider>().loadConversations();
@@ -41,6 +56,43 @@ class _ChatScreenState extends State<ChatScreen> {
   void dispose() {
     _refreshTimer?.cancel();
     super.dispose();
+  }
+
+  Future<void> _loadStatuses() async {
+    final groups = await _service.getActiveStatusGroups();
+    if (mounted) setState(() => _statusGroups = groups);
+  }
+
+  Future<void> _loadMyAvatar() async {
+    final url = await _service.getMyAvatarUrl();
+    if (mounted) setState(() => _myAvatarUrl = url);
+  }
+
+  /// Ouvre le picker pour creer un nouveau statut
+  Future<void> _createStatus() async {
+    if (_pickerBusy) return;
+    _pickerBusy = true;
+    try {
+      final ok = await AddStatusScreen.pickAndOpen(context);
+      if (ok && mounted) _loadStatuses();
+    } catch (e) {
+      debugPrint('[CHAT] _createStatus: $e');
+    } finally {
+      _pickerBusy = false;
+    }
+  }
+
+  /// Ouvre le visualiseur de statuts
+  void _openStatusViewer(int groupIndex) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => StatusViewerScreen(
+          groups: _statusGroups,
+          initialGroupIndex: groupIndex,
+        ),
+      ),
+    ).then((_) => _loadStatuses());
   }
 
   @override
@@ -59,6 +111,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   _buildHeader(),
+                  _buildStatusBar(provider.myUserId),
                   Expanded(
                     child: provider.isLoading && provider.conversations.isEmpty
                         ? Center(
@@ -78,12 +131,13 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildHeader() {
+    final t = AppLocalizations.of(context)!;
     return Padding(
       padding: EdgeInsets.fromLTRB(20, 16, 16, 8),
       child: Row(
         children: [
           Text(
-            'Messages',
+            t.tabChat,
             style: TextStyle(
               fontSize: 28,
               fontWeight: FontWeight.w800,
@@ -122,8 +176,69 @@ class _ChatScreenState extends State<ChatScreen> {
               context,
               MaterialPageRoute(builder: (_) => const NewChatScreen()),
             ),
-            tooltip: 'Nouveau message',
+            tooltip: t.chatNewMessage,
           ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // STATUS BAR — Stories 24h style WhatsApp
+  // ============================================================
+  Widget _buildStatusBar(String? myUserId) {
+    final t = AppLocalizations.of(context)!;
+    // Separer mon statut et ceux des autres
+    UserStatusGroup? myGroup;
+    final others = <UserStatusGroup>[];
+    for (final g in _statusGroups) {
+      if (g.userId == myUserId) {
+        myGroup = g;
+      } else {
+        others.add(g);
+      }
+    }
+
+    return Container(
+      height: 108,
+      margin: const EdgeInsets.only(bottom: 4),
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          // Mon statut
+          _StatusBubble(
+            username: t.chatMyStatus,
+            avatarUrl: _myAvatarUrl,
+            ringColor: myGroup != null
+                ? (myGroup.hasUnseen
+                    ? AppColors.neonGreen
+                    : AppColors.textMuted)
+                : null,
+            showAddButton: myGroup == null,
+            onTap: () {
+              if (myGroup != null) {
+                final index = _statusGroups.indexOf(myGroup);
+                _openStatusViewer(index);
+              } else {
+                _createStatus();
+              }
+            },
+            onAddTap: _createStatus,
+          ),
+          // Statuts des autres
+          ...others.asMap().entries.map((e) {
+            final realIndex = _statusGroups.indexOf(e.value);
+            return _StatusBubble(
+              username: e.value.username,
+              avatarUrl: e.value.avatarUrl,
+              ringColor: e.value.hasUnseen
+                  ? AppColors.neonGreen
+                  : AppColors.textMuted.withValues(alpha: 0.6),
+              showAddButton: false,
+              onTap: () => _openStatusViewer(realIndex),
+            );
+          }),
         ],
       ),
     );
@@ -154,6 +269,7 @@ class _ChatScreenState extends State<ChatScreen> {
         builder: (_) => ChatDetailScreen(
           conversationId: conv.id,
           otherUsername: conv.otherUsername,
+          otherAvatarUrl: conv.otherAvatarUrl,
           isOnline: conv.isOnline,
           lastSeenAt: conv.lastSeenAt,
         ),
@@ -162,6 +278,7 @@ class _ChatScreenState extends State<ChatScreen> {
   }
 
   Widget _buildEmptyState() {
+    final t = AppLocalizations.of(context)!;
     return Center(
       child: Padding(
         padding: EdgeInsets.all(32),
@@ -172,7 +289,7 @@ class _ChatScreenState extends State<ChatScreen> {
                 size: 64, color: AppColors.textMuted.withValues(alpha: 0.3)),
             SizedBox(height: 16),
             Text(
-              'Aucune conversation',
+              t.chatNoConversations,
               style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.w600,
@@ -180,7 +297,7 @@ class _ChatScreenState extends State<ChatScreen> {
             ),
             SizedBox(height: 8),
             Text(
-              'Demarrez une conversation avec\nun autre utilisateur',
+              t.chatStartConversation,
               textAlign: TextAlign.center,
               style: TextStyle(fontSize: 14, color: AppColors.textMuted),
             ),
@@ -283,9 +400,6 @@ class _ConversationTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final hasUnread = conversation.unreadCount > 0;
-    final initials = conversation.otherUsername.isNotEmpty
-        ? conversation.otherUsername[0].toUpperCase()
-        : '?';
 
     return GestureDetector(
       onTap: onTap,
@@ -307,44 +421,11 @@ class _ConversationTile extends StatelessWidget {
         child: Row(
           children: [
             // Avatar + online dot
-            Stack(
-              children: [
-                Container(
-                  width: 46,
-                  height: 46,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    gradient: LinearGradient(
-                      colors: [
-                        AppColors.neonBlue.withValues(alpha: 0.3),
-                        AppColors.neonPurple.withValues(alpha: 0.3),
-                      ],
-                    ),
-                  ),
-                  child: Center(
-                    child: Text(
-                      initials,
-                      style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 18,
-                        fontWeight: FontWeight.w700,
-                      ),
-                    ),
-                  ),
-                ),
-                if (conversation.isOnline)
-                  Positioned(
-                    right: 0, bottom: 0,
-                    child: Container(
-                      width: 12, height: 12,
-                      decoration: BoxDecoration(
-                        color: AppColors.neonGreen,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: AppColors.bgDark, width: 2),
-                      ),
-                    ),
-                  ),
-              ],
+            UserAvatar(
+              avatarUrl: conversation.otherAvatarUrl,
+              username: conversation.otherUsername,
+              size: 46,
+              isOnline: conversation.isOnline,
             ),
             SizedBox(width: 12),
             // Contenu
@@ -352,15 +433,27 @@ class _ConversationTile extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
-                    conversation.otherUsername,
-                    style: TextStyle(
-                      fontSize: 15,
-                      fontWeight: hasUnread ? FontWeight.w700 : FontWeight.w500,
-                      color: AppColors.textPrimary,
-                    ),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+                  Row(
+                    children: [
+                      Flexible(
+                        child: Text(
+                          conversation.otherUsername,
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: hasUnread
+                                ? FontWeight.w700
+                                : FontWeight.w500,
+                            color: AppColors.textPrimary,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                      if (conversation.comboCount > 0) ...[
+                        const SizedBox(width: 6),
+                        _ComboBadge(combo: conversation.comboCount),
+                      ],
+                    ],
                   ),
                   SizedBox(height: 3),
                   Text(
@@ -417,6 +510,166 @@ class _ConversationTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Status Bubble — bulle d'avatar avec ring colore pour les statuts
+// ============================================================
+class _StatusBubble extends StatelessWidget {
+  final String username;
+  final String? avatarUrl;
+  final Color? ringColor;
+  final bool showAddButton;
+  final VoidCallback onTap;
+  final VoidCallback? onAddTap;
+
+  const _StatusBubble({
+    required this.username,
+    required this.avatarUrl,
+    required this.ringColor,
+    required this.showAddButton,
+    required this.onTap,
+    this.onAddTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        width: 74,
+        margin: const EdgeInsets.only(right: 12),
+        child: Column(
+          children: [
+            Stack(
+              clipBehavior: Clip.none,
+              children: [
+                UserAvatar(
+                  avatarUrl: avatarUrl,
+                  username: username,
+                  size: 62,
+                  showOnlineDot: false,
+                  ringColor: ringColor,
+                  ringWidth: ringColor != null ? 2.5 : 0,
+                ),
+                // Bouton + pour ajouter un statut
+                if (showAddButton)
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: GestureDetector(
+                      onTap: onAddTap,
+                      child: Container(
+                        width: 22,
+                        height: 22,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: AppColors.neonGreen,
+                          border: Border.all(
+                              color: AppColors.bgDark, width: 2),
+                        ),
+                        child: const Icon(Icons.add,
+                            size: 14, color: Colors.black),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              username,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+                color: AppColors.textSecondary,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ============================================================
+// Badge Combo — style multiplicateur paris (x12, x25, x50...)
+// Couleur evolutive selon le niveau du combo
+// ============================================================
+class _ComboBadge extends StatelessWidget {
+  final int combo;
+
+  const _ComboBadge({required this.combo});
+
+  // Palier : embleme + degrade selon le niveau
+  // 1-9    → medaille bronze
+  // 10-24  → medaille argent
+  // 25-49  → medaille or
+  // 50-99  → trophee
+  // 100+   → couronne
+  (String, Color, Color) get _tier {
+    if (combo >= 100) {
+      return ('👑', const Color(0xFFFFD700), const Color(0xFFFFB300));
+    }
+    if (combo >= 50) {
+      return ('🏆', const Color(0xFFFF7043), const Color(0xFFD84315));
+    }
+    if (combo >= 25) {
+      return ('🥇', const Color(0xFFFFCA28), const Color(0xFFF9A825));
+    }
+    if (combo >= 10) {
+      return ('🥈', const Color(0xFFB0BEC5), const Color(0xFF78909C));
+    }
+    return ('🥉', const Color(0xFFBF8970), const Color(0xFF8D5524));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final (emoji, c1, c2) = _tier;
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [c1, c2],
+        ),
+        borderRadius: BorderRadius.circular(8),
+        boxShadow: [
+          BoxShadow(
+            color: c1.withValues(alpha: 0.5),
+            blurRadius: 4,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(emoji, style: const TextStyle(fontSize: 11)),
+          const SizedBox(width: 3),
+          Text(
+            '$combo',
+            style: const TextStyle(
+              fontSize: 10.5,
+              fontWeight: FontWeight.w900,
+              color: Colors.white,
+              letterSpacing: 0.3,
+              shadows: [
+                Shadow(
+                    color: Colors.black38,
+                    offset: Offset(0, 1),
+                    blurRadius: 2),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

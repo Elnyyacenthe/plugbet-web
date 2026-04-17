@@ -111,6 +111,19 @@ class SupabaseService {
     }
   }
 
+  /// Envoie un email de reinitialisation de mot de passe.
+  /// Retourne null en cas de succes, ou le message d'erreur.
+  Future<String?> sendPasswordResetEmail(String email) async {
+    try {
+      await _client.auth.resetPasswordForEmail(email);
+      return null;
+    } on AuthException catch (e) {
+      return _translateAuthError(e.message);
+    } catch (e) {
+      return 'Erreur: $e';
+    }
+  }
+
   /// Inscription email/password
   Future<(AuthResponse?, String?)> signUpWithEmail(String email, String password) async {
     try {
