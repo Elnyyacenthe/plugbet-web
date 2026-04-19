@@ -10,6 +10,9 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import '../models/football_models.dart';
+import '../utils/logger.dart';
+
+const _log = Logger('APIFOOTBALL');
 
 class ApiSportsService {
   static const String _baseUrl = 'https://apiv3.apifootball.com/';
@@ -40,8 +43,13 @@ class ApiSportsService {
     _lastRequestTime = DateTime.now();
   }
 
+  /// Test rapide de connectivité (évite les tentatives DNS répétées si offline)
   Future<bool> _checkConnectivity() async {
-    if (kIsWeb) return true;
+    // Sur le web, Socket.connect() n'existe pas - on assume toujours connecté
+    if (kIsWeb) {
+      return true;
+    }
+
     if (_lastConnectivityCheck != null) {
       final elapsed = DateTime.now().difference(_lastConnectivityCheck!);
       if (elapsed.inSeconds < 60) {
@@ -56,7 +64,7 @@ class ApiSportsService {
       _lastConnectivityCheck = DateTime.now();
       return true;
     } catch (e) {
-      debugPrint('[APIFOOTBALL] Pas de connectivité réseau: $e');
+      _log.info('Pas de connectivité réseau: $e');
       _hasConnectivity = false;
       _lastConnectivityCheck = DateTime.now();
       return false;
@@ -65,14 +73,14 @@ class ApiSportsService {
 
   Future<List<dynamic>?> _get(String params) async {
     if (!hasApiKey) {
-      debugPrint('[APIFOOTBALL] Pas de clé API configurée');
+      _log.info('Pas de clé API configurée');
       return null;
     }
 
     // Vérifier la connectivité avant DNS lookup
     final hasNetwork = await _checkConnectivity();
     if (!hasNetwork) {
-      debugPrint('[APIFOOTBALL] Pas de réseau - skip');
+      _log.info('Pas de réseau - skip');
       return null;
     }
 
@@ -80,7 +88,7 @@ class ApiSportsService {
     // Forcer timezone UTC pour que les heures soient converties correctement
     // en heure locale sur chaque appareil via DateTime.toLocal()
     final url = '$_baseUrl?APIkey=$_apiKey&timezone=Etc/UTC&$params';
-    debugPrint('[APIFOOTBALL] Requête: $params');
+    _log.info('Requête: $params');
 
     try {
       final response = await _client
@@ -92,27 +100,27 @@ class ApiSportsService {
 
         // L'API renvoie un objet {"error":...} en cas d'erreur
         if (decoded is Map && decoded.containsKey('error')) {
-          debugPrint('[APIFOOTBALL] Erreur API: ${decoded['error']} – ${decoded['message'] ?? ''}');
+          _log.info('Erreur API: ${decoded['error']} – ${decoded['message'] ?? ''}');
           return null;
         }
 
         if (decoded is List) {
-          debugPrint('[APIFOOTBALL] Succès: ${decoded.length} résultats');
+          _log.info('Succès: ${decoded.length} résultats');
           return decoded;
         }
 
-        debugPrint('[APIFOOTBALL] Réponse inattendue: ${response.body.substring(0, 200.clamp(0, response.body.length))}');
+        _log.info('Réponse inattendue: ${response.body.substring(0, 200.clamp(0, response.body.length))}');
         return null;
       }
-      debugPrint('[APIFOOTBALL] HTTP ${response.statusCode}');
+      _log.info('HTTP ${response.statusCode}');
     } on TimeoutException {
-      debugPrint('[APIFOOTBALL] Timeout (12s)');
+      _log.info('Timeout (12s)');
     } on SocketException catch (e) {
-      debugPrint('[APIFOOTBALL] Socket erreur: $e');
+      _log.info('Socket erreur: $e');
     } on HandshakeException catch (e) {
-      debugPrint('[APIFOOTBALL] SSL handshake erreur: $e');
+      _log.info('SSL handshake erreur: $e');
     } catch (e) {
-      debugPrint('[APIFOOTBALL] Erreur: $e');
+      _log.info('Erreur: $e');
     }
     return null;
   }
@@ -280,7 +288,7 @@ class ApiSportsService {
 
       return MatchDetailData(events: events, stats: stats, homeLineup: homeLineup, awayLineup: awayLineup);
     } catch (e) {
-      debugPrint('[APIFOOTBALL] fetchMatchDetailFull error: $e');
+      _log.info('fetchMatchDetailFull error: $e');
       return null;
     }
   }

@@ -15,11 +15,14 @@ import '../models/player_models.dart';
 import '../services/messaging_service.dart';
 import '../services/profile_service.dart';
 import '../services/supabase_service.dart';
+import '../services/freemopay_service.dart';
+import '../services/wallet_service.dart';
 import '../utils/logger.dart';
 import '../widgets/profile/transaction_tile.dart';
 import '../widgets/user_avatar.dart';
 import 'auth_screen.dart';
 import 'user_search_screen.dart';
+import 'freemopay_awaiting_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -33,6 +36,8 @@ class _ProfileScreenState extends State<ProfileScreen>
   static const _log = Logger('PROFILE');
   final _profileService = ProfileService();
   final _messagingService = MessagingService();
+  final _freemopayService = FreemopayService();
+  final _walletService = WalletService();
 
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _transactions = [];
@@ -162,9 +167,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       return;
     }
 
-    final ludo = await _profileService.getLudoTransactions();
     final txList = <Map<String, dynamic>>[];
 
+    // 1. Charger les transactions Ludo
+    final ludo = await _profileService.getLudoTransactions();
     for (final row in ludo) {
       final bet = row['bet_amount'] as int? ?? 0;
       final status = row['status'] as String? ?? '';
@@ -197,6 +203,71 @@ class _ProfileScreenState extends State<ProfileScreen>
         'date': date,
       });
     }
+
+    // 2. Charger les transactions Freemopay
+    try {
+      final freemopayTx = await _freemopayService.getMyTransactions();
+      for (final row in freemopayTx) {
+        print('Freemopay transaction: $row');
+        final txType = row['transaction_type'] as String? ?? '';
+        final status = row['status'] as String? ?? '';
+        final amount = row['amount'] as int? ?? 0;
+        final date = DateTime.tryParse(row['created_at'] as String? ?? '') ??
+            DateTime.now();
+
+        String label;
+        int displayAmount;
+        String type;
+
+        if (txType == 'DEPOSIT') {
+          if (status == 'SUCCESS') {
+            label = 'Depot Mobile Money';
+            displayAmount = amount;
+            type = 'deposit';
+          } else if (status == 'FAILED') {
+            label = 'Depot echoue';
+            displayAmount = 0;
+            type = 'failed';
+          } else {
+            label = 'Depot en attente';
+            displayAmount = 0;
+            type = 'pending';
+          }
+        } else if (txType == 'WITHDRAW') {
+          if (status == 'SUCCESS') {
+            label = 'Retrait Mobile Money';
+            displayAmount = -amount;
+            type = 'withdrawal';
+          } else if (status == 'FAILED') {
+            label = 'Retrait echoue (rembourse)';
+            displayAmount = 0;
+            type = 'refund';
+          } else {
+            label = 'Retrait en cours';
+            displayAmount = -amount;
+            type = 'pending';
+          }
+        } else {
+          continue; // Ignorer les types inconnus
+        }
+
+        txList.add({
+          'label': label,
+          'amount': displayAmount,
+          'type': type,
+          'date': date,
+        });
+      }
+    } catch (e, s) {
+      _log.error('loadFreemopayTransactions', e, s);
+    }
+
+    // 3. Trier par date décroissante (plus récent en premier)
+    txList.sort((a, b) {
+      final dateA = a['date'] as DateTime;
+      final dateB = b['date'] as DateTime;
+      return dateB.compareTo(dateA);
+    });
 
     if (mounted) {
       setState(() {
@@ -392,6 +463,31 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ],
             ),
+          ),
+
+          SizedBox(height: 16),
+
+          // Boutons Dépôt et Retrait
+          Row(
+            children: [
+              Expanded(
+                child: _buildActionButton(
+                  label: 'Dépôt',
+                  icon: Icons.add_circle_outline,
+                  color: AppColors.neonGreen,
+                  onTap: _showDepositDialog,
+                ),
+              ),
+              SizedBox(width: 12),
+              Expanded(
+                child: _buildActionButton(
+                  label: 'Retrait',
+                  icon: Icons.remove_circle_outline,
+                  color: AppColors.neonOrange,
+                  onTap: _showWithdrawalDialog,
+                ),
+              ),
+            ],
           ),
 
           SizedBox(height: 16),
@@ -762,12 +858,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                         setS(() { loading = false; error = err; });
                       } else {
                         Navigator.pop(ctx);
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(t.profilePasswordChanged),
-                            backgroundColor: AppColors.neonGreen,
-                          ),
-                        );
+                        if (mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(t.profilePasswordChanged),
+                              backgroundColor: AppColors.neonGreen,
+                            ),
+                          );
+                        }
                       }
                     },
               style: ElevatedButton.styleFrom(
@@ -782,20 +880,6 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _accountRow(IconData icon, String text, Color color, VoidCallback? onTap) {
-    return GestureDetector(
-      onTap: onTap,
-      child: Row(
-        children: [
-          Icon(icon, size: 16, color: color),
-          SizedBox(width: 8),
-          Expanded(child: Text(text,
-              style: TextStyle(color: color, fontSize: 13))),
-        ],
       ),
     );
   }
@@ -857,41 +941,47 @@ class _ProfileScreenState extends State<ProfileScreen>
           child: CircularProgressIndicator(color: AppColors.neonGreen));
     }
 
-    if (_transactions.isEmpty) {
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(Icons.history, color: AppColors.textMuted, size: 48),
-            SizedBox(height: 12),
-            Text('Aucune transaction',
-                style: TextStyle(
-                    color: AppColors.textSecondary,
-                    fontSize: 15,
-                    fontWeight: FontWeight.w600)),
-            SizedBox(height: 4),
-            Text('Jouez des parties pour voir l\'historique ici',
-                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
-          ],
-        ),
-      );
-    }
-
-    return ListView.separated(
-      padding: const EdgeInsets.all(16),
-      itemCount: _transactions.length,
-      separatorBuilder: (_, __) => const SizedBox(height: 6),
-      itemBuilder: (_, i) {
-        final tx = _transactions[i];
-        return TransactionTile(
-          label: tx['label'] as String,
-          amount: tx['amount'] as int,
-          date: tx['date'] as DateTime,
-          type: tx['type'] as String,
-        );
-      },
+    return RefreshIndicator(
+      color: AppColors.neonGreen,
+      backgroundColor: AppColors.bgCard,
+      onRefresh: _loadTransactions,
+      child: _transactions.isEmpty
+          ? ListView(
+              padding: const EdgeInsets.all(16),
+              children: [
+                SizedBox(height: MediaQuery.of(context).size.height * 0.25),
+                Icon(Icons.history, color: AppColors.textMuted, size: 48),
+                SizedBox(height: 12),
+                Text('Aucune transaction',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600)),
+                SizedBox(height: 4),
+                Text('Tirez vers le bas pour actualiser',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              ],
+            )
+          : ListView.separated(
+              padding: const EdgeInsets.all(16),
+              itemCount: _transactions.length,
+              separatorBuilder: (_, __) => const SizedBox(height: 6),
+              itemBuilder: (_, i) {
+                final tx = _transactions[i];
+                return TransactionTile(
+                  label: tx['label'] as String,
+                  amount: tx['amount'] as int,
+                  date: tx['date'] as DateTime,
+                  type: tx['type'] as String,
+                );
+              },
+            ),
     );
   }
+
+
 
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -1210,6 +1300,522 @@ class _ProfileScreenState extends State<ProfileScreen>
           ),
           Icon(Icons.chat_bubble_outline, color: AppColors.neonGreen, size: 18),
         ],
+      ),
+    );
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // FREEMOPAY – DÉPÔT ET RETRAIT
+  // ═══════════════════════════════════════════════════════════
+
+  Widget _buildActionButton({
+    required String label,
+    required IconData icon,
+    required Color color,
+    required VoidCallback onTap,
+  }) {
+    return GestureDetector(
+      onTap: onTap,
+      child: Container(
+        padding: EdgeInsets.symmetric(vertical: 14),
+        decoration: BoxDecoration(
+          color: color.withValues(alpha: 0.12),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: color.withValues(alpha: 0.4)),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(icon, size: 18, color: color),
+            SizedBox(width: 8),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 13, fontWeight: FontWeight.w700)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showDepositDialog() {
+    final amountCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    String? error;
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.add_circle_outline, color: AppColors.neonGreen, size: 22),
+              SizedBox(width: 8),
+              Text('Dépôt de coins',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Rechargez votre compte via Mobile Money/Orange Money',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                SizedBox(height: 16),
+                if (error != null) ...[
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.neonRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(error!,
+                        style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                  ),
+                  SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Montant (FCFA)',
+                    hintText: '100',
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.monetization_on,
+                        color: AppColors.neonYellow, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Numéro Mobile Money',
+                    hintText: '237658895572',
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon:
+                        Icon(Icons.phone, color: AppColors.neonGreen, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonBlue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: AppColors.neonBlue),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text('1 FCFA = 1 coin',
+                            style: TextStyle(
+                                color: AppColors.neonBlue, fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Annuler',
+                  style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      final amountStr = amountCtrl.text.trim();
+                      final phone = phoneCtrl.text.trim();
+
+                      if (amountStr.isEmpty || phone.isEmpty) {
+                        setS(() => error = 'Veuillez remplir tous les champs');
+                        return;
+                      }
+
+                      final amount = int.tryParse(amountStr);
+                      if (amount == null || amount <= 0) {
+                        setS(() => error = 'Montant invalide');
+                        return;
+                      }
+
+                      if (!_freemopayService.validatePhoneNumber(phone)) {
+                        setS(() => error =
+                            'Numéro invalide. Format: 237XXXXXXXXX');
+                        return;
+                      }
+
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
+
+                      final cleanedPhone =
+                          _freemopayService.cleanPhoneNumber(phone);
+                      final result = await _freemopayService.initiateDeposit(
+                        payer: cleanedPhone,
+                        amount: amount,
+                      );
+
+                      if (!ctx.mounted) return;
+
+                      if (result['success'] == true) {
+                        Navigator.pop(ctx);
+
+                        // Rediriger vers la page d'attente avec polling
+                        if (mounted) {
+                          final success = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => FreemopayAwaitingScreen(
+                                reference: result['reference'] as String,
+                                externalId: result['externalId'] as String,
+                                transactionType: 'DEPOSIT',
+                                amount: amount,
+                                phoneNumber: cleanedPhone,
+                              ),
+                            ),
+                          );
+
+                          // Recharger les données après retour
+                          if (mounted) {
+                            context.read<WalletProvider>().refresh();
+                            _loadTransactions();
+
+                            if (success == true) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Dépôt de $amount FCFA réussi !'),
+                                  backgroundColor: AppColors.neonGreen,
+                                ),
+                              );
+                            } else if (success == false) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Dépôt échoué'),
+                                  backgroundColor: AppColors.neonRed,
+                                ),
+                              );
+                            }
+                          }
+                        }
+                      } else {
+                        setS(() {
+                          loading = false;
+                          error = result['message'] ?? 'Erreur inconnue';
+                        });
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonGreen,
+                foregroundColor: Colors.black,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: loading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : Text('Confirmer',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showWithdrawalDialog() {
+    final wallet = context.read<WalletProvider>();
+    final currentCoins = wallet.coins;
+
+    final amountCtrl = TextEditingController();
+    final phoneCtrl = TextEditingController();
+    String? error;
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.remove_circle_outline,
+                  color: AppColors.neonOrange, size: 22),
+              SizedBox(width: 8),
+              Text('Retrait de coins',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16)),
+            ],
+          ),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text('Retirez vos coins vers Mobile Money/Orange Money',
+                    style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                SizedBox(height: 8),
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonYellow.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.account_balance_wallet,
+                          size: 16, color: AppColors.neonYellow),
+                      SizedBox(width: 8),
+                      Text('Solde actuel: $currentCoins coins',
+                          style: TextStyle(
+                              color: AppColors.neonYellow,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w700)),
+                    ],
+                  ),
+                ),
+                SizedBox(height: 16),
+                if (error != null) ...[
+                  Container(
+                    padding: EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: AppColors.neonRed.withValues(alpha: 0.1),
+                      borderRadius: BorderRadius.circular(8),
+                    ),
+                    child: Text(error!,
+                        style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                  ),
+                  SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: amountCtrl,
+                  keyboardType: TextInputType.number,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Montant (FCFA)',
+                    hintText: 'Max: $currentCoins',
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.monetization_on,
+                        color: AppColors.neonYellow, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 12),
+                TextField(
+                  controller: phoneCtrl,
+                  keyboardType: TextInputType.phone,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Numéro de réception',
+                    hintText: '237658895572',
+                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.phone,
+                        color: AppColors.neonOrange, size: 20),
+                    filled: true,
+                    fillColor: AppColors.bgElevated,
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                  ),
+                ),
+                SizedBox(height: 12),
+                Container(
+                  padding: EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonBlue.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 16, color: AppColors.neonBlue),
+                      SizedBox(width: 8),
+                      Expanded(
+                        child: Text('1 coin = 1 FCFA',
+                            style: TextStyle(
+                                color: AppColors.neonBlue, fontSize: 11)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: Text('Annuler',
+                  style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      final amountStr = amountCtrl.text.trim();
+                      final phone = phoneCtrl.text.trim();
+
+                      if (amountStr.isEmpty || phone.isEmpty) {
+                        setS(() => error = 'Veuillez remplir tous les champs');
+                        return;
+                      }
+
+                      final amount = int.tryParse(amountStr);
+                      if (amount == null || amount <= 0) {
+                        setS(() => error = 'Montant invalide');
+                        return;
+                      }
+
+                      if (amount > currentCoins) {
+                        setS(() => error = 'Solde insuffisant');
+                        return;
+                      }
+
+                      if (!_freemopayService.validatePhoneNumber(phone)) {
+                        setS(() =>
+                            error = 'Numéro invalide. Format: 237XXXXXXXXX');
+                        return;
+                      }
+
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
+
+                      // 1. Débiter d'abord les coins
+                      final deducted = await _walletService.deductCoins(
+                        amount,
+                        source: 'freemopay_withdrawal',
+                      );
+
+                      if (!deducted) {
+                        setS(() {
+                          loading = false;
+                          error = 'Impossible de débiter le solde';
+                        });
+                        return;
+                      }
+
+                      // 2. Initier le retrait Freemopay
+                      final cleanedPhone =
+                          _freemopayService.cleanPhoneNumber(phone);
+                      final result =
+                          await _freemopayService.initiateWithdrawal(
+                        receiver: cleanedPhone,
+                        amount: amount,
+                      );
+
+                      if (!ctx.mounted) return;
+
+                      if (result['success'] == true) {
+                        Navigator.pop(ctx);
+
+                        // Rediriger vers la page d'attente avec polling
+                        if (mounted) {
+                          final success = await Navigator.push<bool>(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => FreemopayAwaitingScreen(
+                                reference: result['reference'] as String,
+                                externalId: result['externalId'] as String,
+                                transactionType: 'WITHDRAW',
+                                amount: amount,
+                                phoneNumber: cleanedPhone,
+                              ),
+                            ),
+                          );
+
+                          // Recharger les données après retour
+                          if (mounted) {
+                            wallet.refresh();
+                            _loadTransactions();
+
+                            if (success == true) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Retrait de $amount FCFA réussi !'),
+                                  backgroundColor: AppColors.neonGreen,
+                                ),
+                              );
+                            } else if (success == false) {
+                              ScaffoldMessenger.of(context).showSnackBar(
+                                SnackBar(
+                                  content: Text('Retrait échoué - Montant remboursé'),
+                                  backgroundColor: AppColors.neonRed,
+                                ),
+                              );
+                            }
+                          }
+                        }
+                      } else {
+                        // Re-créditer en cas d'échec API (avant même d'atteindre Freemopay)
+                        await _walletService.addCoins(
+                          amount,
+                          source: 'freemopay_withdrawal_failed',
+                          note: 'Refund: ${result['message']}',
+                        );
+                        setS(() {
+                          loading = false;
+                          error = result['message'] ?? 'Erreur inconnue';
+                        });
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonOrange,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: loading
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text('Confirmer',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
       ),
     );
   }

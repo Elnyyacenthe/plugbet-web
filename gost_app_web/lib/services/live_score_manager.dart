@@ -7,7 +7,10 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:flutter/services.dart';
 import '../models/football_models.dart';
+import '../utils/logger.dart';
 import 'api_football_service.dart';
+
+const _log = Logger('LIVE');
 
 class LiveScoreManager extends ChangeNotifier {
   final ApiFootballService _apiService;
@@ -32,7 +35,7 @@ class LiveScoreManager extends ChangeNotifier {
     if (_isTracking) return;
 
     _isTracking = true;
-    debugPrint('[LIVE] Démarrage du tracking des scores en direct');
+    _log.info('Démarrage du tracking des scores en direct');
 
     // Premier fetch immédiat
     _fetchLiveScores();
@@ -50,20 +53,20 @@ class LiveScoreManager extends ChangeNotifier {
     _isTracking = false;
     _pollTimer?.cancel();
     _pollTimer = null;
-    debugPrint('[LIVE] Arrêt du tracking');
+    _log.info('Arrêt du tracking');
   }
 
   /// Suspendre temporairement (pendant un jeu)
   void pauseTracking() {
     _pollTimer?.cancel();
     _pollTimer = null;
-    debugPrint('[LIVE] Pause tracking (jeu actif)');
+    _log.info('Pause tracking (jeu actif)');
   }
 
   /// Reprendre après un jeu
   void resumeTracking() {
     if (!_isTracking) return;
-    debugPrint('[LIVE] Reprise tracking');
+    _log.info('Reprise tracking');
     _pollTimer?.cancel();
     _pollTimer = Timer.periodic(_pollInterval, (timer) {
       _adjustPollInterval();
@@ -74,53 +77,59 @@ class LiveScoreManager extends ChangeNotifier {
   /// Ajuster l'intervalle de polling selon le contexte
   void _adjustPollInterval() {
     if (!_isAppInForeground) {
-      // En background: très lent pour économiser la batterie
-      _pollInterval = const Duration(minutes: 3);
+      // En background: tres lent pour economiser la batterie
+      _pollInterval = const Duration(minutes: 5);
     } else if (_liveMatches.isEmpty) {
-      // Pas de matchs live: polling normal
-      _pollInterval = const Duration(seconds: 60);
+      // Pas de matchs live: polling lent
+      _pollInterval = const Duration(minutes: 2);
     } else {
-      // Matchs live en cours: très rapide
-      _pollInterval = const Duration(seconds: 15);
+      // Matchs live en cours: 20s (evite le chevauchement avec MatchesProvider@15s)
+      _pollInterval = const Duration(seconds: 20);
     }
   }
 
-  /// Récupérer les scores en direct
+  /// Recuperer les scores en direct
+  /// Ignore le cycle complet en cas d'erreur reseau (evite le flapping).
   Future<void> _fetchLiveScores() async {
     if (!_isTracking) return;
 
+    _log.info('Fetching scores... (interval: ${_pollInterval.inSeconds}s)');
+
+    List<FootballMatch> newMatches;
     try {
-      debugPrint('[LIVE] Fetching scores... (interval: ${_pollInterval.inSeconds}s)');
-
-      final newMatches = await _apiService.fetchLiveMatches();
-
-      // Mettre à jour et détecter les changements
-      for (var newMatch in newMatches) {
-        final oldMatch = _liveMatches[newMatch.id];
-
-        if (oldMatch != null) {
-          _detectAndNotifyChanges(oldMatch, newMatch);
-        } else {
-          // Nouveau match live détecté
-          debugPrint('[LIVE] Nouveau match détecté: ${newMatch.homeTeam.shortName} vs ${newMatch.awayTeam.shortName}');
-        }
-
-        _liveMatches[newMatch.id] = newMatch;
-      }
-
-      // Retirer les matchs terminés
-      _liveMatches.removeWhere((id, match) {
-        final isStillLive = newMatches.any((m) => m.id == id);
-        if (!isStillLive && match.status.isLive) {
-          debugPrint('[LIVE] Match terminé: ${match.homeTeam.shortName} vs ${match.awayTeam.shortName}');
-        }
-        return !isStillLive;
-      });
-
-      notifyListeners();
+      newMatches = await _apiService.fetchLiveMatches();
+    } on FetchException catch (e) {
+      // Echec reseau : on ignore completement ce cycle.
+      // Ne PAS wiper _liveMatches sinon les matchs seront "redetectes"
+      // au prochain cycle reussi (flapping = spam notifications).
+      _log.info('Fetch ignore (reseau): $e');
+      return;
     } catch (e) {
-      debugPrint('[LIVE] Erreur lors du fetch: $e');
+      _log.info('Erreur inattendue: $e');
+      return;
     }
+
+    // Mettre a jour et detecter les changements
+    for (var newMatch in newMatches) {
+      final oldMatch = _liveMatches[newMatch.id];
+      if (oldMatch != null) {
+        _detectAndNotifyChanges(oldMatch, newMatch);
+      } else {
+        _log.info('Nouveau match detecte: ${newMatch.homeTeam.shortName} vs ${newMatch.awayTeam.shortName}');
+      }
+      _liveMatches[newMatch.id] = newMatch;
+    }
+
+    // Retirer les matchs termines (uniquement si la reponse est valide)
+    _liveMatches.removeWhere((id, match) {
+      final isStillLive = newMatches.any((m) => m.id == id);
+      if (!isStillLive && match.status.isLive) {
+        _log.info('Match termine: ${match.homeTeam.shortName} vs ${match.awayTeam.shortName}');
+      }
+      return !isStillLive;
+    });
+
+    notifyListeners();
   }
 
   /// Détecter les changements et envoyer des notifications
@@ -132,21 +141,21 @@ class LiveScoreManager extends ChangeNotifier {
 
     // Nouveau but domicile
     if (homeScoreNew > homeScoreOld) {
-      debugPrint('[LIVE] ⚽ BUT! ${newMatch.homeTeam.shortName} - Score: $homeScoreNew-$awayScoreNew');
+      _log.info('⚽ BUT! ${newMatch.homeTeam.shortName} - Score: $homeScoreNew-$awayScoreNew');
       _goalController.add('${newMatch.homeTeam.shortName} marque ! $homeScoreNew-$awayScoreNew');
       _triggerHapticFeedback();
     }
 
     // Nouveau but extérieur
     if (awayScoreNew > awayScoreOld) {
-      debugPrint('[LIVE] ⚽ BUT! ${newMatch.awayTeam.shortName} - Score: $homeScoreNew-$awayScoreNew');
+      _log.info('⚽ BUT! ${newMatch.awayTeam.shortName} - Score: $homeScoreNew-$awayScoreNew');
       _goalController.add('${newMatch.awayTeam.shortName} marque ! $homeScoreNew-$awayScoreNew');
       _triggerHapticFeedback();
     }
 
     // Changement de statut (début de match, mi-temps, fin)
     if (oldMatch.statusStr != newMatch.statusStr) {
-      debugPrint('[LIVE] Changement de statut: ${oldMatch.statusStr} → ${newMatch.statusStr}');
+      _log.info('Changement de statut: ${oldMatch.statusStr} → ${newMatch.statusStr}');
 
       if (newMatch.status == MatchStatus.inPlay && oldMatch.status == MatchStatus.timed) {
         // Coup d'envoi !
@@ -185,7 +194,7 @@ class LiveScoreManager extends ChangeNotifier {
 
     if (_isAppInForeground && !wasForeground) {
       // L'app revient en foreground: fetch immédiat
-      debugPrint('[LIVE] App en foreground - fetch immédiat');
+      _log.info('App en foreground - fetch immédiat');
       _fetchLiveScores();
     }
 
@@ -202,7 +211,7 @@ class LiveScoreManager extends ChangeNotifier {
     try {
       return await _apiService.fetchMatchDetail(matchId);
     } catch (e) {
-      debugPrint('[LIVE] Erreur lors du fetch des détails: $e');
+      _log.info('Erreur lors du fetch des détails: $e');
       return null;
     }
   }

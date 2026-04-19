@@ -10,9 +10,7 @@ import 'package:hive_flutter/hive_flutter.dart';
 import '../models/fpl_models.dart';
 
 class FplService {
-  static const String _base = kIsWeb
-      ? '/api/proxy?target=fpl&path='
-      : 'https://fantasy.premierleague.com/api';
+  static const String _base = 'https://fantasy.premierleague.com/api';
 
   static const String _boxName    = 'fpl_cache';
   static const String _keyBootstrap = 'bootstrap';

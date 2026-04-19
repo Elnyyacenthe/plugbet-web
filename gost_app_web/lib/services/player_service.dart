@@ -4,10 +4,13 @@
 // ============================================================
 
 import 'dart:convert';
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/player_models.dart';
+import '../utils/logger.dart';
 import 'hive_service.dart';
+
+const _logBoard = Logger('LEADERBOARD');
+const _logFriends = Logger('FRIENDS');
 
 class PlayerService {
   PlayerService._();
@@ -354,7 +357,7 @@ class PlayerService {
           }).toList();
         }
       } catch (e) {
-        debugPrint('[Leaderboard] xp query failed: $e');
+        _logBoard.info('xp query failed: $e');
       }
 
       // Fallback: utiliser coins comme métrique de classement
@@ -381,7 +384,7 @@ class PlayerService {
 
       return [];
     } catch (e) {
-      debugPrint('[Leaderboard] fetchLeaderboard error: $e');
+      _logBoard.info('fetchLeaderboard error: $e');
       return [];
     }
   }
@@ -450,17 +453,17 @@ class PlayerService {
               DateTime.now(),
         ));
       }
-      debugPrint('[FRIENDS] ${results.length} demandes en attente');
+      _logFriends.info('${results.length} demandes en attente');
       return results;
     } catch (e) {
-      debugPrint('[FRIENDS] getPendingRequests ERROR: $e');
+      _logFriends.info('getPendingRequests ERROR: $e');
       return [];
     }
   }
 
   Future<bool> sendFriendRequest(String toUserId) async {
     if (_userId == null) {
-      debugPrint('[FRIENDS] sendFriendRequest: userId is null');
+      _logFriends.info('sendFriendRequest: userId is null');
       return false;
     }
     try {
@@ -469,10 +472,10 @@ class PlayerService {
         'to_id': toUserId,
         'status': 'pending',
       });
-      debugPrint('[FRIENDS] Demande envoyée à $toUserId');
+      _logFriends.info('Demande envoyée à $toUserId');
       return true;
     } catch (e) {
-      debugPrint('[FRIENDS] sendFriendRequest ERROR: $e');
+      _logFriends.info('sendFriendRequest ERROR: $e');
       return false;
     }
   }
@@ -489,10 +492,10 @@ class PlayerService {
       await _sb.from('friendships').insert(
         {'user_id': _userId, 'friend_id': fromId, 'status': 'accepted'},
       );
-      debugPrint('[FRIENDS] Amitié acceptée: $fromId');
+      _logFriends.info('Amitié acceptée: $fromId');
       return true;
     } catch (e) {
-      debugPrint('[FRIENDS] acceptFriendRequest ERROR: $e');
+      _logFriends.info('acceptFriendRequest ERROR: $e');
       return false;
     }
   }

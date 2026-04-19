@@ -135,21 +135,33 @@ class FplProvider extends ChangeNotifier {
 
   // ─── Live GW ──────────────────────────────────────────────
 
+  int _liveFailStreak = 0;
+  static const int _maxLiveFails = 3;
+
   Future<void> loadLiveGw(int gw) async {
     try {
       final live = await _service.fetchLiveGw(gw);
       if (live != null) {
         liveElements = live;
+        _liveFailStreak = 0;
         _recalcMyPoints();
         notifyListeners();
       }
-    } catch (_) {}
+    } catch (_) {
+      _liveFailStreak++;
+      if (_liveFailStreak >= _maxLiveFails) {
+        debugPrint('[FPL] Live polling arrete apres $_liveFailStreak echecs');
+        _liveTimer?.cancel();
+        _liveTimer = null;
+      }
+    }
   }
 
   void _startLivePolling(int gw) {
     _liveTimer?.cancel();
+    _liveFailStreak = 0;
     _liveTimer = Timer.periodic(_livePollInterval, (_) => loadLiveGw(gw));
-    loadLiveGw(gw); // chargement immédiat
+    loadLiveGw(gw); // chargement immediat
   }
 
   void pausePolling() => _liveTimer?.cancel();
