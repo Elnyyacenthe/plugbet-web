@@ -9,7 +9,7 @@ class TransactionTile extends StatelessWidget {
   final String label;
   final int amount;
   final DateTime date;
-  final String type; // 'game' | 'bet' | 'refund' | ...
+  final String type; // 'game' | 'bet' | 'refund' | 'deposit' | 'withdrawal' | 'pending' | 'failed'
 
   const TransactionTile({
     super.key,
@@ -27,15 +27,36 @@ class TransactionTile extends StatelessWidget {
         return Icons.casino;
       case 'refund':
         return Icons.replay;
+      case 'deposit':
+        return Icons.add_circle_outline;
+      case 'withdrawal':
+        return Icons.remove_circle_outline;
+      case 'pending':
+        return Icons.access_time;
+      case 'failed':
+        return Icons.error_outline;
       default:
         return Icons.swap_horiz;
     }
   }
 
   Color _color() {
-    if (amount > 0) return AppColors.neonGreen;
-    if (amount < 0) return AppColors.neonRed;
-    return AppColors.textMuted;
+    // Couleurs spécifiques pour certains types
+    switch (type) {
+      case 'pending':
+        return AppColors.neonYellow;
+      case 'failed':
+        return AppColors.neonRed;
+      case 'deposit':
+        return AppColors.neonGreen;
+      case 'withdrawal':
+        return AppColors.neonOrange;
+      default:
+        // Par défaut : vert si positif, rouge si négatif, gris si zéro
+        if (amount > 0) return AppColors.neonGreen;
+        if (amount < 0) return AppColors.neonRed;
+        return AppColors.textMuted;
+    }
   }
 
   String _formatDate(DateTime d) =>

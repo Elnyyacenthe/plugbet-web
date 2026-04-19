@@ -2,6 +2,7 @@
 // WalletProvider – Solde global accessible depuis toute l'app
 // ============================================================
 import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/wallet_service.dart';
 
@@ -28,21 +29,31 @@ class WalletProvider extends ChangeNotifier {
     _subscribeRealtime();
   }
 
+  /// notifyListeners safe — si on est en plein build, differe au prochain frame
+  void _safeNotify() {
+    final phase = SchedulerBinding.instance.schedulerPhase;
+    if (phase == SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => notifyListeners());
+    } else {
+      notifyListeners();
+    }
+  }
+
   /// Recharge le solde depuis Supabase
   Future<void> refresh() async {
     _loading = true;
-    notifyListeners();
+    _safeNotify();
     final profile = await _service.getProfile();
     _coins = profile?['coins'] as int? ?? 0;
     _username = profile?['username'] as String? ?? '';
     _loading = false;
-    notifyListeners();
+    _safeNotify();
   }
 
   /// Met à jour le solde local directement (après débit/crédit connu)
   void updateLocal(int newCoins) {
     _coins = newCoins;
-    notifyListeners();
+    _safeNotify();
   }
 
   /// Abonnement temps réel sur la table profiles

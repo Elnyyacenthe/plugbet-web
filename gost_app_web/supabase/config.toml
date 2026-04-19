@@ -1,0 +1,10 @@
+# ============================================================
+# Configuration Supabase CLI
+# ============================================================
+
+[functions.football_proxy]
+# Desactive la verification JWT automatique — notre fonction fait
+# sa propre verification du header Authorization.
+# Corrige le bug "Unsupported JWT algorithm ES256" sur les projets
+# recents qui utilisent des JWT asymetriques.
+verify_jwt = false

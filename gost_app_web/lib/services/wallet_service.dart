@@ -1,16 +1,25 @@
 // ============================================================
-// WalletService – Caisse générale (profiles table)
-// Source unique pour toutes les opérations de coins
+// WalletService — Operations sur le wallet (coins)
+// Source unique pour toutes les operations de coins.
+//
+// IMPORTANT : les operations atomiques (deduct/add) passent par la RPC
+// `my_wallet_apply_delta` qui :
+//   1. Verrouille la ligne user (FOR UPDATE) → pas de race condition
+//   2. Verifie le solde avant de debiter
+//   3. Enregistre chaque operation dans wallet_transactions (audit trail)
+//
+// En fallback (si la RPC n'est pas encore deployee), l'ancienne methode
+// non-atomique est utilisee mais un warning est loggue.
 // ============================================================
-import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../utils/logger.dart';
 
 class WalletService {
-  // Singleton pour partager l'instance entre tous les services
   static final WalletService _instance = WalletService._internal();
   factory WalletService() => _instance;
   WalletService._internal();
 
+  static const _log = Logger('WALLET');
   final SupabaseClient _client = Supabase.instance.client;
 
   String? get currentUserId => _client.auth.currentUser?.id;
@@ -37,8 +46,8 @@ class WalletService {
         return getProfile();
       }
       return res;
-    } catch (e) {
-      debugPrint('[WALLET] getProfile: $e');
+    } catch (e, s) {
+      _log.error('getProfile', e, s);
       return null;
     }
   }
@@ -54,10 +63,99 @@ class WalletService {
   }
 
   // ============================================================
-  // OPÉRATIONS COINS (joueur courant)
+  // OPERATIONS ATOMIQUES via RPC
   // ============================================================
 
-  Future<bool> deductCoins(int amount) async {
+  /// Retire des coins au joueur courant.
+  /// Retourne true si l'operation a reussi (solde suffisant).
+  ///
+  /// [source] : identifiant de la source ('aviator', 'apple_fortune', ...)
+  /// [referenceId] : id de session/round/match optionnel
+  Future<bool> deductCoins(
+    int amount, {
+    String source = 'generic',
+    String? referenceId,
+    String? note,
+  }) async {
+    if (amount <= 0) return true;
+    final uid = currentUserId;
+    if (uid == null) return false;
+
+    try {
+      final res = await _client.rpc('my_wallet_apply_delta', params: {
+        'p_delta': -amount,
+        'p_source': source,
+        'p_reference_id': referenceId,
+        'p_note': note,
+      });
+      if (res is Map && res.containsKey('error')) {
+        _log.warn('deductCoins refuse: ${res['error']}');
+        return false;
+      }
+      return res != null;
+    } catch (e, s) {
+      _log.error('deductCoins RPC failed, fallback legacy', e, s);
+      return _legacyDeduct(amount);
+    }
+  }
+
+  /// Crediter des coins au joueur courant.
+  Future<bool> addCoins(
+    int amount, {
+    String source = 'generic',
+    String? referenceId,
+    String? note,
+  }) async {
+    if (amount <= 0) return true;
+    final uid = currentUserId;
+    if (uid == null) return false;
+
+    try {
+      final res = await _client.rpc('my_wallet_apply_delta', params: {
+        'p_delta': amount,
+        'p_source': source,
+        'p_reference_id': referenceId,
+        'p_note': note,
+      });
+      if (res is Map && res.containsKey('error')) {
+        _log.warn('addCoins refuse: ${res['error']}');
+        return false;
+      }
+      return res != null;
+    } catch (e, s) {
+      _log.error('addCoins RPC failed, fallback legacy', e, s);
+      return _legacyAdd(amount);
+    }
+  }
+
+  /// Crediter un autre utilisateur (pour jeux multijoueurs).
+  /// Passe par la RPC admin-level (necessite que le backend autorise).
+  Future<void> addCoinsToUser(
+    String userId,
+    int amount, {
+    String source = 'multiplayer_win',
+    String? referenceId,
+  }) async {
+    if (amount <= 0) return;
+    try {
+      await _client.rpc('wallet_apply_delta', params: {
+        'p_user_id': userId,
+        'p_delta': amount,
+        'p_source': source,
+        'p_reference_id': referenceId,
+      });
+    } catch (e, s) {
+      _log.error('addCoinsToUser RPC failed, fallback legacy', e, s);
+      await _legacyAddToUser(userId, amount);
+    }
+  }
+
+  // ============================================================
+  // FALLBACK LEGACY (non-atomique)
+  // Utilise uniquement si la RPC n'est pas encore deployee
+  // ============================================================
+
+  Future<bool> _legacyDeduct(int amount) async {
     final uid = currentUserId;
     if (uid == null) return false;
     try {
@@ -67,30 +165,28 @@ class WalletService {
           .from('user_profiles')
           .update({'coins': coins - amount}).eq('id', uid);
       return true;
-    } catch (e) {
-      debugPrint('[WALLET] deductCoins: $e');
+    } catch (e, s) {
+      _log.error('legacyDeduct', e, s);
       return false;
     }
   }
 
-  Future<void> addCoins(int amount) async {
+  Future<bool> _legacyAdd(int amount) async {
     final uid = currentUserId;
-    if (uid == null) return;
+    if (uid == null) return false;
     try {
       final coins = await getCoins();
       await _client
           .from('user_profiles')
           .update({'coins': coins + amount}).eq('id', uid);
-    } catch (e) {
-      debugPrint('[WALLET] addCoins: $e');
+      return true;
+    } catch (e, s) {
+      _log.error('legacyAdd', e, s);
+      return false;
     }
   }
 
-  // ============================================================
-  // OPÉRATIONS COINS (n'importe quel utilisateur – gains)
-  // ============================================================
-
-  Future<void> addCoinsToUser(String userId, int amount) async {
+  Future<void> _legacyAddToUser(String userId, int amount) async {
     try {
       final profile = await _client
           .from('user_profiles')
@@ -101,8 +197,8 @@ class WalletService {
       await _client
           .from('user_profiles')
           .update({'coins': current + amount}).eq('id', userId);
-    } catch (e) {
-      debugPrint('[WALLET] addCoinsToUser: $e');
+    } catch (e, s) {
+      _log.error('legacyAddToUser', e, s);
     }
   }
 }

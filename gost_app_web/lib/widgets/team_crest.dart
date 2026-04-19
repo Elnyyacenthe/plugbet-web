@@ -33,11 +33,22 @@ class TeamCrest extends StatelessWidget {
     }
 
     // --- PNG / JPG ---
+    // Optimisations perf :
+    // - fadeInDuration: Duration.zero → pas d'animation quand l'image sort du cache
+    // - memCacheWidth/Height → decoding resize pour economiser la RAM (logos 40-80px)
+    // - filterQuality low → rendu plus rapide pour petites images
+    final dpr = MediaQuery.of(context).devicePixelRatio;
+    final cacheSize = (size * dpr).round();
     return CachedNetworkImage(
       imageUrl: url,
       width: size,
       height: size,
       fit: BoxFit.contain,
+      fadeInDuration: Duration.zero,
+      fadeOutDuration: Duration.zero,
+      memCacheWidth: cacheSize,
+      memCacheHeight: cacheSize,
+      filterQuality: FilterQuality.low,
       placeholder: (_, __) => _initialsWidget(),
       errorWidget: (_, __, ___) => _initialsWidget(),
     );

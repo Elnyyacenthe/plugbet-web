@@ -18,10 +18,10 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/aviator_models.dart';
 import '../services/aviator_service.dart';
 
-// Durées fixes du round (en ms)
-const int _kCountdownMs = 20000; // 20s de countdown (mises autorisées)
+// Durees fixes du round (en ms)
+const int _kCountdownMs = 10000; // 10s de countdown (mises autorisees)
 const int _kMaxFlyMs    = 20000; // 20s max de vol
-const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 40s par round
+const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 30s par round
 
 class AviatorProvider extends ChangeNotifier {
   AviatorProvider() {
@@ -143,7 +143,7 @@ class AviatorProvider extends ChangeNotifier {
     _elapsedMs    = 0;
     bet1.reset();
     bet2.reset();
-    countdownSecs = ((_kCountdownMs - posInRound) / 1000).ceil().clamp(1, 20);
+    countdownSecs = ((_kCountdownMs - posInRound) / 1000).ceil().clamp(1, 10);
     _notify();
 
     // Mettre à jour le countdown chaque seconde

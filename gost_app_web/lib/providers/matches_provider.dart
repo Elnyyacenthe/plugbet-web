@@ -5,6 +5,12 @@ import '../services/api_sports_service.dart';
 import '../services/api_football_service.dart';
 import '../services/hive_service.dart';
 import '../services/supabase_service.dart';
+import '../utils/logger.dart';
+
+const _logProvider = Logger('PROVIDER');
+const _logSmart = Logger('SMART');
+const _logLifecycle = Logger('LIFECYCLE');
+const _logRefresh = Logger('REFRESH');
 
 enum LoadingState { idle, loading, loaded, error, offline }
 
@@ -252,12 +258,12 @@ class MatchesProvider extends ChangeNotifier {
   Future<void> loadMatches() async {
     _errorMessage = null;
     final sw = Stopwatch()..start();
-    debugPrint('[PROVIDER] ══════ loadMatches() START ══════');
+    _logProvider.info('══════ loadMatches() START ══════');
 
     // 1. Afficher le cache immédiatement (startup instantané)
     final cached = _hiveService.getCachedMatches();
     if (cached.isNotEmpty && _allMatches.isEmpty) {
-      debugPrint('[PROVIDER] Cache instant: ${cached.length} matchs');
+      _logProvider.info('Cache instant: ${cached.length} matchs');
       _allMatches = cached;
       _lastFetch = _hiveService.getLastUpdateTime();
       _state = LoadingState.loaded;
@@ -273,34 +279,19 @@ class MatchesProvider extends ChangeNotifier {
     // Sans ce délai → "Skipped 185 frames" → ANR → crash
     await Future.delayed(const Duration(milliseconds: 800));
 
-    // 3. Essayer apifootball.com en premier (si clé configurée)
+    // 3. apifootball.com DESACTIVE (plan expire — a reactiver quand on paye)
+    // Source unique: football-data.org
     List<FootballMatch> freshMatches = [];
-    if (_apiSportsService.hasApiKey) {
+    {
       try {
-        debugPrint('[PROVIDER] Tentative apifootball.com...');
-        freshMatches = await _apiSportsService.fetchTodayMatches();
-        if (freshMatches.isNotEmpty) {
-          _activeSource = 'apifootball.com';
-          debugPrint(
-              '[PROVIDER] apifootball.com: ${freshMatches.length} matchs');
-        }
-      } catch (e) {
-        debugPrint('[PROVIDER] apifootball.com échoué: $e');
-      }
-    }
-
-    // 4. Fallback sur football-data.org (via proxy sur le web)
-    if (freshMatches.isEmpty) {
-      try {
-        debugPrint('[PROVIDER] Tentative football-data.org...');
+        _logProvider.info('Tentative football-data.org...');
         freshMatches = await _apiService.fetchTodayMatches();
         if (freshMatches.isNotEmpty) {
           _activeSource = 'football-data.org';
-          debugPrint(
-              '[PROVIDER] football-data.org: ${freshMatches.length} matchs');
+          _logProvider.info('football-data.org: ${freshMatches.length} matchs');
         }
       } catch (e) {
-        debugPrint('[PROVIDER] football-data.org échoué: $e');
+        _logProvider.info('football-data.org échoué: $e');
       }
     }
 
@@ -310,15 +301,13 @@ class MatchesProvider extends ChangeNotifier {
       _lastFetch = DateTime.now();
       _state = LoadingState.loaded;
       _hiveService.cacheMatches(freshMatches);
-      // Upsert Supabase (skip sur web sans auth fiable)
-      if (!kIsWeb) {
-        final now = DateTime.now();
-        if (_lastSupabaseUpsert == null || now.difference(_lastSupabaseUpsert!).inMinutes >= 5) {
-          _lastSupabaseUpsert = now;
-          _supabaseService.upsertMatches(freshMatches).catchError((e) {
-            debugPrint('[PROVIDER] Erreur upsertMatches: $e');
-          });
-        }
+      // Upsert Supabase seulement toutes les 5 min (pas chaque poll)
+      final now = DateTime.now();
+      if (_lastSupabaseUpsert == null || now.difference(_lastSupabaseUpsert!).inMinutes >= 5) {
+        _lastSupabaseUpsert = now;
+        _supabaseService.upsertMatches(freshMatches).catchError((e) {
+          _logProvider.info('Erreur upsertMatches: $e');
+        });
       }
     } else if (_allMatches.isEmpty) {
       // Dernière chance : cache
@@ -336,8 +325,7 @@ class MatchesProvider extends ChangeNotifier {
       }
     }
 
-    debugPrint(
-        '[PROVIDER] ══════ loadMatches() FIN en ${sw.elapsedMilliseconds}ms | ${_allMatches.length} matchs | source: $_activeSource ══════');
+    _logProvider.info('══════ loadMatches() FIN en ${sw.elapsedMilliseconds}ms | ${_allMatches.length} matchs | source: $_activeSource ══════');
     notifyListeners();
     _startSmartPolling();
   }
@@ -360,10 +348,10 @@ class MatchesProvider extends ChangeNotifier {
   Duration _calculateInterval() {
     final hasLive = _allMatches.any((m) => m.status.isLive);
 
-    // 1. Matchs en direct → polling ultra-rapide (8s = ~7 requêtes/minute)
+    // 1. Matchs en direct → polling 15s (4 req/min, respecte le rate limit de 6s)
     if (hasLive) {
       _pollReason = 'live';
-      return Duration(seconds: _isAppInForeground ? 8 : 30);
+      return Duration(seconds: _isAppInForeground ? 15 : 60);
     }
 
     // 2. Pas de matchs live → vérifier le prochain match upcoming
@@ -421,8 +409,7 @@ class MatchesProvider extends ChangeNotifier {
     _smartTimer?.cancel();
     if (_isGameActive) return; // ne pas poller pendant un jeu
     final interval = _calculateInterval();
-    debugPrint(
-        '[SMART] Prochain poll dans ${interval.inSeconds}s (raison: $_pollReason)');
+    _logSmart.info('Prochain poll dans ${interval.inSeconds}s (raison: $_pollReason)');
     _smartTimer = Timer(interval, () => _executePoll());
   }
 
@@ -431,7 +418,7 @@ class MatchesProvider extends ChangeNotifier {
   /// Exécute un cycle de polling puis re-planifie (avec guard anti-concurrence)
   Future<void> _executePoll() async {
     if (_pollRunning) {
-      debugPrint('[SMART] Poll déjà en cours, skip');
+      _logSmart.info('Poll déjà en cours, skip');
       return;
     }
     _pollRunning = true;
@@ -456,11 +443,11 @@ class MatchesProvider extends ChangeNotifier {
         notifyListeners();
       } else {
         _consecutiveLiveFailures++;
-        debugPrint('[SMART] Aucune donnée ($_consecutiveLiveFailures échecs)');
+        _logSmart.info('Aucune donnée ($_consecutiveLiveFailures échecs)');
       }
     } catch (e) {
       _consecutiveLiveFailures++;
-      debugPrint('[SMART] Erreur: $e ($_consecutiveLiveFailures échecs)');
+      _logSmart.info('Erreur: $e ($_consecutiveLiveFailures échecs)');
     } finally {
       _pollRunning = false;
       // Toujours re-planifier le prochain poll
@@ -468,31 +455,17 @@ class MatchesProvider extends ChangeNotifier {
     }
   }
 
-  /// Fetch dual-API : apifootball.com → football-data.org
+  /// Fetch depuis football-data.org uniquement
+  /// (apifootball.com desactive tant que le plan n'est pas paye)
   Future<List<FootballMatch>> _fetchFromApi({required bool live}) async {
     List<FootballMatch> matches = [];
-
-    // Essayer apifootball.com d'abord
-    if (_apiSportsService.hasApiKey) {
-      try {
-        matches = live
-            ? await _apiSportsService.fetchLiveMatches()
-            : await _apiSportsService.fetchTodayMatches();
-        if (matches.isNotEmpty) return matches;
-      } catch (e) {
-        debugPrint('[SMART] apifootball.com échoué: $e');
-      }
-    }
-
-    // Fallback football-data.org
     try {
       matches = (live && _consecutiveLiveFailures < 2)
           ? await _apiService.fetchLiveMatches()
           : await _apiService.fetchTodayMatches();
     } catch (e) {
-      debugPrint('[SMART] football-data.org échoué: $e');
+      _logSmart.info('football-data.org échoué: $e');
     }
-
     return matches;
   }
 
@@ -505,8 +478,7 @@ class MatchesProvider extends ChangeNotifier {
       if (minutesUntil > 0 &&
           minutesUntil <= 60 &&
           !_lineupsFetched.contains(match.id)) {
-        debugPrint(
-            '[LINEUPS] Pré-chargement match ${match.id} (dans ${minutesUntil}min)');
+        _logProvider.info('Lineups pre-chargement match ${match.id} (dans ${minutesUntil}min)');
         // Lineups désactivées pour optimisation performances
         _lineupsFetched.add(match.id);
       }
@@ -543,7 +515,7 @@ class MatchesProvider extends ChangeNotifier {
     _bgGraceTimer?.cancel();
 
     if (isForeground) {
-      debugPrint('[LIFECYCLE] Foreground (était bg: $wasInBackground)');
+      _logLifecycle.info('Foreground (était bg: $wasInBackground)');
       if (wasInBackground) {
         // Huawei/EMUI peut avoir tué nos timers → tout relancer
         _stopPolling();
@@ -554,7 +526,7 @@ class MatchesProvider extends ChangeNotifier {
         if (sinceLastFetch > 30) {
           loadMatches();
         } else {
-          debugPrint('[LIFECYCLE] Skip reload (fetched ${sinceLastFetch}s ago)');
+          _logLifecycle.info('Skip reload (fetched ${sinceLastFetch}s ago)');
           _startSmartPolling();
         }
       } else {
@@ -564,19 +536,19 @@ class MatchesProvider extends ChangeNotifier {
         }
       }
     } else {
-      debugPrint('[LIFECYCLE] Background → smart polling continue');
+      _logLifecycle.info('Background → smart polling continue');
       // Garder le polling actif tant que possible
       // Huawei peut tuer après quelques minutes, c'est OK :
       // on re-sync tout au retour foreground
       _bgGraceTimer = Timer(const Duration(hours: 1), () {
-        debugPrint('[LIFECYCLE] Background prolongé → arrêt polling');
+        _logLifecycle.info('Background prolongé → arrêt polling');
         _stopPolling();
       });
     }
   }
 
   Future<void> refreshMatches() async {
-    debugPrint('[REFRESH] Rafraîchissement manuel');
+    _logRefresh.info('Rafraîchissement manuel');
     await _executePoll();
   }
 
