@@ -14,8 +14,43 @@ class SolitaireService {
   // Délégation à la caisse générale
   Future<Map<String, dynamic>?> getProfile() => _wallet.getProfile();
   Future<int> getCoins() => _wallet.getCoins();
-  Future<bool> deductCoins(int amount) => _wallet.deductCoins(amount);
-  Future<void> addCoins(int amount) => _wallet.addCoins(amount);
+
+  /// Mise du joueur (deduit son wallet ET envoie a la caisse jeu)
+  Future<bool> placeBet(int amount) async {
+    final ok = await _wallet.deductCoins(amount);
+    if (!ok) return false;
+    // La mise va dans la caisse du jeu (solitaire est solo)
+    try {
+      await _client.rpc('game_treasury_collect_loss', params: {
+        'p_amount': amount,
+        'p_game_type': 'solitaire',
+        'p_user_id': currentUserId,
+        'p_description': 'Solitaire: mise placee',
+      });
+    } catch (e) {
+      debugPrint('[SOLITAIRE] treasury_collect: $e');
+    }
+    return true;
+  }
+
+  /// Joueur gagne : on credite son wallet ET on retire de la caisse jeu
+  Future<void> payWin(int amount) async {
+    await _wallet.addCoins(amount);
+    try {
+      await _client.rpc('game_treasury_pay_win', params: {
+        'p_amount': amount,
+        'p_game_type': 'solitaire',
+        'p_user_id': currentUserId,
+        'p_description': 'Solitaire: gain',
+      });
+    } catch (e) {
+      debugPrint('[SOLITAIRE] treasury_pay: $e');
+    }
+  }
+
+  // Anciennes API (gardées pour compat)
+  Future<bool> deductCoins(int amount) => placeBet(amount);
+  Future<void> addCoins(int amount) => payWin(amount);
 
   Future<void> saveBestScore(int score) async {
     final uid = currentUserId;
