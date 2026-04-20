@@ -192,10 +192,22 @@ class AviatorProvider extends ChangeNotifier {
     phase      = AviatorPhase.crashed;
     multiplier = double.parse(crashPoint.toStringAsFixed(2));
 
+    final supabase = Supabase.instance.client;
+    final uid = supabase.auth.currentUser?.id;
+
     for (final bet in [bet1, bet2]) {
       if (bet.placed && !bet.cashedOut) {
         bet.profit = -bet.amount;
         totalLost += bet.amount;
+        // Mise perdue → va dans la caisse du jeu (10% house edge implicite)
+        if (!isDemoMode) {
+          supabase.rpc('game_treasury_collect_loss', params: {
+            'p_amount': bet.amount,
+            'p_game_type': 'aviator',
+            'p_user_id': uid,
+            'p_description': 'Aviator: crash @x${crashPoint.toStringAsFixed(2)}',
+          }).then((_) {}, onError: (_) {});
+        }
       }
     }
 
@@ -272,6 +284,14 @@ class AviatorProvider extends ChangeNotifier {
       if (multiplier > bestMultiplier) bestMultiplier = multiplier;
       if (bet.profit! > 0) totalWon += bet.profit!;
       _svc.addWinnings(payout);
+      // Cashout : on paie depuis la caisse du jeu
+      final uid = Supabase.instance.client.auth.currentUser?.id;
+      Supabase.instance.client.rpc('game_treasury_pay_win', params: {
+        'p_amount': payout,
+        'p_game_type': 'aviator',
+        'p_user_id': uid,
+        'p_description': 'Aviator: cashout @x${multiplier.toStringAsFixed(2)}',
+      }).then((_) {}, onError: (_) {});
       _svc.getUsername().then((username) {
         _svc.sendCashOutMessage(
           username:   username,
