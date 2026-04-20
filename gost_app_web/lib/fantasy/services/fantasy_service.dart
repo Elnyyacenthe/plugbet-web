@@ -459,9 +459,12 @@ class FantasyService {
 
   // ─── Ligues ───────────────────────────────────────────────
 
+  /// Cree une ligue avec mise d'entree optionnelle.
+  /// Si [entryFee] > 0, le createur sera automatiquement debite et inscrit.
   Future<Map<String, dynamic>> createLeague({
     required String name,
     required bool isPrivate,
+    int entryFee = 0,
   }) async {
     final uid = _requireUid();
 
@@ -472,6 +475,7 @@ class FantasyService {
         'creator_id': uid,
         'is_private': isPrivate,
         'private_code': code,
+        'entry_fee': entryFee,
       }).select().single();
 
       await joinLeague(res['id'] as String);
@@ -486,16 +490,27 @@ class FantasyService {
     }
   }
 
+  /// Rejoint une ligue. Si entry_fee > 0, deduit les coins via RPC.
   Future<void> joinLeague(String leagueId) async {
-    final uid = _requireUid();
+    _requireUid();
     try {
-      final team = await getMyTeam();
-      await _db.from('fantasy_league_members').upsert({
-        'league_id': leagueId,
-        'user_id': uid,
-        'team_name': team?['team_name'] ?? 'Mon Équipe',
-        'total_points': team?['total_points'] ?? 0,
+      // Tentative via RPC (gere automatiquement entry_fee)
+      final result = await _db.rpc('fantasy_join_league_with_fee', params: {
+        'p_league_id': leagueId,
       });
+
+      if (result is Map && result['success'] == false) {
+        final err = result['error'] as String? ?? 'Erreur inconnue';
+        if (err.contains('Solde insuffisant')) {
+          throw FantasyException(
+              FantasyError.budgetInsuffisant, 'Solde insuffisant pour la mise d\'entrée.');
+        }
+        if (err.contains('deja membre')) {
+          // Pas une vraie erreur, on continue silencieusement
+          return;
+        }
+        throw FantasyException(FantasyError.serverError, err);
+      }
     } on PostgrestException catch (e) {
       throw FantasyException(
           FantasyError.serverError, 'Impossible de rejoindre la ligue : ${e.message}');
@@ -510,7 +525,7 @@ class FantasyService {
     try {
       final league = await _db
           .from('fantasy_leagues')
-          .select()
+          .select('id')
           .eq('private_code', code.toUpperCase())
           .maybeSingle();
       if (league == null) {
@@ -521,6 +536,33 @@ class FantasyService {
     } on FantasyException {
       rethrow;
     } catch (e) {
+      throw const FantasyException(
+          FantasyError.networkError, 'Erreur réseau.');
+    }
+  }
+
+  /// Termine une ligue : distribue le pot au gagnant (apres 15% commission).
+  /// Seul le createur de la ligue peut appeler cette methode.
+  Future<Map<String, dynamic>> finishLeague({
+    required String leagueId,
+    required String winnerId,
+  }) async {
+    _requireUid();
+    try {
+      final result = await _db.rpc('fantasy_finish_league', params: {
+        'p_league_id': leagueId,
+        'p_winner_id': winnerId,
+      });
+      if (result is Map && result['success'] == false) {
+        throw FantasyException(
+            FantasyError.serverError, result['error'] as String? ?? 'Erreur');
+      }
+      return Map<String, dynamic>.from(result as Map);
+    } on PostgrestException catch (e) {
+      throw FantasyException(
+          FantasyError.serverError, 'Impossible de terminer la ligue : ${e.message}');
+    } catch (e) {
+      if (e is FantasyException) rethrow;
       throw const FantasyException(
           FantasyError.networkError, 'Erreur réseau.');
     }

@@ -34,6 +34,7 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
 
   Future<void> _showCreateDialog() async {
     final nameCtrl = TextEditingController();
+    final feeCtrl = TextEditingController(text: '0');
     bool isPrivate = false;
 
     final confirmed = await showDialog<bool>(
@@ -43,40 +44,64 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
           backgroundColor: AppColors.bgCard,
           title: Text(AppLocalizations.of(context)!.fantasyCreateLeague,
               style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              TextField(
-                controller: nameCtrl,
-                autofocus: true,
-                style: TextStyle(color: AppColors.textPrimary),
-                decoration: InputDecoration(
-                  labelText: 'Nom de la ligue',
-                  labelStyle: TextStyle(color: AppColors.textSecondary),
-                  enabledBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.divider),
-                  ),
-                  focusedBorder: OutlineInputBorder(
-                    borderRadius: BorderRadius.circular(10),
-                    borderSide: BorderSide(color: AppColors.neonGreen),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: true,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Nom de la ligue',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.neonGreen),
+                    ),
                   ),
                 ),
-              ),
-              SizedBox(height: 16),
-              Row(
-                children: [
-                  Switch(
-                    value: isPrivate,
-                    activeColor: AppColors.neonGreen,
-                    onChanged: (v) => setLocal(() => isPrivate = v),
+                SizedBox(height: 14),
+                TextField(
+                  controller: feeCtrl,
+                  keyboardType: TextInputType.number,
+                  style: TextStyle(color: AppColors.textPrimary),
+                  decoration: InputDecoration(
+                    labelText: 'Mise d\'entrée (coins)',
+                    labelStyle: TextStyle(color: AppColors.textSecondary),
+                    helperText: '0 = ligue gratuite. Sinon, chaque membre paie cette mise et le pot va au gagnant (-15% commission).',
+                    helperMaxLines: 3,
+                    helperStyle: TextStyle(color: AppColors.textMuted, fontSize: 11),
+                    prefixIcon: Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 18),
+                    enabledBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.divider),
+                    ),
+                    focusedBorder: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10),
+                      borderSide: BorderSide(color: AppColors.neonGreen),
+                    ),
                   ),
-                  SizedBox(width: 8),
-                  Text(isPrivate ? 'Ligue privée (code)' : 'Ligue publique',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
-                ],
-              ),
-            ],
+                ),
+                SizedBox(height: 14),
+                Row(
+                  children: [
+                    Switch(
+                      value: isPrivate,
+                      activeColor: AppColors.neonGreen,
+                      onChanged: (v) => setLocal(() => isPrivate = v),
+                    ),
+                    SizedBox(width: 8),
+                    Text(isPrivate ? 'Ligue privée (code)' : 'Ligue publique',
+                        style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
+                  ],
+                ),
+              ],
+            ),
           ),
           actions: [
             TextButton(
@@ -96,9 +121,11 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
 
     if (confirmed != true || !mounted) return;
     try {
+      final fee = int.tryParse(feeCtrl.text.trim()) ?? 0;
       await FantasyService.instance.createLeague(
         name: nameCtrl.text.trim().isEmpty ? 'Ma Ligue' : nameCtrl.text.trim(),
         isPrivate: isPrivate,
+        entryFee: fee < 0 ? 0 : fee,
       );
       await _load();
       if (mounted) {
