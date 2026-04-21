@@ -34,7 +34,6 @@ import 'l10n/generated/app_localizations.dart';
 import 'utils/logger.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'fantasy/providers/fpl_provider.dart';
-import 'fantasy/screens/fantasy_home_screen.dart';
 
 const _kSentryDsn =
     'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
@@ -410,14 +409,12 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         case 0:
           return HomeScreen(scaffoldKey: _scaffoldKey);
         case 1:
-          return const FantasyHomeScreen();
-        case 2:
           return const GamesScreen();
-        case 3:
+        case 2:
           return const ChatScreen();
-        case 4:
+        case 3:
           return const ProfileScreen();
-        case 5:
+        case 4:
           return SettingsScreen(
             hiveService: widget.hiveService,
             supabaseService: widget.supabaseService,
@@ -493,16 +490,6 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
               icon: const Icon(Icons.sports_soccer_outlined),
               activeIcon: const Icon(Icons.sports_soccer),
               label: t.tabMatches,
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.emoji_events_outlined),
-              activeIcon: ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [AppColors.neonGreen, AppColors.neonYellow],
-                ).createShader(bounds),
-                child: Icon(Icons.emoji_events, color: Colors.white),
-              ),
-              label: t.tabFantasy,
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.sports_esports_outlined),
