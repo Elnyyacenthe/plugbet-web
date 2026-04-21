@@ -601,15 +601,28 @@ class MessagingService {
 
   /// Recupere tous les statuts actifs + vues
   /// Retourne une liste groupee par utilisateur.
+  /// Visible uniquement par moi + mes amis acceptes.
   Future<List<UserStatusGroup>> getActiveStatusGroups() async {
     final myId = _myId;
     if (myId == null) return [];
     try {
-      // Statuts actifs
+      // 1. Recuperer mes amis (relation acceptee)
+      final friendsData = await _client
+          .from('friendships')
+          .select('friend_id')
+          .eq('user_id', myId)
+          .eq('status', 'accepted');
+      final allowedAuthors = <String>{
+        myId, // mes propres statuts
+        for (final f in friendsData as List) f['friend_id'] as String,
+      };
+
+      // 2. Statuts actifs filtres aux amis + soi-meme
       final statusData = await _client
           .from('user_statuses')
           .select()
           .gt('expires_at', DateTime.now().toIso8601String())
+          .inFilter('user_id', allowedAuthors.toList())
           .order('created_at', ascending: false);
 
       if ((statusData as List).isEmpty) return [];
