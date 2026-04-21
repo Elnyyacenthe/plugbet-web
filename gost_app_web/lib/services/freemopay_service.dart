@@ -201,6 +201,29 @@ class FreemopayService {
       return {'success': false, 'message': 'Vous devez être connecté.'};
     }
 
+    // Verification anti-fraude + limites de retrait
+    try {
+      final check = await _client.rpc('check_withdrawal_allowed', params: {
+        'p_amount': amount,
+      });
+      if (check is Map) {
+        if (check['allowed'] != true) {
+          return {
+            'success': false,
+            'message': check['reason'] as String? ?? 'Retrait non autorisé',
+            'kyc_required': check['kyc_required'] == true,
+          };
+        }
+        // Si review manuelle requise, informer le joueur
+        if (check['review_needed'] == true) {
+          // On continue mais on pourrait demander confirmation UI
+        }
+      }
+    } catch (e) {
+      // Si la RPC n'existe pas encore (migration pas faite), on continue
+      // Pas de blocage pour compat descendante
+    }
+
     final externalId = 'WITHDRAW_${_uuid.v4().substring(0, 8)}_$uid';
 
     try {
