@@ -194,8 +194,9 @@ class SupabaseService {
   // ============================================================
   // AUTH – Google Sign-In (google_sign_in v7+)
   // ============================================================
-  /// Web/Server client ID (configurer dans Google Cloud Console + Supabase)
-  static const _googleServerClientId = ''; // TODO: ajouter ton server client ID
+  /// Web/Server client ID (configure dans Google Cloud Console + Supabase)
+  static const _googleServerClientId =
+      '36449807885-g2re5tqnf5fgo05hg0nm0l1lq6q04iu9.apps.googleusercontent.com';
 
   /// Initialise GoogleSignIn une seule fois.
   static bool _googleInitialized = false;
