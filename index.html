@@ -88,6 +88,18 @@
       .download-cards { flex-direction: column; align-items: center; }
     }
   </style>
+
+  <!-- Preload Flutter assets : le navigateur commence a telecharger
+       pendant que l'utilisateur regarde la landing page, pour que
+       l'ouverture de /app/ soit quasi instantanee une fois cliquee. -->
+  <link rel="preload" href="app/flutter_bootstrap.js" as="script" crossorigin>
+  <link rel="preload" href="app/main.dart.js" as="script" crossorigin>
+  <link rel="preload" href="app/canvaskit/canvaskit.wasm" as="fetch" type="application/wasm" crossorigin>
+  <link rel="preload" href="app/canvaskit/canvaskit.js" as="script" crossorigin>
+  <link rel="preload" href="app/assets/FontManifest.json" as="fetch" crossorigin>
+  <link rel="prefetch" href="app/index.html">
+  <link rel="prefetch" href="app/flutter_service_worker.js">
+  <link rel="preconnect" href="https://dqzrociaaztlezwlgzwh.supabase.co" crossorigin>
 </head>
 <body>
 
