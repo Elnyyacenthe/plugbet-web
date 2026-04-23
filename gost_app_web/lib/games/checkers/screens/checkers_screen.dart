@@ -145,7 +145,7 @@ class _CheckersScreenState extends State<CheckersScreen> {
                       Row(children: [
                         Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 18),
                         SizedBox(width: 4),
-                        Text('${wallet.coins} coins',
+                        Text('${wallet.coins} FCFA',
                             style: TextStyle(fontSize: 14, color: AppColors.neonYellow, fontWeight: FontWeight.w600)),
                       ]),
                     ],
@@ -336,7 +336,7 @@ class _RoomTile extends StatelessWidget {
               Row(children: [
                 Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 13),
                 SizedBox(width: 3),
-                Text('Mise : ${room.betAmount} coins', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+                Text('Mise : ${room.betAmount} FCFA', style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
               ]),
             ]),
           ),

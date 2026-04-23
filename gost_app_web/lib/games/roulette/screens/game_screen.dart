@@ -101,7 +101,7 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
       await _svc.placeBet(widget.gameId, _selectedType!, amount, number: _selectedNumber);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Pari placé: $_selectedType ${_selectedNumber ?? ""} ($amount coins)'),
+          SnackBar(content: Text('Pari placé: $_selectedType ${_selectedNumber ?? ""} ($amount FCFA)'),
             backgroundColor: AppColors.neonGreen, duration: Duration(seconds: 1)));
       }
     } catch (e) {
@@ -301,7 +301,7 @@ class _RLTGameScreenState extends State<RLTGameScreen> with SingleTickerProvider
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Text(won ? 'Tu as gagné !' : 'Perdu...', style: TextStyle(
           color: won ? AppColors.neonGreen : Colors.redAccent, fontSize: 20, fontWeight: FontWeight.w900)),
-        if (won) Text('+${myPlayer!.winnings} coins', style: TextStyle(
+        if (won) Text('+${myPlayer!.winnings} FCFA', style: TextStyle(
           color: AppColors.neonYellow, fontSize: 24, fontWeight: FontWeight.w800)),
       ]),
     );

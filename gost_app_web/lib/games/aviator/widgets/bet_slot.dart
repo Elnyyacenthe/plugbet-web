@@ -72,11 +72,11 @@ class _BetSlotState extends State<BetSlot> {
     if (bet.placed && phase == AviatorPhase.crashed) {
       if (bet.cashedOut && bet.profit != null) {
         resultText = bet.profit! > 0
-            ? '+${bet.profit} coins à x${bet.cashMultiplier!.toStringAsFixed(2)}'
-            : '${bet.profit} coins';
+            ? '+${bet.profit} FCFA à x${bet.cashMultiplier!.toStringAsFixed(2)}'
+            : '${bet.profit} FCFA';
         resultColor = bet.profit! > 0 ? AppColors.neonGreen : AppColors.neonRed;
       } else if (!bet.cashedOut) {
-        resultText = '-${bet.amount} coins';
+        resultText = '-${bet.amount} FCFA';
         resultColor = AppColors.neonRed;
       }
     }
@@ -235,7 +235,7 @@ class _BetSlotState extends State<BetSlot> {
           child: Center(
             child: Text(
               '${AppLocalizations.of(context)!.aviatorCashout}  x${provider.multiplier.toStringAsFixed(2)}  '
-              '(${delta >= 0 ? '+' : ''}$delta coins)',
+              '(${delta >= 0 ? '+' : ''}$delta FCFA)',
               style: TextStyle(
                 color: AppColors.neonGreen,
                 fontWeight: FontWeight.w800,
@@ -259,7 +259,7 @@ class _BetSlotState extends State<BetSlot> {
         ),
         child: Center(
           child: Text(
-            '✓ ${AppLocalizations.of(context)!.aviatorBetPlaced} · ${bet.amount} coins',
+            '✓ ${AppLocalizations.of(context)!.aviatorBetPlaced} · ${bet.amount} FCFA',
             style: TextStyle(
               color: AppColors.neonYellow,
               fontWeight: FontWeight.w700,
@@ -348,7 +348,7 @@ class _BetSlotState extends State<BetSlot> {
         ),
         child: Center(
           child: Text(
-            '${AppLocalizations.of(context)!.aviatorBetButton}  ${bet.amount} COINS',
+            '${AppLocalizations.of(context)!.aviatorBetButton}  ${bet.amount} FCFA',
             style: TextStyle(
               color: canBet
                   ? const Color(0xFFF97316)

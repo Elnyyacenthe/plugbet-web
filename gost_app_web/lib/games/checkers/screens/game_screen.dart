@@ -566,7 +566,7 @@ class _GameOverDialog extends StatelessWidget {
           Row(mainAxisAlignment: MainAxisAlignment.center, children: [
             Icon(Icons.monetization_on, color: AppColors.neonYellow),
             SizedBox(width: 6),
-            Text('+$prize coins',
+            Text('+$prize FCFA',
                 style: TextStyle(color: AppColors.neonYellow, fontSize: 18, fontWeight: FontWeight.w700)),
           ]),
         ],

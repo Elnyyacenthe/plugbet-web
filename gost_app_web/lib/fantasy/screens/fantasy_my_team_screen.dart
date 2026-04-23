@@ -344,35 +344,38 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
           maxChildSize: 0.8,
           minChildSize: 0.3,
           expand: false,
-          builder: (_, scrollCtrl) => ListView(
+          builder: (_, scrollCtrl) => ListView.builder(
             controller: scrollCtrl,
-            children: [
-              Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(title,
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.w800,
-                        fontSize: 15)),
-              ),
-              ...items.map((p) {
-                final el = fpl.bootstrap?.elementById(p['element_id'] as int);
-                if (el == null) return const SizedBox.shrink();
-                return ListTile(
-                  leading: _posIcon(el.elementType),
-                  title: Text(el.webName,
-                      style: TextStyle(color: AppColors.textPrimary)),
-                  subtitle: Text('${el.coinsValue} coins · ${el.totalPoints} pts',
+            // +1 header, +1 footer
+            itemCount: items.length + 2,
+            itemBuilder: (_, i) {
+              if (i == 0) {
+                return Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text(title,
                       style: TextStyle(
-                          color: AppColors.textSecondary, fontSize: 11)),
-                  onTap: () {
-                    Navigator.pop(ctx);
-                    onPick(p);
-                  },
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.w800,
+                          fontSize: 15)),
                 );
-              }),
-              SizedBox(height: 16),
-            ],
+              }
+              if (i == items.length + 1) return SizedBox(height: 16);
+              final p = items[i - 1];
+              final el = fpl.bootstrap?.elementById(p['element_id'] as int);
+              if (el == null) return const SizedBox.shrink();
+              return ListTile(
+                leading: _posIcon(el.elementType),
+                title: Text(el.webName,
+                    style: TextStyle(color: AppColors.textPrimary)),
+                subtitle: Text('${el.coinsValue} FCFA · ${el.totalPoints} pts',
+                    style: TextStyle(
+                        color: AppColors.textSecondary, fontSize: 11)),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  onPick(p);
+                },
+              );
+            },
           ),
         );
       },
@@ -1118,7 +1121,7 @@ class _FantasyMyTeamScreenState extends State<FantasyMyTeamScreen>
                         color: AppColors.textPrimary,
                         fontSize: 14,
                         fontWeight: FontWeight.w700)),
-                Text('${el.coinsValue} coins · ${el.totalPoints} pts',
+                Text('${el.coinsValue} FCFA · ${el.totalPoints} pts',
                     style: TextStyle(
                         color: AppColors.textSecondary, fontSize: 11)),
               ],

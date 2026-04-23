@@ -701,7 +701,7 @@ class _MinesScreenState extends State<MinesScreen> {
               ? const CircularProgressIndicator(color: Colors.black)
               : Text(
                   s.canCashOut
-                      ? 'CASH OUT ${s.currentPotentialWin} coins'
+                      ? 'CASH OUT ${s.currentPotentialWin} FCFA'
                       : 'Revelez au moins 1 case',
                   style: const TextStyle(
                     fontWeight: FontWeight.w900,

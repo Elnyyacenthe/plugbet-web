@@ -31,7 +31,7 @@ class _CreateCheckersRoomScreenState extends State<CreateCheckersRoomScreen> {
   Future<void> _create() async {
     if (_coins < _selectedBet) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fonds insuffisants ($_selectedBet coins requis)')));
+          SnackBar(content: Text('Fonds insuffisants ($_selectedBet FCFA requis)')));
       return;
     }
     setState(() => _creating = true);
@@ -160,14 +160,14 @@ class _CreateCheckersRoomScreenState extends State<CreateCheckersRoomScreen> {
                         Icons.emoji_events,
                         AppColors.neonYellow,
                         'Pot total',
-                        '${_selectedBet * 2} coins',
+                        '${_selectedBet * 2} FCFA',
                       ),
                       SizedBox(height: 10),
                       _infoTile(
                         Icons.account_balance_wallet_outlined,
                         _coins >= _selectedBet ? AppColors.neonGreen : AppColors.neonRed,
                         'Votre solde',
-                        '$_coins coins',
+                        '$_coins FCFA',
                       ),
                       SizedBox(height: 10),
 
@@ -210,7 +210,7 @@ class _CreateCheckersRoomScreenState extends State<CreateCheckersRoomScreen> {
                           ),
                           child: _creating
                               ? CircularProgressIndicator(color: Colors.black, strokeWidth: 2)
-                              : Text('CRÉER – $_selectedBet coins',
+                              : Text('CRÉER – $_selectedBet FCFA',
                                   style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800, letterSpacing: 0.5)),
                         ),
                       ),

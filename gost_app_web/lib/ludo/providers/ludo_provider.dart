@@ -175,7 +175,7 @@ class LudoProvider extends ChangeNotifier {
     if (_profile == null) return null;
 
     if (_profile!.coins < betAmount) {
-      _error = 'Solde insuffisant ! Vous avez ${_profile!.coins} coins.';
+      _error = 'Solde insuffisant ! Vous avez ${_profile!.coins} FCFA.';
       notifyListeners();
       return null;
     }

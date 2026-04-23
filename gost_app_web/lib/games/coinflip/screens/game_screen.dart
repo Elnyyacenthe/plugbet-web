@@ -177,7 +177,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
                   Text('${AppLocalizations.of(context)!.gameResult}: ${gs.result?.toUpperCase() ?? "?"}',
                     style: TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
                   SizedBox(height: 8),
-                  Text(isWinner ? '+${_game!.pot} coins' : '-${_game!.betAmount} coins',
+                  Text(isWinner ? '+${_game!.pot} FCFA' : '-${_game!.betAmount} FCFA',
                     style: TextStyle(
                       color: isWinner ? AppColors.neonGreen : Colors.redAccent,
                       fontSize: 24, fontWeight: FontWeight.w900)),
@@ -282,7 +282,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
           content: Column(mainAxisSize: MainAxisSize.min, children: [
             Text('${AppLocalizations.of(context)!.gameResult}: ${_game!.gameState.result?.toUpperCase() ?? "?"}',
               style: TextStyle(color: AppColors.textPrimary, fontSize: 18)),
-            if (isWinner) Text('+${_game!.pot} coins',
+            if (isWinner) Text('+${_game!.pot} FCFA',
               style: TextStyle(color: AppColors.neonGreen, fontSize: 22, fontWeight: FontWeight.w900)),
             SizedBox(height: 8),
             Text(AppLocalizations.of(context)!.gameNextRound, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),

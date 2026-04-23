@@ -229,7 +229,7 @@ class BetPanel extends StatelessWidget {
                         ),
                       ),
                       Text(
-                        '$currentPotentialWin coins',
+                        '$currentPotentialWin FCFA',
                         style: const TextStyle(
                           fontWeight: FontWeight.w600,
                           fontSize: 10,

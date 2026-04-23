@@ -593,7 +593,7 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
                   Icon(Icons.monetization_on,
                       color: AppColors.neonYellow, size: 24),
                   SizedBox(width: 6),
-                  Text('+$pot coins',
+                  Text('+$pot FCFA',
                       style: TextStyle(
                           color: AppColors.neonYellow,
                           fontSize: 22,
@@ -601,7 +601,7 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
                 ],
               ),
             ] else ...[
-              Text('-${game.betAmount} coins',
+              Text('-${game.betAmount} FCFA',
                   style: TextStyle(
                       color: AppColors.neonRed,
                       fontSize: 22,
@@ -712,7 +712,7 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
                 Icon(Icons.monetization_on,
                     color: AppColors.neonGreen, size: 24),
                 SizedBox(width: 6),
-                Text('+${game.betAmount} coins rembourses',
+                Text('+${game.betAmount} FCFA rembourses',
                     style: TextStyle(
                         color: AppColors.neonGreen,
                         fontSize: 18,

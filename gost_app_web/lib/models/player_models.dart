@@ -345,14 +345,14 @@ const List<Achievement> allAchievements = [
   Achievement(
     id: 'rich_5k',
     title: 'Riche',
-    description: 'Avoir 5 000 coins',
+    description: 'Avoir 5 000 FCFA',
     icon: Icons.monetization_on,
     color: Color(0xFF00E676),
   ),
   Achievement(
     id: 'rich_10k',
     title: 'Millionnaire',
-    description: 'Avoir 10 000 coins',
+    description: 'Avoir 10 000 FCFA',
     icon: Icons.diamond,
     color: Color(0xFF00E5FF),
   ),

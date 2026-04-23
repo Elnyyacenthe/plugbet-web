@@ -32,7 +32,7 @@ class _SolitaireCreateRoomScreenState extends State<SolitaireCreateRoomScreen> {
   Future<void> _create() async {
     if (_coins < _selectedBet) {
       ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Fonds insuffisants ($_selectedBet coins requis)')));
+          SnackBar(content: Text('Fonds insuffisants ($_selectedBet FCFA requis)')));
       return;
     }
     setState(() => _creating = true);
@@ -218,7 +218,7 @@ class _SolitaireCreateRoomScreenState extends State<SolitaireCreateRoomScreen> {
                             SizedBox(width: 8),
                             Text('Pot total', style: TextStyle(color: AppColors.textSecondary)),
                           ]),
-                          Text('${_selectedBet * _selectedPlayers} coins',
+                          Text('${_selectedBet * _selectedPlayers} FCFA',
                               style: TextStyle(color: AppColors.neonYellow,
                                   fontWeight: FontWeight.w700, fontSize: 15)),
                         ],
@@ -242,7 +242,7 @@ class _SolitaireCreateRoomScreenState extends State<SolitaireCreateRoomScreen> {
                             SizedBox(width: 8),
                             Text('Votre solde', style: TextStyle(color: AppColors.textSecondary)),
                           ]),
-                          Text('$_coins coins',
+                          Text('$_coins FCFA',
                               style: TextStyle(
                                 color: _coins >= _selectedBet ? AppColors.neonGreen : AppColors.neonRed,
                                 fontWeight: FontWeight.w700,
@@ -292,7 +292,7 @@ class _SolitaireCreateRoomScreenState extends State<SolitaireCreateRoomScreen> {
                         ),
                         child: _creating
                             ? CircularProgressIndicator(color: AppColors.bgDark, strokeWidth: 2)
-                            : Text('CRÉER – $_selectedBet coins',
+                            : Text('CRÉER – $_selectedBet FCFA',
                                 style: TextStyle(fontSize: 15, fontWeight: FontWeight.w800)),
                       ),
                     ),

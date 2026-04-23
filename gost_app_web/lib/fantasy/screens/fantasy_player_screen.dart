@@ -118,7 +118,7 @@ class _FantasyPlayerScreenState extends State<FantasyPlayerScreen> {
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 13)),
                 SizedBox(height: 8),
                 Row(children: [
-                  _badge('${el.coinsValue} coins', AppColors.neonGreen),
+                  _badge('${el.coinsValue} FCFA', AppColors.neonGreen),
                   SizedBox(width: 8),
                   _badge('${el.selectedByPercent}% sél.', AppColors.neonBlue),
                   if (el.chanceOfPlayingNextRound < 100) ...[

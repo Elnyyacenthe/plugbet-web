@@ -400,7 +400,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                 SizedBox(height: 2),
                 Text(
                   canClaim
-                      ? 'Jour ${dayIndex + 1} : +${dailyRewardCoins[dayIndex]} coins'
+                      ? 'Jour ${dayIndex + 1} : +${dailyRewardCoins[dayIndex]} FCFA'
                       : 'Série de $streak jours',
                   style: TextStyle(
                       fontSize: 12, color: AppColors.textMuted),
@@ -417,7 +417,7 @@ class _DashboardScreenState extends State<DashboardScreen> {
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
-                        content: Text('+$coins coins récupérés !'),
+                        content: Text('+$coins FCFA récupérés !'),
                         backgroundColor: AppColors.neonGreen,
                       ),
                     );

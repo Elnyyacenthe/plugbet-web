@@ -24,14 +24,16 @@ import '../widgets/players_leaderboard.dart';
 class _Game {
   final String title;
   final String subtitle;
-  final String emoji;
+  final IconData icon;
+  final String imageAsset;
   final Color color;
   final Widget Function(BuildContext) builder;
   final GameRules? rules;
   const _Game({
     required this.title,
     required this.subtitle,
-    required this.emoji,
+    required this.icon,
+    required this.imageAsset,
     required this.color,
     required this.builder,
     this.rules,
@@ -50,7 +52,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Ludo',
         subtitle: 'Plateau classique • 2-4 joueurs',
-        emoji: '🎲',
+        icon: Icons.dashboard_rounded,
+        imageAsset: 'assets/games/ludo.png',
         color: AppColors.neonBlue,
         builder: (_) => const LudoV2MenuScreen(),
         rules: GameRulesLibrary.ludo,
@@ -58,7 +61,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Cora Dice',
         subtitle: 'Jeu de dés camerounais',
-        emoji: '🎲',
+        icon: Icons.casino_rounded,
+        imageAsset: 'assets/games/cora_dice.jpg',
         color: AppColors.neonGreen,
         builder: (_) => const CoraDiceScreen(),
         rules: GameRulesLibrary.coraDice,
@@ -66,7 +70,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Dames',
         subtitle: 'Plateau 8×8 • 1v1',
-        emoji: '♟️',
+        icon: Icons.grid_4x4_rounded,
+        imageAsset: 'assets/games/dames.jpg',
         color: AppColors.neonOrange,
         builder: (_) => const CheckersScreen(),
         rules: GameRulesLibrary.checkers,
@@ -74,7 +79,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Aviator',
         subtitle: 'Crash multiplier',
-        emoji: '✈️',
+        icon: Icons.flight_takeoff_rounded,
+        imageAsset: 'assets/games/aviator.png',
         color: const Color(0xFFF97316),
         builder: (_) => const AviatorScreen(),
         rules: GameRulesLibrary.aviator,
@@ -82,7 +88,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Blackjack',
         subtitle: '2-4 joueurs vs Dealer',
-        emoji: '🃏',
+        icon: Icons.style_rounded,
+        imageAsset: 'assets/games/blackjack.jpg',
         color: const Color(0xFF2E7D32),
         builder: (_) => const BlackjackScreen(),
         rules: GameRulesLibrary.blackjack,
@@ -90,7 +97,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Roulette',
         subtitle: 'Multi joueurs • Rouge/Noir',
-        emoji: '🎡',
+        icon: Icons.donut_large_rounded,
+        imageAsset: 'assets/games/roulette.jpg',
         color: const Color(0xFFB71C1C),
         builder: (_) => const RouletteScreen(),
         rules: GameRulesLibrary.roulette,
@@ -98,7 +106,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Apple Fortune',
         subtitle: 'Pyramide multiplicateurs',
-        emoji: '🍎',
+        icon: Icons.change_history_rounded,
+        imageAsset: 'assets/games/apple_fortune.png',
         color: const Color(0xFF4CAF50),
         builder: (_) => const AppleFortuneScreen(),
         rules: GameRulesLibrary.appleFortune,
@@ -106,7 +115,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Mines',
         subtitle: 'Diamants vs bombes',
-        emoji: '💣',
+        icon: Icons.diamond_rounded,
+        imageAsset: 'assets/games/mines.png',
         color: const Color(0xFFE53935),
         builder: (_) => const MinesScreen(),
         rules: GameRulesLibrary.mines,
@@ -114,7 +124,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Pile ou Face',
         subtitle: 'Duel 1v1',
-        emoji: '🪙',
+        icon: Icons.monetization_on_rounded,
+        imageAsset: 'assets/games/coinflip.png',
         color: const Color(0xFFFFD700),
         builder: (_) => const CoinflipScreen(),
         rules: GameRulesLibrary.coinflip,
@@ -122,7 +133,8 @@ class GamesScreen extends StatelessWidget {
       _Game(
         title: 'Solitaire',
         subtitle: 'Klondike • Solo',
-        emoji: '♠️',
+        icon: Icons.layers_rounded,
+        imageAsset: 'assets/games/solitaire.png',
         color: const Color(0xFF9C27B0),
         builder: (_) => const SolitaireScreen(),
         rules: GameRulesLibrary.solitaire,
@@ -245,14 +257,6 @@ class GamesScreen extends StatelessWidget {
         height: 160,
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(20),
-          gradient: LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF38003C), // FPL purple
-              const Color(0xFF00FF87), // FPL green
-            ],
-          ),
           boxShadow: [
             BoxShadow(
               color: const Color(0xFF38003C).withValues(alpha: 0.4),
@@ -261,25 +265,45 @@ class GamesScreen extends StatelessWidget {
             ),
           ],
         ),
-        child: Stack(
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(20),
+          child: Stack(
           children: [
-            // Patterns decoratifs
-            Positioned(
-              right: -30,
-              top: -20,
-              child: Icon(
-                Icons.sports_soccer,
-                size: 180,
-                color: Colors.white.withValues(alpha: 0.08),
+            // Fond image Fantasy (avec fallback gradient si manquante)
+            Positioned.fill(
+              child: Image.asset(
+                'assets/games/fantasy.jpg',
+                fit: BoxFit.cover,
+                cacheWidth: 800,
+                filterQuality: FilterQuality.low,
+                errorBuilder: (_, __, ___) => DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        const Color(0xFF38003C),
+                        const Color(0xFF00FF87),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
-            Positioned(
-              left: -10,
-              bottom: -10,
-              child: Icon(
-                Icons.emoji_events,
-                size: 100,
-                color: Colors.white.withValues(alpha: 0.08),
+
+            // Overlay sombre pour lisibilite du texte
+            Positioned.fill(
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      Colors.black.withValues(alpha: 0.55),
+                      Colors.black.withValues(alpha: 0.15),
+                    ],
+                  ),
+                ),
               ),
             ),
 
@@ -371,114 +395,143 @@ class GamesScreen extends StatelessWidget {
             ),
           ],
         ),
+        ),
       ),
     );
   }
 
   // ────────────────────────────────────────────────────────────
-  // GAME TILE : carte grille 2 colonnes
+  // GAME TILE : carte plein-cadre, fond gradient intense,
+  // icone geante en watermark + overlay sombre pour le texte
   // ────────────────────────────────────────────────────────────
   Widget _gameTile(BuildContext context, _Game g) {
+    final darkEnd = Color.lerp(g.color, Colors.black, 0.75)!;
     return GestureDetector(
-      onTap: () => Navigator.push(context, MaterialPageRoute(builder: g.builder)),
+      onTap: () =>
+          Navigator.push(context, MaterialPageRoute(builder: g.builder)),
       child: Container(
         decoration: BoxDecoration(
-          gradient: AppColors.cardGradient,
           borderRadius: BorderRadius.circular(16),
-          border: Border.all(color: g.color.withValues(alpha: 0.3)),
           boxShadow: [
             BoxShadow(
-              color: g.color.withValues(alpha: 0.08),
-              blurRadius: 12,
+              color: g.color.withValues(alpha: 0.25),
+              blurRadius: 10,
               offset: const Offset(0, 4),
             ),
           ],
         ),
-        child: Stack(
-          children: [
-            // Bouton règles
-            if (g.rules != null)
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(16),
+          child: Stack(
+            children: [
+              // FOND : image si elle existe, sinon gradient de couleur
+              // cacheWidth limite le decodage en RAM (sinon full resolution)
+              Positioned.fill(
+                child: Image.asset(
+                  g.imageAsset,
+                  fit: BoxFit.cover,
+                  cacheWidth: 400,
+                  filterQuality: FilterQuality.low,
+                  errorBuilder: (_, __, ___) {
+                    // Fallback : gradient + icone si image pas encore ajoutee
+                    return DecoratedBox(
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                          colors: [g.color, darkEnd],
+                        ),
+                      ),
+                      child: Center(
+                        child: Icon(
+                          g.icon,
+                          size: 80,
+                          color: Colors.white.withValues(alpha: 0.4),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+
+              // Overlay sombre en bas pour lisibilite du texte
               Positioned(
-                top: 8,
-                right: 8,
-                child: GestureDetector(
-                  onTap: () => GameRulesDialog.show(context, g.rules!),
-                  child: Container(
-                    width: 26,
-                    height: 26,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      color: g.color.withValues(alpha: 0.15),
-                      border: Border.all(color: g.color.withValues(alpha: 0.4)),
-                    ),
-                    child: Icon(
-                      Icons.help_outline_rounded,
-                      color: g.color,
-                      size: 15,
+                left: 0,
+                right: 0,
+                bottom: 0,
+                height: 72,
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      colors: [
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.75),
+                      ],
                     ),
                   ),
                 ),
               ),
 
-            // Contenu principal
-            Padding(
-              padding: const EdgeInsets.all(14),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  // Icone (emoji dans cercle gradient)
-                  Container(
-                    width: 56,
-                    height: 56,
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(14),
-                      gradient: LinearGradient(
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                        colors: [
-                          g.color.withValues(alpha: 0.32),
-                          g.color.withValues(alpha: 0.12),
-                        ],
+              // Bouton regles (coin haut droit)
+              if (g.rules != null)
+                Positioned(
+                  top: 8,
+                  right: 8,
+                  child: GestureDetector(
+                    onTap: () => GameRulesDialog.show(context, g.rules!),
+                    child: Container(
+                      width: 28,
+                      height: 28,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.black.withValues(alpha: 0.5),
                       ),
-                      border: Border.all(
-                        color: g.color.withValues(alpha: 0.4),
+                      child: const Icon(
+                        Icons.help_outline_rounded,
+                        color: Colors.white,
+                        size: 16,
                       ),
                     ),
-                    child: Center(
-                      child: Text(g.emoji, style: const TextStyle(fontSize: 28)),
+                  ),
+                ),
+
+              // Texte en bas
+              Positioned(
+                left: 12,
+                right: 12,
+                bottom: 10,
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      g.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
                     ),
-                  ),
-                  // Titre + sous-titre
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        g.title,
-                        style: TextStyle(
-                          color: AppColors.textPrimary,
-                          fontSize: 14,
-                          fontWeight: FontWeight.w800,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
+                    Text(
+                      g.subtitle,
+                      style: TextStyle(
+                        color: Colors.white.withValues(alpha: 0.85),
+                        fontSize: 10,
+                        fontWeight: FontWeight.w500,
                       ),
-                      const SizedBox(height: 2),
-                      Text(
-                        g.subtitle,
-                        style: TextStyle(
-                          color: AppColors.textMuted,
-                          fontSize: 10,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ],
-                  ),
-                ],
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ],
+                ),
               ),
-            ),
-          ],
+            ],
+          ),
         ),
       ),
     );

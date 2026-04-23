@@ -575,18 +575,31 @@ class _AuthScreenState extends State<AuthScreen>
         final email = _emailController.text.trim();
         if (_isSignUp) {
           _log.info('Email signup: $email');
-          final (result, error) =
-              await supabase.signUpWithEmail(email, password);
-          if (error != null) {
-            _log.warn('Email signup error: $error');
-            setState(() => _errorMessage = error);
-          } else if (result != null) {
+          // Verifie pseudo + email AVANT de creer le compte.
+          // Le pseudo est OBLIGATOIRE : on ne valide rien sans un pseudo unique.
+          final result = await supabase.signUpWithEmailAndUsername(
+              email, password, username);
+
+          if (result.status == SignUpStatus.emailExists) {
+            // Email deja pris : basculer automatiquement vers la connexion
+            // avec l'email pre-rempli, comme demande.
+            _log.info('Email exists -> redirect to sign-in');
+            setState(() {
+              _isSignUp = false;
+              _passwordController.clear();
+              _usernameController.clear();
+              _errorMessage =
+                  'Un compte existe deja avec cet email. Connecte-toi.';
+            });
+            _animController.forward(from: 0);
+          } else if (result.status != SignUpStatus.success) {
+            _log.warn('Email signup error: ${result.message}');
+            setState(() => _errorMessage = result.message);
+          } else if (result.response != null) {
+            // Signup OK : on se connecte et on pose le pseudo dans le profil.
+            // Tant que le pseudo n'est pas pose, le compte n'est pas "valide".
             await supabase.signInWithEmail(email, password);
-            if (username.isNotEmpty) {
-              await _updateUsernameAndPop(username, t.authAccountCreated);
-            } else {
-              _successAndPop(t.authAccountCreated);
-            }
+            await _updateUsernameAndPop(username, t.authAccountCreated);
           }
         } else {
           _log.info('Email signin: $email');
@@ -632,14 +645,25 @@ class _AuthScreenState extends State<AuthScreen>
       if (needsUsername) {
         final pseudo = await _askForUsername();
         if (!mounted) return;
-        if (pseudo != null && pseudo.isNotEmpty) {
-          try {
-            final ludo = context.read<LudoProvider>();
-            await ludo.loadProfile();
-            await ludo.updateUsername(pseudo);
-          } catch (e) {
-            _log.warn('Failed to set username: $e');
-          }
+        // Pseudo OBLIGATOIRE : si l'utilisateur ferme le dialog sans valider
+        // (back button, kill app pendant le dialog, etc.) on annule la session.
+        if (pseudo == null || pseudo.isEmpty) {
+          _log.warn('Google sign-in cancelled: no pseudo');
+          await SupabaseService().signOut();
+          if (!mounted) return;
+          setState(() {
+            _isLoading = false;
+            _errorMessage =
+                'Pseudo obligatoire pour finaliser la creation du compte.';
+          });
+          return;
+        }
+        try {
+          final ludo = context.read<LudoProvider>();
+          await ludo.loadProfile();
+          await ludo.updateUsername(pseudo);
+        } catch (e) {
+          _log.warn('Failed to set username: $e');
         }
       }
 
@@ -678,7 +702,9 @@ class _AuthScreenState extends State<AuthScreen>
     return showDialog<String>(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) => StatefulBuilder(
+      builder: (ctx) => PopScope(
+        canPop: false,
+        child: StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -774,6 +800,7 @@ class _AuthScreenState extends State<AuthScreen>
             ),
           ],
         ),
+      ),
       ),
     );
   }

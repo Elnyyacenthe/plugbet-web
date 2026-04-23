@@ -615,7 +615,7 @@ class _ResultDialog extends StatelessWidget {
             Row(mainAxisAlignment: MainAxisAlignment.center, children: [
               Icon(Icons.monetization_on, color: AppColors.neonYellow),
               SizedBox(width: 6),
-              Text('+$myPrize coins',
+              Text('+$myPrize FCFA',
                   style: TextStyle(
                       color: AppColors.neonYellow,
                       fontSize: 18,

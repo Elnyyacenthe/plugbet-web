@@ -1,6 +1,9 @@
 // ============================================================
-// AVIATOR – Écran de jeu principal
-// Courbe multiplicateur + avion animé + 2 mises + chat
+// AVIATOR - Ecran de jeu principal (style casino multijoueur)
+// Layout :
+//   • Wide (>=900px) : panneau gauche (live bets) + centre (jeu) + panneau droit (gains)
+//   • Mobile : panneaux en sheets repliables, centre plein ecran
+//   • Bas : historique crashes + 1/2 panneaux de mise
 // ============================================================
 
 import 'dart:math';
@@ -8,13 +11,15 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
-import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/wallet_provider.dart';
 import '../models/aviator_models.dart';
 import '../providers/aviator_provider.dart';
 import '../widgets/multiplier_curve_painter.dart';
 import '../widgets/bet_slot.dart';
 import '../widgets/plane_widget.dart';
+import '../widgets/live_bets_panel.dart';
+import '../widgets/live_winnings_panel.dart';
+import '../widgets/aviator_background.dart';
 
 class AviatorGameScreen extends StatelessWidget {
   final bool demoMode;
@@ -38,13 +43,13 @@ class _AviatorBody extends StatefulWidget {
 
 class _AviatorBodyState extends State<_AviatorBody>
     with TickerProviderStateMixin {
-  // Animation du multiplicateur (texte pulse)
   late AnimationController _pulseCtrl;
   late Animation<double> _pulseAnim;
-
-  // Animation crash (shake)
   late AnimationController _shakeCtrl;
   late Animation<double> _shakeAnim;
+
+  bool _showLiveBetsSheet = false;
+  bool _showWinningsSheet = false;
 
   @override
   void initState() {
@@ -85,56 +90,215 @@ class _AviatorBodyState extends State<_AviatorBody>
     final wallet = context.watch<WalletProvider>();
     return Consumer<AviatorProvider>(
       builder: (ctx, prov, _) {
-        // Détecter crash pour animation
         if (prov.phase == AviatorPhase.crashed &&
             _shakeCtrl.status == AnimationStatus.dismissed) {
           WidgetsBinding.instance.addPostFrameCallback((_) => _onPhaseCrashed());
         }
 
         return Scaffold(
-          backgroundColor: const Color(0xFF090912),
+          backgroundColor: const Color(0xFF050508),
           appBar: _buildAppBar(prov, wallet),
-          body: Column(
-            children: [
-              // ── Historique crashes ──────────────────────
-              _buildCrashHistory(prov),
-
-              // ── Zone de jeu principale ──────────────────
-              Expanded(child: _buildGameArea(prov)),
-
-              // ── Panneau mises ───────────────────────────
-              _buildBetPanel(prov),
-            ],
+          body: LayoutBuilder(
+            builder: (ctx, constraints) {
+              final wide = constraints.maxWidth >= 900;
+              if (wide) return _buildWideLayout(prov);
+              return _buildMobileLayout(prov);
+            },
           ),
         );
       },
     );
   }
 
+  // ─────────────────────────────────────────────────────────
+  // LAYOUT WIDE (>= 900px) : 3 colonnes
+  // ─────────────────────────────────────────────────────────
+  Widget _buildWideLayout(AviatorProvider prov) {
+    return Row(
+      children: [
+        const LiveBetsPanel(width: 260),
+        Expanded(
+          child: Column(
+            children: [
+              _buildCrashHistory(prov),
+              Expanded(child: _buildGameCenter(prov)),
+              _buildBetPanel(prov),
+            ],
+          ),
+        ),
+        const LiveWinningsPanel(width: 200),
+      ],
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────
+  // LAYOUT MOBILE : panneaux en sheets repliables
+  // ─────────────────────────────────────────────────────────
+  Widget _buildMobileLayout(AviatorProvider prov) {
+    return Stack(
+      children: [
+        Column(
+          children: [
+            _buildCrashHistory(prov),
+            _buildMobileStatsBar(prov),
+            Expanded(child: _buildGameCenter(prov)),
+            _buildBetPanel(prov),
+          ],
+        ),
+        if (_showLiveBetsSheet)
+          Positioned(
+            left: 0,
+            top: 0,
+            bottom: 0,
+            child: GestureDetector(
+              onTap: () => setState(() => _showLiveBetsSheet = false),
+              child: Row(
+                children: [
+                  const LiveBetsPanel(width: 240),
+                  Container(
+                    width: MediaQuery.of(context).size.width - 240,
+                    color: Colors.black.withValues(alpha: 0.55),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        if (_showWinningsSheet)
+          Positioned(
+            right: 0,
+            top: 0,
+            bottom: 0,
+            child: GestureDetector(
+              onTap: () => setState(() => _showWinningsSheet = false),
+              child: Row(
+                children: [
+                  Container(
+                    width: MediaQuery.of(context).size.width - 200,
+                    color: Colors.black.withValues(alpha: 0.55),
+                  ),
+                  const LiveWinningsPanel(width: 200),
+                ],
+              ),
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ─── Barre stats (mobile) : accès rapide aux panneaux ───
+  Widget _buildMobileStatsBar(AviatorProvider prov) {
+    final totalBets = prov.liveBets.length;
+    final totalWagered = prov.liveBets.fold<int>(0, (a, b) => a + b.amount);
+    return Container(
+      color: const Color(0xFF0A0A10),
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _showLiveBetsSheet = true),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F2015),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: Colors.white.withValues(alpha: 0.08)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.groups,
+                        color: Colors.white70, size: 14),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        '$totalBets paris · $totalWagered',
+                        style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                    const Icon(Icons.chevron_right,
+                        color: Colors.white54, size: 14),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => setState(() => _showWinningsSheet = true),
+              child: Container(
+                padding: const EdgeInsets.symmetric(
+                    horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF0F2015),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(
+                      color: AppColors.neonGreen.withValues(alpha: 0.25)),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.bolt,
+                        color: AppColors.neonGreen, size: 14),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Gains live',
+                      style: TextStyle(
+                          color: AppColors.neonGreen,
+                          fontSize: 11,
+                          fontWeight: FontWeight.w700),
+                    ),
+                    const Spacer(),
+                    const Icon(Icons.chevron_right,
+                        color: Colors.white54, size: 14),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─── AppBar ──────────────────────────────────────────────
   AppBar _buildAppBar(AviatorProvider prov, WalletProvider wallet) {
     return AppBar(
-      backgroundColor: const Color(0xFF0D0D1A),
+      backgroundColor: const Color(0xFF0A0A10),
+      elevation: 0,
       leading: IconButton(
         icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
         onPressed: () => Navigator.pop(context),
       ),
       title: Row(
         children: [
-          Text('✈ ', style: TextStyle(fontSize: 16)),
-          Text('Aviator',
-              style: TextStyle(
-                  color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
+          const Text('✈ ',
+              style: TextStyle(fontSize: 18, color: Color(0xFFEF4444))),
+          const Text(
+            'AVIATOR',
+            style: TextStyle(
+              color: Color(0xFFEF4444),
+              fontWeight: FontWeight.w900,
+              letterSpacing: 2,
+              fontSize: 16,
+            ),
+          ),
           if (prov.isDemoMode) ...[
-            SizedBox(width: 8),
+            const SizedBox(width: 8),
             Container(
-              padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
                 color: AppColors.neonBlue.withValues(alpha: 0.2),
                 borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: AppColors.neonBlue.withValues(alpha: 0.5)),
+                border: Border.all(
+                    color: AppColors.neonBlue.withValues(alpha: 0.5)),
               ),
-              child: Text(AppLocalizations.of(context)!.gameDemo,
+              child: Text('DEMO',
                   style: TextStyle(
                       color: AppColors.neonBlue,
                       fontSize: 10,
@@ -144,14 +308,13 @@ class _AviatorBodyState extends State<_AviatorBody>
         ],
       ),
       actions: [
-        // Solde coins
         Padding(
-          padding: EdgeInsets.only(right: 8),
+          padding: const EdgeInsets.only(right: 8),
           child: Row(
             children: [
               Icon(Icons.monetization_on,
                   color: AppColors.neonYellow, size: 16),
-              SizedBox(width: 4),
+              const SizedBox(width: 4),
               Text(
                 prov.isDemoMode ? '∞' : '${wallet.coins}',
                 style: TextStyle(
@@ -162,14 +325,13 @@ class _AviatorBodyState extends State<_AviatorBody>
             ],
           ),
         ),
-        // Toggle demo
         IconButton(
           icon: Icon(
             prov.isDemoMode ? Icons.money_off : Icons.play_circle,
             color: AppColors.textMuted,
             size: 20,
           ),
-          tooltip: prov.isDemoMode ? 'Quitter démo' : 'Mode démo',
+          tooltip: prov.isDemoMode ? 'Quitter demo' : 'Mode demo',
           onPressed: prov.toggleDemo,
         ),
       ],
@@ -180,31 +342,33 @@ class _AviatorBodyState extends State<_AviatorBody>
   Widget _buildCrashHistory(AviatorProvider prov) {
     final history = prov.crashHistory;
     return Container(
-      height: 36,
-      color: const Color(0xFF0D0D1A),
+      height: 32,
+      color: const Color(0xFF0A0A10),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
-        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         itemCount: history.length,
         itemBuilder: (_, i) {
           final r = history[i];
           final color = r.isEarly
               ? const Color(0xFFEF4444)
               : r.isMid
-                  ? AppColors.neonOrange
+                  ? const Color(0xFFF97316)
                   : AppColors.neonGreen;
           return Container(
-            margin: EdgeInsets.only(right: 6),
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            margin: const EdgeInsets.only(right: 4),
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(6),
+              color: color.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(5),
               border: Border.all(color: color.withValues(alpha: 0.4)),
             ),
-            child: Text(
-              'x${r.crashPoint.toStringAsFixed(2)}',
-              style: TextStyle(
-                  color: color, fontSize: 11, fontWeight: FontWeight.w700),
+            child: Center(
+              child: Text(
+                '${r.crashPoint.toStringAsFixed(2)}x',
+                style: TextStyle(
+                    color: color, fontSize: 11, fontWeight: FontWeight.w800),
+              ),
             ),
           );
         },
@@ -212,10 +376,8 @@ class _AviatorBodyState extends State<_AviatorBody>
     );
   }
 
-  // ─── Zone de jeu ─────────────────────────────────────────
-  Widget _buildGameArea(AviatorProvider prov) {
-    // Progress de la courbe : log scale depuis 0
-    // mult=0 → 0.0 | mult=1 → 0.14 | mult=5 → 0.41 | mult=50 → 0.95
+  // ─── Zone de jeu centrale (fond casino + courbe + avion) ──
+  Widget _buildGameCenter(AviatorProvider prov) {
     final progress = prov.phase == AviatorPhase.waiting
         ? 0.0
         : (log(1.0 + prov.multiplier.clamp(0.0, 9999)) / log(51))
@@ -234,10 +396,17 @@ class _AviatorBodyState extends State<_AviatorBody>
       },
       child: Stack(
         children: [
-          // Fond étoilé
-          const StarField(),
+          // 1) Fond rayonnant casino
+          const Positioned.fill(child: AviatorBackground()),
 
-          // Courbe multiplicateur
+          // 2) Logo AVIATOR stylise (en filigrane dans le fond)
+          const Center(
+            child: IgnorePointer(
+              child: _AviatorLogoWatermark(),
+            ),
+          ),
+
+          // 3) Courbe multiplicateur
           Positioned.fill(
             child: CustomPaint(
               painter: MultiplierCurvePainter(
@@ -249,7 +418,7 @@ class _AviatorBodyState extends State<_AviatorBody>
             ),
           ),
 
-          // ── Avion ──────────────────────────────────────
+          // 4) Avion rouge
           if (prov.phase != AviatorPhase.waiting)
             PlaneWidget(
               progress: progress,
@@ -257,12 +426,10 @@ class _AviatorBodyState extends State<_AviatorBody>
               crashed: prov.phase == AviatorPhase.crashed,
             ),
 
-          // ── Multiplicateur central ─────────────────────
-          Center(
-            child: _buildMultiplierDisplay(prov),
-          ),
+          // 5) Multiplicateur central
+          Center(child: _buildMultiplierDisplay(prov)),
 
-          // ── Seeds provably fair (après crash) ──────────
+          // 6) Seeds (fair) en bas, apres crash
           if (prov.phase == AviatorPhase.crashed)
             Positioned(
               bottom: 8,
@@ -280,18 +447,25 @@ class _AviatorBodyState extends State<_AviatorBody>
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(AppLocalizations.of(context)!.gameNextFlight,
+          const Text('PROCHAIN VOL',
               style: TextStyle(
-                  color: AppColors.textMuted,
+                  color: Colors.white60,
                   fontSize: 11,
-                  letterSpacing: 1)),
-          SizedBox(height: 6),
+                  letterSpacing: 2,
+                  fontWeight: FontWeight.w700)),
+          const SizedBox(height: 8),
           Text(
             '${prov.countdownSecs}s',
-            style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 52,
-                fontWeight: FontWeight.w900),
+            style: const TextStyle(
+                color: Colors.white,
+                fontSize: 60,
+                fontWeight: FontWeight.w900,
+                shadows: [
+                  Shadow(
+                      color: Color(0xFFEF4444),
+                      blurRadius: 20,
+                      offset: Offset(0, 0)),
+                ]),
           ),
         ],
       );
@@ -301,45 +475,47 @@ class _AviatorBodyState extends State<_AviatorBody>
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Text(AppLocalizations.of(context)!.gameCrashed,
+          const Text('FLEW AWAY',
               style: TextStyle(
                   color: Color(0xFFEF4444),
                   fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  letterSpacing: 2)),
-          SizedBox(height: 4),
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 3)),
+          const SizedBox(height: 4),
           Text(
-            'x${prov.multiplier.toStringAsFixed(2)}',
+            '${prov.multiplier.toStringAsFixed(2)}x',
             style: TextStyle(
-                color: Color(0xFFEF4444),
-                fontSize: 56,
-                fontWeight: FontWeight.w900),
+                color: const Color(0xFFEF4444),
+                fontSize: 64,
+                fontWeight: FontWeight.w900,
+                shadows: [
+                  Shadow(
+                      color: const Color(0xFFEF4444).withValues(alpha: 0.7),
+                      blurRadius: 24),
+                ]),
           ),
         ],
       );
     }
 
-    // Phase flying
     return ScaleTransition(
       scale: _pulseAnim,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'x${prov.multiplier.toStringAsFixed(2)}',
+            '${prov.multiplier.toStringAsFixed(2)}x',
             style: TextStyle(
-              color: prov.multiplier >= 10
-                  ? AppColors.neonGreen
-                  : const Color(0xFFF97316),
-              fontSize: 58,
+              color: Colors.white,
+              fontSize: 70,
               fontWeight: FontWeight.w900,
               shadows: [
                 Shadow(
                   color: (prov.multiplier >= 10
                           ? AppColors.neonGreen
-                          : const Color(0xFFF97316))
-                      .withValues(alpha: 0.5),
-                  blurRadius: 20,
+                          : const Color(0xFFEF4444))
+                      .withValues(alpha: 0.6),
+                  blurRadius: 28,
                 ),
               ],
             ),
@@ -347,8 +523,8 @@ class _AviatorBodyState extends State<_AviatorBody>
           if (prov.bet1.autoCashOut != null || prov.bet2.autoCashOut != null)
             Text(
               'Auto: x${(prov.bet1.autoCashOut ?? prov.bet2.autoCashOut)!.toStringAsFixed(2)}',
-              style: TextStyle(
-                  color: AppColors.textMuted, fontSize: 11),
+              style: const TextStyle(
+                  color: Colors.white54, fontSize: 11),
             ),
         ],
       ),
@@ -357,21 +533,21 @@ class _AviatorBodyState extends State<_AviatorBody>
 
   Widget _buildProvablyFair(AviatorProvider prov) {
     return Container(
-      padding: EdgeInsets.all(8),
+      padding: const EdgeInsets.all(8),
       decoration: BoxDecoration(
         color: Colors.black.withValues(alpha: 0.6),
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
+        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('🔒 Provably Fair',
+          const Text('🔒 Provably Fair',
               style: TextStyle(
-                  color: AppColors.textMuted,
+                  color: Colors.white60,
                   fontSize: 10,
                   fontWeight: FontWeight.w700)),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           _seedRow('Server', prov.serverSeed),
           _seedRow('Client', prov.clientSeed),
           _seedRow('Hash', prov.roundHash),
@@ -384,13 +560,13 @@ class _AviatorBodyState extends State<_AviatorBody>
     return Row(
       children: [
         Text('$label: ',
-            style: TextStyle(color: AppColors.textMuted, fontSize: 9)),
+            style: const TextStyle(color: Colors.white60, fontSize: 9)),
         Expanded(
           child: Text(
             value,
             overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-                color: AppColors.textSecondary,
+            style: const TextStyle(
+                color: Colors.white70,
                 fontSize: 9,
                 fontFamily: 'monospace'),
           ),
@@ -399,53 +575,58 @@ class _AviatorBodyState extends State<_AviatorBody>
     );
   }
 
-  // ─── Panneau mises ───────────────────────────────────────
+  // ─── Panneau mises (bas) ─────────────────────────────────
   Widget _buildBetPanel(AviatorProvider prov) {
     return Container(
-      padding: EdgeInsets.fromLTRB(12, 10, 12, 8),
-      decoration: BoxDecoration(
-        color: const Color(0xFF0D0D1A),
-        border: Border(
-            top: BorderSide(
-                color: AppColors.divider.withValues(alpha: 0.3))),
+      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
+      decoration: const BoxDecoration(
+        color: Color(0xFF0A0A10),
+        border: Border(top: BorderSide(color: Color(0xFF1A1A22))),
       ),
       child: Column(
         children: [
-          // Mise 1 (toujours visible)
-          BetSlot(
-            bet: prov.bet1,
-            provider: prov,
-            onCashOut: () => _onCashOut(prov, prov.bet1),
-          ),
-
-          // Mise 2 (optionnelle)
-          if (prov.showBet2) ...[
-            SizedBox(height: 8),
+          // Mise 1 + (optionnel) Mise 2 cote a cote
+          if (prov.showBet2)
+            Row(
+              children: [
+                Expanded(
+                    child: BetSlot(
+                  bet: prov.bet1,
+                  provider: prov,
+                  onCashOut: () => _onCashOut(prov, prov.bet1),
+                )),
+                const SizedBox(width: 6),
+                Expanded(
+                    child: BetSlot(
+                  bet: prov.bet2,
+                  provider: prov,
+                  onCashOut: () => _onCashOut(prov, prov.bet2),
+                )),
+              ],
+            )
+          else
             BetSlot(
-              bet: prov.bet2,
+              bet: prov.bet1,
               provider: prov,
-              onCashOut: () => _onCashOut(prov, prov.bet2),
+              onCashOut: () => _onCashOut(prov, prov.bet1),
             ),
-          ],
-
-          SizedBox(height: 8),
-
-          // Bouton toggle 2ème mise
+          const SizedBox(height: 4),
           GestureDetector(
             onTap: prov.toggleBet2,
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
                 Icon(
-                  prov.showBet2 ? Icons.remove_circle_outline : Icons.add_circle_outline,
-                  color: AppColors.textMuted,
+                  prov.showBet2
+                      ? Icons.remove_circle_outline
+                      : Icons.add_circle_outline,
+                  color: Colors.white54,
                   size: 14,
                 ),
-                SizedBox(width: 4),
+                const SizedBox(width: 4),
                 Text(
-                  prov.showBet2 ? 'Retirer 2ème mise' : '+ Ajouter 2ème mise',
-                  style: TextStyle(
-                      color: AppColors.textMuted, fontSize: 11),
+                  prov.showBet2 ? 'Retirer 2eme mise' : '+ Ajouter 2eme mise',
+                  style: const TextStyle(color: Colors.white54, fontSize: 11),
                 ),
               ],
             ),
@@ -454,5 +635,31 @@ class _AviatorBodyState extends State<_AviatorBody>
       ),
     );
   }
+}
 
+// ─── Logo AVIATOR stylise (filigrane derriere la courbe) ──
+class _AviatorLogoWatermark extends StatelessWidget {
+  const _AviatorLogoWatermark();
+
+  @override
+  Widget build(BuildContext context) {
+    return Opacity(
+      opacity: 0.06,
+      child: Text(
+        'AVIATOR',
+        style: TextStyle(
+          fontSize: 72,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 8,
+          color: const Color(0xFFEF4444),
+          shadows: [
+            Shadow(
+              color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+              blurRadius: 24,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }

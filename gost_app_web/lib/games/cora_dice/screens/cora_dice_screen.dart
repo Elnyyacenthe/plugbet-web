@@ -70,7 +70,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Solde insuffisant ! Vous avez $coins coins, il faut $betAmount coins.',
+              'Solde insuffisant ! Vous avez $coins FCFA, il faut $betAmount FCFA.',
             ),
             backgroundColor: AppColors.neonRed,
           ),
@@ -248,7 +248,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
                         color: AppColors.neonYellow, size: 16),
                     SizedBox(width: 6),
                     Text(
-                      '${wallet.coins} coins',
+                      '${wallet.coins} FCFA',
                       style: TextStyle(
                         color: AppColors.neonYellow,
                         fontSize: isSmallScreen ? 14 : 16,
@@ -291,7 +291,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
                 color: AppColors.neonYellow.withValues(alpha: 0.15),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Text('${wallet.coins} coins', style: TextStyle(
+              child: Text('${wallet.coins} FCFA', style: TextStyle(
                 color: AppColors.neonYellow, fontSize: 13, fontWeight: FontWeight.w800,
               )),
             ),
@@ -599,7 +599,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
               SizedBox(height: 12),
               Consumer<WalletProvider>(
                 builder: (_, wallet, __) => Text(
-                  'Votre solde : ${wallet.coins} coins',
+                  'Votre solde : ${wallet.coins} FCFA',
                   style: TextStyle(
                     color: AppColors.textSecondary,
                     fontSize: 12,

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -484,7 +485,16 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         ),
         child: BottomNavigationBar(
           currentIndex: _currentIndex,
-          onTap: (index) => setState(() => _currentIndex = index),
+          onTap: (index) {
+            // Pause live score polling quand on quitte l'onglet Matchs
+            // -> economise CPU + reseau quand l'utilisateur est sur les jeux
+            if (index != 0 && _currentIndex == 0) {
+              widget.liveScoreManager.pauseTracking();
+            } else if (index == 0 && _currentIndex != 0) {
+              widget.liveScoreManager.resumeTracking();
+            }
+            setState(() => _currentIndex = index);
+          },
           items: [
             BottomNavigationBarItem(
               icon: const Icon(Icons.sports_soccer_outlined),

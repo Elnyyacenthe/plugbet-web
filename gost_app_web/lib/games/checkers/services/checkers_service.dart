@@ -160,7 +160,7 @@ class CheckersService {
     }
   }
 
-  /// Distribue les coins à la fin de la partie
+  /// Distribue les FCFA à la fin de la partie
   Future<void> distributeWinnings({
     required String roomId,
     required String? winnerId,

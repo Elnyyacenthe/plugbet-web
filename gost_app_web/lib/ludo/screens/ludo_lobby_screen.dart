@@ -256,7 +256,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
                         color: AppColors.neonYellow, size: 14),
                     SizedBox(width: 4),
                     Text(
-                      '${player.coins} coins',
+                      '${player.coins} FCFA',
                       style: TextStyle(
                         color: AppColors.textSecondary,
                         fontSize: 12,
@@ -349,7 +349,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
                   color: AppColors.neonYellow, size: 16),
               SizedBox(width: 4),
               Text(
-                'Mise : ${challenge.betAmount} coins',
+                'Mise : ${challenge.betAmount} FCFA',
                 style: TextStyle(
                   color: AppColors.neonYellow,
                   fontWeight: FontWeight.w700,
@@ -358,7 +358,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
               ),
               const Spacer(),
               Text(
-                'Pot : ${challenge.betAmount * 2} coins',
+                'Pot : ${challenge.betAmount * 2} FCFA',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: 12,
@@ -541,7 +541,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
                         color: AppColors.neonYellow, size: 14),
                     SizedBox(width: 4),
                     Text(
-                      '${room.betAmount} coins',
+                      '${room.betAmount} FCFA',
                       style: TextStyle(
                         color: AppColors.neonYellow,
                         fontSize: 12,
@@ -669,7 +669,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
               ),
               textAlign: TextAlign.center,
               decoration: InputDecoration(
-                labelText: 'Mise en coins',
+                labelText: 'Mise en FCFA',
                 labelStyle: TextStyle(color: AppColors.textSecondary),
                 suffixIcon: Icon(Icons.monetization_on,
                     color: AppColors.neonYellow),
@@ -688,7 +688,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
             ),
             SizedBox(height: 8),
             Text(
-              'Votre solde : ${context.read<WalletProvider>().coins} coins',
+              'Votre solde : ${context.read<WalletProvider>().coins} FCFA',
               style: TextStyle(
                 color: AppColors.textSecondary,
                 fontSize: 12,
@@ -732,7 +732,7 @@ class _LudoLobbyScreenState extends State<LudoLobbyScreen> {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text(
-                        'Defi envoye a ${player.username} ($bet coins)'),
+                        'Defi envoye a ${player.username} ($bet FCFA)'),
                     backgroundColor: AppColors.neonGreen,
                   ),
                 );

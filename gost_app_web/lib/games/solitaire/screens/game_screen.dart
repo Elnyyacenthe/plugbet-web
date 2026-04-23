@@ -93,7 +93,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
         content: Text(
           _isPractice
               ? 'Abandonner la partie en cours ?'
-              : 'Cette action sera considérée comme un forfait et tu perdras ta mise de $_bet coins.',
+              : 'Cette action sera considérée comme un forfait et tu perdras ta mise de $_bet FCFA.',
           style: TextStyle(color: Colors.white70, height: 1.5),
         ),
         actions: [
@@ -796,7 +796,7 @@ class _EndDialog extends StatelessWidget {
                 color: Color(0xFFF59E0B), size: 22),
             SizedBox(width: 6),
             Text(
-              '+$prize coins',
+              '+$prize FCFA',
               style: TextStyle(
                 color: Color(0xFFF59E0B),
                 fontSize: 20,

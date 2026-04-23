@@ -99,7 +99,7 @@ class _LudoRoomScreenState extends State<LudoRoomScreen>
           SizedBox(height: 24),
 
           Text(
-            'Mise en coins',
+            'Mise en FCFA',
             style: TextStyle(
               color: AppColors.textPrimary,
               fontSize: 16,

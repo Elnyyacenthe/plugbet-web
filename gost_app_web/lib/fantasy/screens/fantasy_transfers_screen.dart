@@ -94,7 +94,7 @@ class _FantasyTransfersScreenState extends State<FantasyTransfersScreen> {
     final budget = team['budget'] as int? ?? 0;
     if (el.coinsValue > budget) {
       _showSnack(
-          'Budget insuffisant (${el.coinsValue} coins requis, $budget dispo).',
+          'Budget insuffisant (${el.coinsValue} FCFA requis, $budget dispo).',
           Colors.red);
       return;
     }
@@ -135,7 +135,7 @@ class _FantasyTransfersScreenState extends State<FantasyTransfersScreen> {
         _myTeam = Map.from(team)..['budget'] = budget + el.coinsValue;
       });
       _showSnack(
-          '${el.webName} retiré · ${el.coinsValue} coins remboursés.',
+          '${el.webName} retiré · ${el.coinsValue} FCFA remboursés.',
           AppColors.neonOrange);
     } on FantasyException catch (e) {
       _showSnack(e.message, Colors.red);
@@ -205,7 +205,7 @@ class _FantasyTransfersScreenState extends State<FantasyTransfersScreen> {
                       Icon(Icons.account_balance_wallet,
                           color: AppColors.neonGreen, size: 16),
                       SizedBox(width: 6),
-                      Text('${AppLocalizations.of(context)!.fantasyBudget}: $budget coins',
+                      Text('${AppLocalizations.of(context)!.fantasyBudget}: $budget FCFA',
                           style: TextStyle(
                               color: AppColors.neonGreen,
                               fontWeight: FontWeight.w700,

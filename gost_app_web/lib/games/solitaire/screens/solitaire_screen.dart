@@ -116,7 +116,7 @@ class _SolitaireScreenState extends State<SolitaireScreen> {
                         Icon(Icons.monetization_on,
                             color: AppColors.neonYellow, size: 16),
                         SizedBox(width: 4),
-                        Text('${wallet.coins} coins',
+                        Text('${wallet.coins} FCFA',
                             style: TextStyle(
                                 color: AppColors.neonYellow,
                                 fontWeight: FontWeight.w600,
@@ -157,7 +157,7 @@ class _SolitaireScreenState extends State<SolitaireScreen> {
               _RuleRow(icon: '👥', text: '2 à 4 joueurs sur un plateau partagé'),
               _RuleRow(icon: '🔄', text: 'Chaque joueur joue 1 action à son tour'),
               _RuleRow(icon: '🎯', text: 'Score = cartes envoyées en fondation'),
-              _RuleRow(icon: '💎', text: 'Mise configurable : 50 / 100 / 200 / 500 coins'),
+              _RuleRow(icon: '💎', text: 'Mise configurable : 50 / 100 / 200 / 500 FCFA'),
               _RuleRow(icon: '🏆', text: 'Le meilleur score remporte le pot'),
               _RuleRow(icon: '⏱️', text: 'Partie limitée à 10 minutes'),
               _RuleRow(icon: '🤝', text: 'En cas d\'égalité, le pot est partagé'),

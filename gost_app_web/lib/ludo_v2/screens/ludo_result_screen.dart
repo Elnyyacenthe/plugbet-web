@@ -55,7 +55,7 @@ class LudoV2ResultScreen extends StatelessWidget {
                   // Gains
                   if (pot > 0)
                     Text(
-                      isWinner ? '+$pot coins' : '-${game.betAmount} coins',
+                      isWinner ? '+$pot FCFA' : '-${game.betAmount} FCFA',
                       style: TextStyle(
                         color: isWinner ? AppColors.neonGreen : AppColors.neonRed,
                         fontSize: 22,
@@ -79,7 +79,7 @@ class LudoV2ResultScreen extends StatelessWidget {
                         _statRow('Joueurs', '${game.turnOrder.length}'),
                         if (pot > 0) ...[
                           SizedBox(height: 8),
-                          _statRow('Pot total', '$pot coins'),
+                          _statRow('Pot total', '$pot FCFA'),
                         ],
                       ],
                     ),

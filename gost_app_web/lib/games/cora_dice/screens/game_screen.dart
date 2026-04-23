@@ -213,7 +213,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                   ),
                 ),
                 Text(
-                  'Pot: ${_game!.potAmount} coins',
+                  'Pot: ${_game!.potAmount} FCFA',
                   style: TextStyle(
                     color: AppColors.neonYellow,
                     fontSize: 12,
@@ -632,7 +632,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                 style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
               if (isWinner) ...[
                 SizedBox(height: 12),
-                Text('+${_game!.gameState.coraCount == 1 ? _game!.potAmount * 2 : _game!.potAmount} coins',
+                Text('+${_game!.gameState.coraCount == 1 ? _game!.potAmount * 2 : _game!.potAmount} FCFA',
                   style: TextStyle(color: AppColors.neonYellow, fontSize: 24, fontWeight: FontWeight.w900)),
               ],
               SizedBox(height: 8),

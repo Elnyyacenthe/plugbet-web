@@ -19,9 +19,11 @@ import '../models/aviator_models.dart';
 import '../services/aviator_service.dart';
 
 // Durees fixes du round (en ms)
-const int _kCountdownMs = 10000; // 10s de countdown (mises autorisees)
-const int _kMaxFlyMs    = 20000; // 20s max de vol
-const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 30s par round
+// NOTE: si tu changes ces valeurs, MAJ aussi aviator_multiplayer.sql
+// (les RPC aviator_place_bet / aviator_cashout ont les memes constantes hardcodees)
+const int _kCountdownMs = 5000;  // 5s de countdown (mises autorisees)
+const int _kMaxFlyMs    = 10000; // 10s max de vol
+const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 15s par round
 
 class AviatorProvider extends ChangeNotifier {
   AviatorProvider() {
@@ -54,6 +56,12 @@ class AviatorProvider extends ChangeNotifier {
   List<CrashRound> crashHistory = [];
   List<AviatorChatMessage> chatMessages = [];
 
+  // ─── Paris multijoueur temps reel ────────────────────
+  /// Tous les paris actifs du round courant (tous les joueurs confondus)
+  List<LiveBet> liveBets = [];
+  /// Gains recents pour le feed de droite
+  List<LiveBet> recentWinnings = [];
+
   // ─── Stats perso ─────────────────────────────────────
   double bestMultiplier = 0.0;
   int totalWon  = 0;
@@ -66,12 +74,25 @@ class AviatorProvider extends ChangeNotifier {
   RealtimeChannel? _channel;
   bool _disposed = false;
 
+  /// Numero du round actuellement affiche (identique sur tous les appareils).
+  int _currentRoundNum = 0;
+  int get currentRoundNum => _currentRoundNum;
+
+  /// Offset (ms) entre horloge locale et horloge serveur Supabase.
+  /// Mis a jour au demarrage via un RPC server_epoch_ms().
+  int _serverClockOffset = 0;
+  int _serverNowMs() =>
+      DateTime.now().millisecondsSinceEpoch + _serverClockOffset;
+
   // ─── Init ─────────────────────────────────────────────
   Future<void> _init() async {
+    // Mesure l'offset horloge serveur AVANT toute logique de round
+    // pour que _syncToGlobalTime() voie le bon roundNum.
+    _serverClockOffset = await _svc.measureServerClockOffset();
     crashHistory = await _svc.getRecentRounds();
     chatMessages = await _svc.getRecentChat();
     _subscribeRealtime();
-    _syncToGlobalTime(); // Synchronisation initiale
+    _syncToGlobalTime();
     _notify();
   }
 
@@ -89,6 +110,26 @@ class AviatorProvider extends ChangeNotifier {
           _notify();
         }
       },
+      onBetPlaced: (bet) {
+        // Ne pas dupliquer (si c'est le notre deja ajoute en local)
+        if (bet.roundNum != _currentRoundNum) return;
+        if (liveBets.any((b) => b.id == bet.id)) return;
+        liveBets.add(bet);
+        _notify();
+      },
+      onBetUpdated: (bet) {
+        final idx = liveBets.indexWhere((b) => b.id == bet.id);
+        if (idx >= 0) {
+          liveBets[idx] = bet;
+        }
+        // Si cashout reussi : push dans le feed des gains
+        if (bet.cashedOutAt != null &&
+            !recentWinnings.any((w) => w.id == bet.id)) {
+          recentWinnings.insert(0, bet);
+          if (recentWinnings.length > 30) recentWinnings.removeLast();
+        }
+        _notify();
+      },
     );
   }
 
@@ -104,7 +145,9 @@ class AviatorProvider extends ChangeNotifier {
     _ticker?.cancel();
     _syncTimer?.cancel();
 
-    final now  = DateTime.now().millisecondsSinceEpoch;
+    // Utilise l'horloge SERVEUR (locale + offset mesure) pour que tous les
+    // clients voient le meme roundNum, meme si leur horloge locale est decalee.
+    final now  = _serverNowMs();
     final roundNum     = now ~/ _kRoundMs;
     final posInRound   = now % _kRoundMs;
 
@@ -115,6 +158,25 @@ class AviatorProvider extends ChangeNotifier {
     roundHash      = _svc.computeHash(serverSeed, clientSeed);
     crashPoint     = _svc.generateCrashPoint(serverSeed, '');
     currentRoundId = roundNum.toString();
+
+    // Si on a change de round → reset les paris live + charger ceux de la DB
+    if (roundNum != _currentRoundNum) {
+      _currentRoundNum = roundNum;
+      liveBets = [];
+      // Charge async les bets du round courant + les gains recents
+      _svc.getCurrentRoundBets(roundNum).then((bets) {
+        if (_disposed || _currentRoundNum != roundNum) return;
+        liveBets = bets;
+        _notify();
+      });
+      if (recentWinnings.isEmpty) {
+        _svc.getRecentWinnings(limit: 30).then((wins) {
+          if (_disposed) return;
+          recentWinnings = wins;
+          _notify();
+        });
+      }
+    }
 
     if (posInRound < _kCountdownMs) {
       // ── Phase countdown ──────────────────────────
@@ -207,6 +269,12 @@ class AviatorProvider extends ChangeNotifier {
             'p_user_id': uid,
             'p_description': 'Aviator: crash @x${crashPoint.toStringAsFixed(2)}',
           }).then((_) {}, onError: (_) {});
+          // Marque la ligne aviator_bets comme perdue (win_amount = 0)
+          // → permet aux stats / feed de distinguer perdu vs en cours
+          _svc.settleLossRpc(
+            roundNum: _currentRoundNum,
+            slot: bet.slot,
+          );
         }
       }
     }
@@ -224,8 +292,8 @@ class AviatorProvider extends ChangeNotifier {
       ));
     }
 
-    // Calculer le temps restant jusqu'au prochain round
-    final now        = DateTime.now().millisecondsSinceEpoch;
+    // Calculer le temps restant jusqu'au prochain round (horloge serveur)
+    final now        = _serverNowMs();
     final posInRound = now % _kRoundMs;
     _scheduleNextRound(posInRound);
   }
@@ -239,14 +307,25 @@ class AviatorProvider extends ChangeNotifier {
     });
   }
 
-  // ─── Hash déterministe du numéro de round ─────────────
-  // Identique sur tous les appareils → même crash point mondial
+  // ─── Hash deterministe du numero de round ─────────────
+  // Identique sur tous les appareils -> meme crash point mondial.
+  // Applique un avalanche XorShift pour decorreler les roundNums consecutifs
+  // (DJB2 seul laisse les bits hauts correles -> crash points repetitifs).
   String _hashRoundNum(int roundNum) {
     var h = 5381;
     for (final c in roundNum.toString().codeUnits) {
       h = ((h << 5) + h) ^ c;
       h &= 0x7FFFFFFF;
     }
+    // Avalanche XorShift (2 passes) pour bien melanger les bits
+    h ^= (h << 13) & 0x7FFFFFFF;
+    h ^= h >> 17;
+    h ^= (h << 5) & 0x7FFFFFFF;
+    h &= 0x7FFFFFFF;
+    h ^= (h << 13) & 0x7FFFFFFF;
+    h ^= h >> 17;
+    h ^= (h << 5) & 0x7FFFFFFF;
+    h &= 0x7FFFFFFF;
     return h.abs().toRadixString(16).padLeft(16, '0');
   }
 
@@ -259,8 +338,16 @@ class AviatorProvider extends ChangeNotifier {
     if (bet.amount < 90) return false;
 
     if (!isDemoMode) {
-      final ok = await _svc.deductBet(bet.amount);
-      if (!ok) return false;
+      // RPC atomique : deduit les coins + insert dans aviator_bets
+      // → tous les autres joueurs voient la mise apparaitre en temps reel
+      final username = await _svc.getUsername();
+      final err = await _svc.placeBetRpc(
+        roundNum: _currentRoundNum,
+        slot: bet.slot,
+        amount: bet.amount,
+        username: username,
+      );
+      if (err != null) return false;
     }
 
     bet.placed = true;
@@ -283,19 +370,29 @@ class AviatorProvider extends ChangeNotifier {
     if (payout > 0 && !isDemoMode) {
       if (multiplier > bestMultiplier) bestMultiplier = multiplier;
       if (bet.profit! > 0) totalWon += bet.profit!;
-      _svc.addWinnings(payout);
-      // Cashout : on paie depuis la caisse du jeu
+
+      // RPC atomique : update aviator_bets (cashed_out_at + win_amount) + credit coins
+      // → broadcast realtime vers tous les autres joueurs (panneau gains live)
+      final cashMult = multiplier;
+      _svc.cashoutRpc(
+        roundNum: _currentRoundNum,
+        slot: bet.slot,
+        mult: cashMult,
+      );
+
+      // Cashout : on paie depuis la caisse du jeu (comptabilite house)
       final uid = Supabase.instance.client.auth.currentUser?.id;
       Supabase.instance.client.rpc('game_treasury_pay_win', params: {
         'p_amount': payout,
         'p_game_type': 'aviator',
         'p_user_id': uid,
-        'p_description': 'Aviator: cashout @x${multiplier.toStringAsFixed(2)}',
+        'p_description': 'Aviator: cashout @x${cashMult.toStringAsFixed(2)}',
       }).then((_) {}, onError: (_) {});
+
       _svc.getUsername().then((username) {
         _svc.sendCashOutMessage(
           username:   username,
-          multiplier: multiplier,
+          multiplier: cashMult,
           profit:     bet.profit!,
         );
       });

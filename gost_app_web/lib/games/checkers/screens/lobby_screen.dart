@@ -219,7 +219,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                       Icon(Icons.emoji_events,
                           color: AppColors.neonYellow, size: 18),
                       SizedBox(width: 8),
-                      Text('Pot : ${_room.betAmount * 2} coins',
+                      Text('Pot : ${_room.betAmount * 2} FCFA',
                           style: TextStyle(
                               color: AppColors.neonYellow,
                               fontWeight: FontWeight.w700,

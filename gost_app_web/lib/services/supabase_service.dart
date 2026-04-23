@@ -61,6 +61,14 @@ import 'package:google_sign_in/google_sign_in.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/football_models.dart';
 
+/// Resultat d'une tentative d'inscription email.
+enum SignUpStatus {
+  success,
+  usernameTaken,
+  emailExists,
+  error,
+}
+
 class SupabaseService {
   // --- REMPLACER PAR VOS VALEURS ---
   static const String supabaseUrl = 'https://dqzrociaaztlezwlgzwh.supabase.co';
@@ -147,6 +155,63 @@ class SupabaseService {
       return (null, _translateAuthError(e.message));
     } catch (e) {
       return (null, 'Erreur d\'inscription : $e');
+    }
+  }
+
+  /// Inscription email complete : verifie l'unicite du pseudo AVANT creation,
+  /// renvoie un code d'erreur precis pour permettre a l'UI de reagir
+  /// (ex: rediriger vers la connexion si l'email existe deja).
+  Future<({AuthResponse? response, SignUpStatus status, String? message})>
+      signUpWithEmailAndUsername(
+          String email, String password, String username) async {
+    // 1) Unicite du pseudo (dans user_profiles)
+    try {
+      final existing = await _client
+          .from('user_profiles')
+          .select('id')
+          .eq('username', username)
+          .maybeSingle();
+      if (existing != null) {
+        return (
+          response: null,
+          status: SignUpStatus.usernameTaken,
+          message: 'Ce pseudo est deja utilise. Choisis-en un autre.'
+        );
+      }
+    } catch (_) {
+      // Si la verification echoue on continue - le signup revelera le probleme
+    }
+
+    // 2) SignUp Supabase
+    try {
+      final response = await _client.auth.signUp(
+        email: email,
+        password: password,
+        data: {'username': username, 'account_type': 'official'},
+      );
+      return (response: response, status: SignUpStatus.success, message: null);
+    } on AuthException catch (e) {
+      final lower = e.message.toLowerCase();
+      if (lower.contains('already registered') ||
+          lower.contains('already been registered') ||
+          lower.contains('user already exists')) {
+        return (
+          response: null,
+          status: SignUpStatus.emailExists,
+          message: 'Un compte existe deja avec cet email.'
+        );
+      }
+      return (
+        response: null,
+        status: SignUpStatus.error,
+        message: _translateAuthError(e.message)
+      );
+    } catch (e) {
+      return (
+        response: null,
+        status: SignUpStatus.error,
+        message: 'Erreur d\'inscription : $e'
+      );
     }
   }
 

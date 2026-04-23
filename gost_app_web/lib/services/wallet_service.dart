@@ -1,6 +1,6 @@
 // ============================================================
 // WalletService — Operations sur le wallet (coins)
-// Source unique pour toutes les operations de coins.
+// Source unique pour toutes les operations de FCFA.
 //
 // IMPORTANT : les operations atomiques (deduct/add) passent par la RPC
 // `my_wallet_apply_delta` qui :
@@ -66,7 +66,7 @@ class WalletService {
   // OPERATIONS ATOMIQUES via RPC
   // ============================================================
 
-  /// Retire des coins au joueur courant.
+  /// Retire des FCFA au joueur courant.
   /// Retourne true si l'operation a reussi (solde suffisant).
   ///
   /// [source] : identifiant de la source ('aviator', 'apple_fortune', ...)
@@ -99,7 +99,7 @@ class WalletService {
     }
   }
 
-  /// Crediter des coins au joueur courant.
+  /// Crediter des FCFA au joueur courant.
   Future<bool> addCoins(
     int amount, {
     String source = 'generic',

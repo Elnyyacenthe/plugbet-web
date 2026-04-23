@@ -17,7 +17,7 @@ import '../../providers/wallet_provider.dart';
 enum FplLoadState { idle, loading, loaded, error }
 
 // ─── Constantes de conversion ─────────────────────────────
-// now_cost FPL (ex: 45) × kFplCoinRate (10) = coins app (450)
+// now_cost FPL (ex: 45) × kFplCoinRate (10) = FCFA app (450)
 // Budget de départ : 1000 FPL units × 10 = 10 000 coins
 const int kFplCoinRate = 10;
 const int kFplDefaultBudget = 10000; // coins = £100M FPL
@@ -34,7 +34,7 @@ class FplProvider extends ChangeNotifier {
 
   void _onWalletChange() => notifyListeners();
 
-  /// Solde disponible pour les transferts Fantasy (= coins du wallet)
+  /// Solde disponible pour les transferts Fantasy (= FCFA du wallet)
   int get availableCoins => _wallet?.coins ?? 0;
 
   /// Vrai si le joueur peut se permettre ce joueur
@@ -258,7 +258,7 @@ class FplProvider extends ChangeNotifier {
       // Construction du prompt avec données contextuelles
       final gw = bootstrap!.currentEvent;
       final tops = valuePicks(maxCoins: 550, limit: 3)
-          .map((e) => '${e.webName} (${e.coinsValue} coins, form ${e.form})')
+          .map((e) => '${e.webName} (${e.coinsValue} FCFA, form ${e.form})')
           .join(', ');
 
       final prompt = '''
@@ -312,14 +312,14 @@ Sois direct et concis (max 3 phrases par conseil).
     final tops = valuePicks(maxCoins: 550, limit: 3);
     if (tops.isEmpty) return 'Chargez vos données pour voir les suggestions IA.';
     final best = tops.first;
-    return '💡 Value pick: ${best.webName} (${best.coinsValue} coins, '
+    return '💡 Value pick: ${best.webName} (${best.coinsValue} FCFA, '
         'forme ${best.form}) – sélectionné par ${best.selectedByPercent}% '
         'des managers. Idéal comme transfert cette semaine.';
   }
 
   // ─── Coins App intégration ────────────────────────────────
 
-  /// Retourne les coins gagnés selon les points FPL (+10 pts = +100 coins)
+  /// Retourne les FCFA gagnés selon les points FPL (+10 pts = +100 FCFA)
   int coinsFromPoints(int points) => (points ~/ 10) * 100;
 
   @override

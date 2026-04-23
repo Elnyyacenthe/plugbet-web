@@ -98,7 +98,7 @@ class _BlackjackScreenState extends State<BlackjackScreen> {
         actions: [
           Padding(
             padding: EdgeInsets.only(right: 12),
-            child: Center(child: Text('${wallet.coins} coins',
+            child: Center(child: Text('${wallet.coins} FCFA',
                 style: TextStyle(color: AppColors.neonYellow, fontWeight: FontWeight.w700))),
           ),
         ],

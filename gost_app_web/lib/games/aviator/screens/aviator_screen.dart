@@ -54,8 +54,8 @@ class AviatorScreen extends StatelessWidget {
               SizedBox(height: 12),
               _ruleCard(
                 '1',
-                'Misez vos coins',
-                'Choisissez une mise (minimum 90 coins, pas de limite) avant le décollage.',
+                'Misez vos FCFA',
+                'Choisissez une mise (minimum 90 FCFA, pas de limite) avant le décollage.',
                 Icons.monetization_on,
                 AppColors.neonYellow,
               ),
@@ -221,7 +221,7 @@ class AviatorScreen extends StatelessWidget {
           Wrap(
             spacing: 8,
             children: [
-              _statBadge('Min: 90 coins', AppColors.neonGreen),
+              _statBadge('Min: 90 FCFA', AppColors.neonGreen),
               _statBadge('Max: ∞', AppColors.neonOrange),
               _statBadge('2 paris/round', AppColors.neonBlue),
             ],

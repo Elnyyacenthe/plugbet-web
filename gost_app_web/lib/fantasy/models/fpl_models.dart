@@ -106,7 +106,7 @@ class FplElement {
     required this.pointsPerGame,
   });
 
-  /// Prix en coins de l'app (now_cost × 10, ex: 45 → 450 coins)
+  /// Prix en FCFA de l'app (now_cost × 10, ex: 45 → 450 FCFA)
   int get coinsValue => nowCost * 10;
   /// Ancien getter conservé pour compatibilité interne
   double get costInMillions => nowCost / 10.0;
@@ -388,8 +388,8 @@ class FplEntry {
   final int overallRank;
   final int summaryEventPoints;
   final int summaryEventRank;
-  final int value;  // FPL unit × 10 = coins de l'app
-  final int bank;   // FPL unit × 10 = coins disponibles
+  final int value;  // FPL unit × 10 = FCFA de l'app
+  final int bank;   // FPL unit × 10 = FCFA disponibles
 
   const FplEntry({
     required this.id,

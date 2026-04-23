@@ -414,7 +414,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
                     style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
                 if (isWin) ...[
                   SizedBox(height: 12),
-                  Text('+$pot coins', style: TextStyle(
+                  Text('+$pot FCFA', style: TextStyle(
                       color: AppColors.neonGreen, fontSize: 24, fontWeight: FontWeight.w900)),
                 ],
                 SizedBox(height: 8),

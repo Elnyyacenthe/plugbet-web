@@ -326,7 +326,7 @@ class _LeaderboardTile extends StatelessWidget {
                     ),
                     SizedBox(width: 8),
                     Text(
-                      entry.xp > 0 ? '${entry.xp} XP' : '${entry.coins} coins',
+                      entry.xp > 0 ? '${entry.xp} XP' : '${entry.coins} FCFA',
                       style: TextStyle(
                         fontSize: 11,
                         color: AppColors.textMuted,

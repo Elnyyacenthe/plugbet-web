@@ -98,3 +98,56 @@ class AviatorChatMessage {
         isSystem: j['is_system'] as bool? ?? false,
       );
 }
+
+// ─── LiveBet : mise d'un joueur partagee via Supabase ──────
+class LiveBet {
+  final String id;
+  final int roundNum;
+  final String userId;
+  final String username;
+  final int slot;
+  final int amount;
+  final double? cashedOutAt;
+  final int? winAmount;
+  final DateTime placedAt;
+
+  const LiveBet({
+    required this.id,
+    required this.roundNum,
+    required this.userId,
+    required this.username,
+    required this.slot,
+    required this.amount,
+    this.cashedOutAt,
+    this.winAmount,
+    required this.placedAt,
+  });
+
+  factory LiveBet.fromJson(Map<String, dynamic> j) => LiveBet(
+        id: j['id'] as String,
+        roundNum: (j['round_num'] as num).toInt(),
+        userId: j['user_id'] as String? ?? '',
+        username: j['username'] as String? ?? 'Joueur',
+        slot: (j['slot'] as num).toInt(),
+        amount: (j['amount'] as num).toInt(),
+        cashedOutAt: j['cashed_out_at'] != null
+            ? (j['cashed_out_at'] as num).toDouble()
+            : null,
+        winAmount:
+            j['win_amount'] != null ? (j['win_amount'] as num).toInt() : null,
+        placedAt: DateTime.tryParse(j['placed_at'] as String? ?? '') ??
+            DateTime.now(),
+      );
+
+  LiveBet copyWith({double? cashedOutAt, int? winAmount}) => LiveBet(
+        id: id,
+        roundNum: roundNum,
+        userId: userId,
+        username: username,
+        slot: slot,
+        amount: amount,
+        cashedOutAt: cashedOutAt ?? this.cashedOutAt,
+        winAmount: winAmount ?? this.winAmount,
+        placedAt: placedAt,
+      );
+}

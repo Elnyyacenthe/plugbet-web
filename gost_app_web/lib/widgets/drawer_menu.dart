@@ -79,7 +79,7 @@ class AppDrawer extends StatelessWidget {
                             fontWeight: FontWeight.w800,
                             color: Colors.white)),
                   ),
-                  // Username (entre logo et coins)
+                  // Username (entre logo et FCFA)
                   if (username.isNotEmpty) ...[
                     SizedBox(height: 3),
                     Text(username,
@@ -104,7 +104,7 @@ class AppDrawer extends StatelessWidget {
                         Icon(Icons.monetization_on,
                             color: AppColors.neonYellow, size: 14),
                         SizedBox(width: 5),
-                        Text('${wallet.coins} coins',
+                        Text('${wallet.coins} FCFA',
                             style: TextStyle(
                                 color: AppColors.neonYellow,
                                 fontWeight: FontWeight.w700,

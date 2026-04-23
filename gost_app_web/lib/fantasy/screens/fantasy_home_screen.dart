@@ -452,7 +452,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
         Row(
           mainAxisAlignment: MainAxisAlignment.spaceBetween,
           children: [
-            _infoChip(Icons.account_balance_wallet, 'Budget: $budget coins', AppColors.neonGreen),
+            _infoChip(Icons.account_balance_wallet, 'Budget: $budget FCFA', AppColors.neonGreen),
             _infoChip(Icons.trending_up, '$totalPoints pts total', AppColors.neonBlue),
           ],
         ),
@@ -655,7 +655,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
                   ),
                   SizedBox(height: 4),
                   Text(
-                    'Budget de départ 10 000 coins · Gérez vos picks et ligues dans l\'app',
+                    'Budget de départ 10 000 FCFA · Gérez vos picks et ligues dans l\'app',
                     style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
                   ),
                 ],

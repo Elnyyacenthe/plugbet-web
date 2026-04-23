@@ -293,7 +293,7 @@ class PlayerService {
     return today.isAfter(lastDay);
   }
 
-  /// Retourne les coins gagnés, ou 0 si déjà réclamé
+  /// Retourne les FCFA gagnés, ou 0 si déjà réclamé
   Future<int> claimDailyReward() async {
     if (!canClaimToday()) return 0;
 
@@ -360,7 +360,7 @@ class PlayerService {
         _logBoard.info('xp query failed: $e');
       }
 
-      // Fallback: utiliser coins comme métrique de classement
+      // Fallback: utiliser FCFA comme métrique de classement
       final data = await _sb
           .from('user_profiles')
           .select('id, username, coins')

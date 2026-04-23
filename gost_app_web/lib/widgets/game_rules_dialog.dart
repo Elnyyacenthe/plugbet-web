@@ -260,7 +260,7 @@ class GameRulesLibrary {
         "L'avion decolle et un multiplicateur grimpe a toute vitesse. "
         "Cashouté avant qu'il ne s'ecrase pour empocher votre gain !",
     howToPlay: [
-      'Pendant le countdown, placez votre mise (min 90 coins).',
+      'Pendant le countdown, placez votre mise (min 90 FCFA).',
       'L\'avion decolle et le multiplicateur commence a monter.',
       'Tapez CASHOUT a tout moment pour empocher mise × multiplicateur.',
       'Si vous ne cashoutez pas avant le crash, vous perdez la mise.',

@@ -454,7 +454,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                             letterSpacing: 1.2)),
-                    Text('$coins coins',
+                    Text('$coins FCFA',
                         style: TextStyle(
                             color: AppColors.neonYellow,
                             fontSize: 24,
@@ -578,6 +578,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               }),
             if (SupabaseService().accountType != 'official')
               SizedBox(height: 8),
+            _accountActionBtn('Modifier le pseudo', Icons.person_outline, AppColors.neonPurple, () {
+              _showChangeUsernameDialog();
+            }),
+            SizedBox(height: 8),
             _accountActionBtn(t.profileChangePassword, Icons.lock_outline, AppColors.neonBlue, () {
               _showChangePasswordDialog(t);
             }),
@@ -762,6 +766,151 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ? SizedBox(width: 18, height: 18,
                       child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
                   : Text(t.commonConfirm, style: TextStyle(fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showChangeUsernameDialog() {
+    final currentUsername = context.read<WalletProvider>().username;
+    final ctrl = TextEditingController(text: currentUsername);
+    String? error;
+    bool loading = false;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setS) => AlertDialog(
+          backgroundColor: AppColors.bgCard,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          title: Row(
+            children: [
+              Icon(Icons.person, color: AppColors.neonPurple, size: 20),
+              const SizedBox(width: 10),
+              Text('Modifier le pseudo',
+                  style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 16)),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text('Ce pseudo sera affiche aux autres joueurs.',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              const SizedBox(height: 14),
+              if (error != null) ...[
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonRed.withValues(alpha: 0.1),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: Text(error!,
+                      style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                ),
+                const SizedBox(height: 12),
+              ],
+              TextField(
+                controller: ctrl,
+                autofocus: true,
+                style: TextStyle(color: AppColors.textPrimary),
+                decoration: InputDecoration(
+                  hintText: 'Nouveau pseudo',
+                  hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                  prefixIcon: Icon(Icons.alternate_email,
+                      color: AppColors.textMuted, size: 20),
+                  filled: true,
+                  fillColor: AppColors.bgElevated,
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                  enabledBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: AppColors.divider),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide:
+                        BorderSide(color: AppColors.neonPurple, width: 1.5),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: loading ? null : () => Navigator.pop(ctx),
+              child: Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
+            ),
+            ElevatedButton(
+              onPressed: loading
+                  ? null
+                  : () async {
+                      final newName = ctrl.text.trim();
+                      if (newName.length < 3) {
+                        setS(() => error = 'Min 3 caracteres');
+                        return;
+                      }
+                      if (newName == currentUsername) {
+                        setS(() => error = 'C\'est deja ton pseudo actuel');
+                        return;
+                      }
+                      setS(() { loading = true; error = null; });
+                      try {
+                        final supa = SupabaseService();
+                        final uid = supa.currentUserId;
+                        if (uid == null) {
+                          setS(() { loading = false; error = 'Non connecte'; });
+                          return;
+                        }
+                        // Unicite
+                        final existing = await supa.client
+                            .from('user_profiles')
+                            .select('id')
+                            .eq('username', newName)
+                            .neq('id', uid)
+                            .maybeSingle();
+                        if (existing != null) {
+                          setS(() { loading = false; error = 'Ce pseudo est deja utilise. Choisis-en un autre.'; });
+                          return;
+                        }
+                        await supa.client
+                            .from('user_profiles')
+                            .update({
+                              'username': newName,
+                              'updated_at': DateTime.now().toIso8601String(),
+                            })
+                            .eq('id', uid);
+                        if (!ctx.mounted) return;
+                        Navigator.pop(ctx);
+                        if (!mounted) return;
+                        await context.read<WalletProvider>().refresh();
+                        if (!mounted) return;
+                        setState(() {});
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text('Pseudo mis a jour'),
+                            backgroundColor: AppColors.neonGreen,
+                            behavior: SnackBarBehavior.floating,
+                          ),
+                        );
+                      } catch (e) {
+                        setS(() { loading = false; error = 'Erreur: $e'; });
+                      }
+                    },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonPurple,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
+              ),
+              child: loading
+                  ? SizedBox(width: 18, height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
+                  : Text('Valider', style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ],
         ),
@@ -1353,7 +1502,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             children: [
               Icon(Icons.add_circle_outline, color: AppColors.neonGreen, size: 22),
               SizedBox(width: 8),
-              Text('Dépôt de coins',
+              Text('Dépôt de FCFA',
                   style: TextStyle(
                       color: AppColors.textPrimary,
                       fontWeight: FontWeight.w800,
@@ -1573,7 +1722,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               Icon(Icons.remove_circle_outline,
                   color: AppColors.neonOrange, size: 22),
               SizedBox(width: 8),
-              Text('Retrait de coins',
+              Text('Retrait de FCFA',
                   style: TextStyle(
                       color: AppColors.textPrimary,
                       fontWeight: FontWeight.w800,
@@ -1585,7 +1734,7 @@ class _ProfileScreenState extends State<ProfileScreen>
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text('Retirez vos coins vers Mobile Money/Orange Money',
+                Text('Retirez vos FCFA vers Mobile Money/Orange Money',
                     style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
                 SizedBox(height: 8),
                 Container(
@@ -1599,7 +1748,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       Icon(Icons.account_balance_wallet,
                           size: 16, color: AppColors.neonYellow),
                       SizedBox(width: 8),
-                      Text('Solde actuel: $currentCoins coins',
+                      Text('Solde actuel: $currentCoins FCFA',
                           style: TextStyle(
                               color: AppColors.neonYellow,
                               fontSize: 12,

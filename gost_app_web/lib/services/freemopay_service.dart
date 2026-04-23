@@ -87,7 +87,7 @@ class FreemopayService {
   /// Initie un dépôt via Freemopay
   ///
   /// [payer] : Numéro de téléphone au format international (ex: 237658895572)
-  /// [amount] : Montant en FCFA (= coins)
+  /// [amount] : Montant en FCFA (= FCFA)
   ///
   /// Retourne un Map avec:
   /// - 'success': bool
@@ -124,7 +124,7 @@ class FreemopayService {
           'payer': payer,
           'amount': amount.toString(),
           'externalId': externalId,
-          'description': 'Dépôt de $amount coins',
+          'description': 'Dépôt de $amount FCFA',
           'callback': _webhookUrl ?? '',
         }),
       );
@@ -178,7 +178,7 @@ class FreemopayService {
   /// Initie un retrait via Freemopay
   ///
   /// [receiver] : Numéro de téléphone au format international
-  /// [amount] : Montant en FCFA (= coins)
+  /// [amount] : Montant en FCFA (= FCFA)
   ///
   /// Retourne un Map avec:
   /// - 'success': bool

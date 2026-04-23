@@ -241,7 +241,7 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
                 ),
                 SizedBox(height: 4),
                 Text(
-                  '$coins coins',
+                  '$coins FCFA',
                   style: TextStyle(
                     color: AppColors.textPrimary,
                     fontSize: 24,
@@ -463,14 +463,14 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               Text(
-                '50 coins',
+                '50 FCFA',
                 style: TextStyle(
                   color: AppColors.textMuted,
                   fontSize: isSmallScreen ? 11 : 12,
                 ),
               ),
               Text(
-                'Pot total : $potTotal coins',
+                'Pot total : $potTotal FCFA',
                 style: TextStyle(
                   color: AppColors.textSecondary,
                   fontSize: isSmallScreen ? 12 : 14,
@@ -478,7 +478,7 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
                 ),
               ),
               Text(
-                '${sliderMax.toInt()} coins',
+                '${sliderMax.toInt()} FCFA',
                 style: TextStyle(
                   color: AppColors.textMuted,
                   fontSize: isSmallScreen ? 11 : 12,
@@ -644,7 +644,7 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Solde insuffisant ! Vous avez $coins coins, il faut ${_betAmount.toInt()} coins.',
+            'Solde insuffisant ! Vous avez $coins FCFA, il faut ${_betAmount.toInt()} FCFA.',
           ),
           backgroundColor: AppColors.neonRed,
         ),

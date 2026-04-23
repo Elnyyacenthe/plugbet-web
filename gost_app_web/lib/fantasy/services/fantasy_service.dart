@@ -490,7 +490,7 @@ class FantasyService {
     }
   }
 
-  /// Rejoint une ligue. Si entry_fee > 0, deduit les coins via RPC.
+  /// Rejoint une ligue. Si entry_fee > 0, deduit les FCFA via RPC.
   Future<void> joinLeague(String leagueId) async {
     _requireUid();
     try {
@@ -630,7 +630,7 @@ class FantasyService {
         final remaining = budget - spent;
         final slotsLeft = 15 - picks.length;
         if (slotsLeft <= 0) break;
-        // Réserver au moins 300 coins par slot restant
+        // Réserver au moins 300 FCFA par slot restant
         final maxForThis = remaining - (slotsLeft - 1) * 300;
         if ((p.coinsValue as int) <= maxForThis) {
           picks.add(p);

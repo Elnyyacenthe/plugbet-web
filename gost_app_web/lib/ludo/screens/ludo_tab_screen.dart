@@ -204,7 +204,7 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
                       color: AppColors.neonYellow, size: 18),
                   SizedBox(width: 8),
                   Text(
-                    '500 coins offerts a l\'inscription !',
+                    '500 FCFA offerts a l\'inscription !',
                     style: TextStyle(
                       color: AppColors.neonYellow,
                       fontSize: 13,
@@ -676,7 +676,7 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
           ),
           SizedBox(height: 12),
           _RuleItem(icon: '1', text: 'Entrez dans le Lobby et defiez un joueur en ligne'),
-          _RuleItem(icon: '2', text: 'Choisissez votre mise en coins'),
+          _RuleItem(icon: '2', text: 'Choisissez votre mise en FCFA'),
           _RuleItem(icon: '3', text: 'Lancez le de et deplacez vos pions'),
           _RuleItem(icon: '4', text: 'Un 6 fait sortir un pion ou donne un tour bonus'),
           _RuleItem(icon: '5', text: 'Le premier a amener ses 4 pions au centre gagne le pot !'),

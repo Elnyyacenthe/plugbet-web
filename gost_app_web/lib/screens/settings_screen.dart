@@ -359,7 +359,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                   t.settingsPrivacyPolicy,
                   'Plugbet respecte votre vie privée.\n\n'
                   '• Données collectées : identifiant anonyme, nom d\'utilisateur choisi, '
-                  'statistiques de jeu et solde de coins.\n\n'
+                  'statistiques de jeu et solde de FCFA.\n\n'
                   '• Utilisation : améliorer l\'expérience de jeu, classements et matchmaking.\n\n'
                   '• Partage : aucune donnée personnelle n\'est vendue ni partagée avec des tiers.\n\n'
                   '• Suppression : vous pouvez demander la suppression de votre compte '
@@ -370,7 +370,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _linkRow(t.settingsTerms, Icons.description_outlined, () => _showInfoDialog(
                   t.settingsTerms,
                   '1. En utilisant Plugbet, vous acceptez ces conditions.\n\n'
-                  '2. Les coins sont une monnaie virtuelle sans valeur réelle. '
+                  '2. Les FCFA sont une monnaie virtuelle sans valeur réelle. '
                   'Aucun échange contre de l\'argent réel n\'est possible.\n\n'
                   '3. Tout comportement abusif (triche, multi-comptes, exploitation de bugs) '
                   'peut entraîner la suspension du compte.\n\n'
