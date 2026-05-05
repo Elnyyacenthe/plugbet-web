@@ -42,6 +42,14 @@ class _BlackjackScreenState extends State<BlackjackScreen> {
   Future<void> _createRoom() async {
     final bet = int.tryParse(_betCtrl.text) ?? 100;
     if (bet < 50) return;
+    // Check solde avant de creer la room
+    final wallet = context.read<WalletProvider>();
+    if (wallet.coins < bet) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Solde insuffisant : il vous faut $bet FCFA'),
+        backgroundColor: Colors.red));
+      return;
+    }
     setState(() => _loading = true);
     try {
       final result = await _svc.createRoom(playerCount: _playerCount, betAmount: bet);
@@ -66,6 +74,22 @@ class _BlackjackScreenState extends State<BlackjackScreen> {
     if (code.isEmpty) return;
     setState(() => _loading = true);
     try {
+      // Pre-check solde
+      final room = await _svc.getRoomByCode(code);
+      if (!mounted) return;
+      if (room == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Code invalide ou room introuvable'),
+          backgroundColor: Colors.red));
+        return;
+      }
+      final wallet = context.read<WalletProvider>();
+      if (wallet.coins < room.betAmount) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Solde insuffisant : il vous faut ${room.betAmount} FCFA'),
+          backgroundColor: Colors.red));
+        return;
+      }
       final roomId = await _svc.joinRoom(code);
       if (roomId != null && mounted) {
         Navigator.push(context, MaterialPageRoute(

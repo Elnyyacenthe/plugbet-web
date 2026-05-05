@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
 import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/player_provider.dart';
@@ -40,6 +41,11 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   Timer? _turnTimer;
   int _consecutiveTimeouts = 0;
 
+  // Fallback polling : si realtime ne livre pas (RLS, ws, ...), on re-fetch
+  // la room toutes les 2 secondes pour ne pas rester bloque sur un coup
+  // ou sur la fin de partie envoyee par l'adversaire.
+  Timer? _pollTimer;
+
   @override
   void initState() {
     super.initState();
@@ -57,19 +63,30 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
 
     // Écoute Supabase si multijoueur réel
     if (!widget.room.isAI && widget.room.guestId != null) {
-      _service.subscribeToRoom(widget.room.id, (updated) {
-        final state = updated.gameState;
-        if (state != null && mounted) {
-          setState(() {
-            _gameState = state;
-            _updateTurn();
-          });
-          // Détecter la fin de partie envoyée par l'adversaire (forfait)
-          if (state.isGameOver && !_gameOver) {
-            _handleGameOver(state);
-          }
-        }
+      _service.subscribeToRoom(widget.room.id, _handleRemoteRoomUpdate);
+      // Fallback polling toutes les 2s au cas ou le realtime ne livre pas
+      _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+        if (!mounted || _gameOver) return;
+        final fresh = await _service.getRoom(widget.room.id);
+        if (fresh != null) _handleRemoteRoomUpdate(fresh);
       });
+    }
+  }
+
+  void _handleRemoteRoomUpdate(CheckersRoom updated) {
+    if (!mounted || _gameOver) return;
+    final state = updated.gameState;
+    if (state == null) return;
+    // Eviter une boucle de setState si l'etat est identique
+    final changed = state.toJson().toString() != _gameState.toJson().toString();
+    if (changed) {
+      setState(() {
+        _gameState = state;
+        _updateTurn();
+      });
+    }
+    if (state.isGameOver && !_gameOver) {
+      _handleGameOver(state);
     }
   }
 
@@ -108,17 +125,16 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     }
   }
 
-  void _handleForfeit() {
+  Future<void> _handleForfeit() async {
     if (_gameOver) return;
     _gameOver = true;
     _turnTimer?.cancel();
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
     final isMultiplayer = !widget.room.isAI && widget.room.guestId != null;
+
     if (isMultiplayer) {
       final myId = _service.currentUserId ?? '';
       final winnerId = myId == widget.room.hostId ? widget.room.guestId : widget.room.hostId;
       final opponentColor = widget.myColor == PieceColor.red ? PieceColor.black : PieceColor.red;
-      // Envoyer le game_state final pour que l'adversaire voit le résultat
       final forfeitState = CheckersGameState(
         board: _gameState.board,
         currentTurn: _gameState.currentTurn,
@@ -128,15 +144,31 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         redCount: _gameState.redCount,
         blackCount: _gameState.blackCount,
       );
-      _service.distributeWinnings(
-        roomId: widget.room.id,
-        winnerId: winnerId,
-        hostId: widget.room.hostId,
-        guestId: widget.room.guestId,
-        pot: widget.room.betAmount * 2,
-        finalState: forfeitState,
-      );
+      try {
+        await _service.distributeWinnings(
+          roomId: widget.room.id,
+          winnerId: winnerId,
+          hostId: widget.room.hostId,
+          guestId: widget.room.guestId,
+          pot: widget.room.betAmount * 2,
+          finalState: forfeitState,
+        );
+      } catch (e) {
+        // L'RPC a echoue : annuler le forfait local pour eviter de quitter
+        // sans avoir transmis la fin de partie a l'adversaire.
+        _gameOver = false;
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erreur forfait : $e'),
+            backgroundColor: AppColors.neonRed,
+            duration: const Duration(seconds: 5),
+          ));
+        }
+        return;
+      }
     }
+
+    try { context.read<WalletProvider>().refresh(); } catch (_) {}
     try {
       context.read<PlayerProvider>().recordGameResult(
         gameType: 'checkers',
@@ -255,7 +287,13 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
-              Navigator.pop(context);
+              if (isMultiplayer) {
+                // Forfait : declenche la fin de partie cote serveur (payout
+                // adversaire) AVANT de quitter l'ecran.
+                _handleForfeit();
+              } else {
+                Navigator.pop(context);
+              }
             },
             child: Text(AppLocalizations.of(context)!.gameForfeit,
                 style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
@@ -265,31 +303,75 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     );
   }
 
-  void _handleGameOver(CheckersGameState state) {
+  Future<void> _handleGameOver(CheckersGameState state) async {
     if (_gameOver) return;
     _gameOver = true;
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
     final uid = _service.currentUserId ?? '';
     final isWin = state.winner == widget.myColor;
     final isDraw = state.winner == null;
 
-    if (widget.room.isAI) {
-      if (isWin) _service.addCoins(widget.room.betAmount * 2);
-    } else {
+    // Distribution treasury (multi ET solo IA passent par les memes RPCs).
+    // Seul cas ou on n'appelle pas le RPC : si la room est deja 'finished'
+    // (l'autre joueur l'a deja cloturee, on est juste informe via realtime).
+    final shouldDistribute = !widget.room.isAI ||
+        (widget.room.isAI && widget.room.betAmount > 0);
+
+    if (shouldDistribute && uid.isNotEmpty) {
       String? winnerId;
       if (!isDraw) {
-        winnerId = isWin ? uid
-            : (uid == widget.room.hostId ? widget.room.guestId : widget.room.hostId);
+        if (widget.room.isAI) {
+          winnerId = isWin ? uid : null; // pas de payout si IA gagne
+        } else {
+          winnerId = isWin ? uid
+              : (uid == widget.room.hostId ? widget.room.guestId : widget.room.hostId);
+        }
       }
-      _service.distributeWinnings(
-        roomId: widget.room.id,
-        winnerId: winnerId,
-        hostId: widget.room.hostId,
-        guestId: widget.room.guestId,
-        pot: widget.room.betAmount * 2,
-        finalState: state,
-      );
+      try {
+        if (winnerId != null) {
+          await _service.distributeWinnings(
+            roomId: widget.room.id,
+            winnerId: winnerId,
+            hostId: widget.room.hostId,
+            guestId: widget.room.guestId,
+            pot: widget.room.betAmount * 2,
+            finalState: state,
+          );
+        } else if (isDraw && !widget.room.isAI) {
+          // Match nul multi : refund 100%
+          await _service.distributeWinnings(
+            roomId: widget.room.id,
+            winnerId: null,
+            hostId: widget.room.hostId,
+            guestId: widget.room.guestId,
+            pot: widget.room.betAmount * 2,
+            finalState: state,
+          );
+        } else if (widget.room.isAI && !isWin && !isDraw) {
+          // IA gagne : on doit marquer la room finished pour eviter
+          // qu'elle reste 'playing'. Mais pas de payout.
+          await Supabase.instance.client.from('checkers_rooms').update({
+            'status': 'finished',
+            'winner_id': null,
+            'game_state': state.toJson(),
+          }).eq('id', widget.room.id);
+        }
+      } catch (e) {
+        // La RPC a peut-etre deja ete appelee par l'adversaire : ignore
+        // ROOM_NOT_PLAYING. Pour le reste : afficher l'erreur.
+        final msg = e.toString();
+        if (!msg.contains('ROOM_NOT_PLAYING')) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Erreur distribution : $e'),
+              backgroundColor: AppColors.neonRed,
+              duration: const Duration(seconds: 5),
+            ));
+          }
+        }
+      }
     }
+
+    try { context.read<WalletProvider>().refresh(); } catch (_) {}
 
     // Enregistrer le résultat pour XP / stats
     try {
@@ -302,13 +384,15 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       );
     } catch (_) {}
 
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => _GameOverDialog(
         isWin: isWin,
         isDraw: isDraw,
-        prize: isWin ? widget.room.betAmount * 2 : 0,
+        // Affiche le gain NET (apres 10% commission caisse)
+        prize: isWin ? (widget.room.betAmount * 2 * 0.90).floor() : 0,
         onBack: () { Navigator.pop(context); Navigator.pop(context); },
       ),
     );
@@ -317,6 +401,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   @override
   void dispose() {
     _turnTimer?.cancel();
+    _pollTimer?.cancel();
     _pulseCtrl.dispose();
     _service.unsubscribe();
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
@@ -326,18 +411,25 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              _buildTopBar(),
-              const Spacer(),
-              _buildBoard(),
-              const Spacer(),
-              _buildBottomBar(),
-            ],
+    return PopScope(
+      canPop: _gameOver,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _confirmExit();
+      },
+      child: Scaffold(
+        body: Container(
+          decoration: BoxDecoration(gradient: AppColors.bgGradient),
+          child: SafeArea(
+            child: Column(
+              children: [
+                _buildTopBar(),
+                const Spacer(),
+                _buildBoard(),
+                const Spacer(),
+                _buildBottomBar(),
+              ],
+            ),
           ),
         ),
       ),

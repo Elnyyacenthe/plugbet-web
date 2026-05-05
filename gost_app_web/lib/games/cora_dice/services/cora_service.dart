@@ -4,7 +4,6 @@
 // ============================================================
 
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cora_models.dart';
@@ -40,6 +39,16 @@ class CoraService {
       debugPrint('Erreur createRoom: $e');
       rethrow;
     }
+  }
+
+  /// Pre-check : recupere une room par son code pour valider le solde avant join.
+  Future<CoraRoom?> getRoomByCode(String code) async {
+    try {
+      final d = await _client.from('cora_rooms')
+          .select().eq('code', code.toUpperCase())
+          .eq('status', 'waiting').maybeSingle();
+      return d != null ? CoraRoom.fromJson(d) : null;
+    } catch (_) { return null; }
   }
 
   /// Rejoindre une room par code
@@ -198,34 +207,50 @@ class CoraService {
     }
   }
 
-  /// Lancer les dés
+  /// Lancer les dés (anti-cheat : la generation se fait SERVEUR via submitRoll).
+  /// Cette methode est conservee pour l'animation locale (placeholder), mais
+  /// les valeurs reelles viennent de la RPC submit_cora_roll.
   Future<DiceRoll> rollDice() async {
-    final random = Random();
-    final dice1 = random.nextInt(6) + 1;
-    final dice2 = random.nextInt(6) + 1;
-
     return DiceRoll(
-      dice1: dice1,
-      dice2: dice2,
+      dice1: 1,
+      dice2: 1,
       timestamp: DateTime.now(),
     );
   }
 
-  /// Soumettre un lancer
+  /// Soumettre un lancer : le SERVEUR genere les des et retourne le resultat.
+  /// Anti-cheat : le client n'envoie aucune valeur de des, seul le game_id.
+  /// Retourne le DiceRoll reel calcule cote serveur.
+  Future<DiceRoll?> submitRollAndGetServerDice({
+    required String gameId,
+  }) async {
+    try {
+      final res = await _client.rpc('submit_cora_roll', params: {
+        'p_game_id': gameId,
+      });
+      if (res is Map) {
+        return DiceRoll(
+          dice1: (res['dice1'] as num).toInt(),
+          dice2: (res['dice2'] as num).toInt(),
+          timestamp: DateTime.now(),
+        );
+      }
+      return null;
+    } catch (e) {
+      debugPrint('[CORA] submitRoll error: $e');
+      rethrow;
+    }
+  }
+
+  /// LEGACY : conservee pour compat. La RPC ne prend plus les valeurs de des
+  /// en parametre (elles sont generees serveur). On ignore donc `roll` et on
+  /// delegue a submitRollAndGetServerDice. Les anciens callers ne verront pas
+  /// les vraies valeurs ; preferer submitRollAndGetServerDice.
   Future<void> submitRoll({
     required String gameId,
     required DiceRoll roll,
   }) async {
-    try {
-      await _client.rpc('submit_cora_roll', params: {
-        'p_game_id': gameId,
-        'p_dice1': roll.dice1,
-        'p_dice2': roll.dice2,
-      });
-    } catch (e) {
-      debugPrint('Erreur submitRoll: $e');
-      rethrow;
-    }
+    await submitRollAndGetServerDice(gameId: gameId);
   }
 
   /// Calculer le résultat final (appelé côté serveur normalement)

@@ -624,15 +624,18 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
               Navigator.pop(ctx);
               HapticFeedback.mediumImpact();
 
-              // Récupérer la room pour connaître la mise
+              // Récupérer la room pour connaître la mise (privee ou publique)
               try {
-                final rooms = await _service.getPublicRooms();
-                final room = rooms.cast<CoraRoom?>().firstWhere(
-                      (r) => r?.code == code,
-                      orElse: () => null,
-                    );
-
-                final betAmount = room?.betAmount ?? 200;
+                final room = await _service.getRoomByCode(code);
+                if (room == null) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                      content: Text('Code invalide ou room introuvable'),
+                      backgroundColor: Colors.red));
+                  }
+                  return;
+                }
+                final betAmount = room.betAmount;
                 _codeController.clear();
                 await _joinRoom(code, betAmount);
               } catch (e) {

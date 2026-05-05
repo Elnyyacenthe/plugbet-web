@@ -48,6 +48,22 @@ class _RouletteScreenState extends State<RouletteScreen> {
     final code = _codeCtrl.text.trim(); if (code.isEmpty) return;
     setState(() => _loading = true);
     try {
+      // Pre-check solde (la roulette utilise minBet comme seuil minimum)
+      final room = await _svc.getRoomByCode(code);
+      if (!mounted) return;
+      if (room == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Code invalide ou room introuvable'),
+          backgroundColor: Colors.red));
+        return;
+      }
+      final wallet = context.read<WalletProvider>();
+      if (wallet.coins < room.minBet) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Solde insuffisant : il vous faut au moins ${room.minBet} FCFA pour rejoindre'),
+          backgroundColor: Colors.red));
+        return;
+      }
       final id = await _svc.joinRoom(code);
       if (id != null && mounted) Navigator.push(context, MaterialPageRoute(
         builder: (_) => RLTLobbyScreen(roomId: id)));

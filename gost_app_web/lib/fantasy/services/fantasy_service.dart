@@ -461,12 +461,32 @@ class FantasyService {
 
   /// Cree une ligue avec mise d'entree optionnelle.
   /// Si [entryFee] > 0, le createur sera automatiquement debite et inscrit.
+  /// [prizeDistribution] : repartition du pot en pourcentages (somme = 100).
+  /// Defaut [60, 30, 10] (1er/2e/3e). Exemples : [100] (winner takes all),
+  /// [70, 30], [50, 30, 20].
+  /// [endDate] : date de fin OBLIGATOIRE. La cloture manuelle ne sera
+  /// possible qu'apres cette date.
   Future<Map<String, dynamic>> createLeague({
     required String name,
     required bool isPrivate,
+    required DateTime endDate,
     int entryFee = 0,
+    List<int> prizeDistribution = const [60, 30, 10],
   }) async {
     final uid = _requireUid();
+
+    // Validation distribution
+    final sum = prizeDistribution.fold<int>(0, (a, b) => a + b);
+    if (sum != 100) {
+      throw FantasyException(FantasyError.serverError,
+          'Distribution invalide : la somme doit faire 100% (actuelle: $sum%).');
+    }
+
+    // Validation date de fin (doit etre dans le futur)
+    if (!endDate.isAfter(DateTime.now())) {
+      throw FantasyException(FantasyError.serverError,
+          'La date de fin doit être dans le futur.');
+    }
 
     try {
       final code = isPrivate ? _generateCode() : null;
@@ -476,6 +496,8 @@ class FantasyService {
         'is_private': isPrivate,
         'private_code': code,
         'entry_fee': entryFee,
+        'prize_distribution': prizeDistribution,
+        'end_date': endDate.toUtc().toIso8601String(),
       }).select().single();
 
       await joinLeague(res['id'] as String);
@@ -541,17 +563,20 @@ class FantasyService {
     }
   }
 
-  /// Termine une ligue : distribue le pot au gagnant (apres 15% commission).
+  /// Termine une ligue : distribue le pot au top N selon prize_distribution
+  /// (-10% commission caisse sur chaque payout).
   /// Seul le createur de la ligue peut appeler cette methode.
+  /// [winnerId] est optionnel : si null, le top1 est determine automatiquement
+  /// par total_points DESC. Sinon il force le top1.
   Future<Map<String, dynamic>> finishLeague({
     required String leagueId,
-    required String winnerId,
+    String? winnerId,
   }) async {
     _requireUid();
     try {
       final result = await _db.rpc('fantasy_finish_league', params: {
         'p_league_id': leagueId,
-        'p_winner_id': winnerId,
+        if (winnerId != null) 'p_winner_id': winnerId,
       });
       if (result is Map && result['success'] == false) {
         throw FantasyException(

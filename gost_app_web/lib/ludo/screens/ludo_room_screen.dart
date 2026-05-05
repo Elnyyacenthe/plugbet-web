@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../providers/ludo_provider.dart';
+import '../../providers/wallet_provider.dart';
 import 'ludo_game_screen.dart';
 
 class LudoRoomScreen extends StatefulWidget {
@@ -552,6 +553,13 @@ class _LudoRoomScreenState extends State<LudoRoomScreen>
       return;
     }
 
+    // Check solde avant de creer la partie
+    final wallet = context.read<WalletProvider>();
+    if (wallet.coins < bet) {
+      setState(() => _error = 'Solde insuffisant : il vous faut $bet FCFA');
+      return;
+    }
+
     setState(() {
       _isLoading = true;
       _error = null;
@@ -632,6 +640,24 @@ class _LudoRoomScreenState extends State<LudoRoomScreen>
 
     try {
       final ludo = context.read<LudoProvider>();
+      // Pre-check solde via la room
+      final room = await ludo.getRoomByCode(code);
+      if (!mounted) return;
+      if (room == null) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Code invalide ou room introuvable';
+        });
+        return;
+      }
+      final wallet = context.read<WalletProvider>();
+      if (wallet.coins < room.betAmount) {
+        setState(() {
+          _isLoading = false;
+          _error = 'Solde insuffisant : il vous faut ${room.betAmount} FCFA';
+        });
+        return;
+      }
       final gameId = await ludo.joinRoom(code);
       debugPrint('[LUDO-UI] joinRoom retourné: $gameId');
       if (gameId != null && mounted) {

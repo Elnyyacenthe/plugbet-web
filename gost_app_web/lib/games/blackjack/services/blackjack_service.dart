@@ -40,6 +40,16 @@ class BlackjackService {
     }
   }
 
+  /// Pre-check : recupere une room par son code pour valider le solde avant join.
+  Future<BJRoom?> getRoomByCode(String code) async {
+    try {
+      final d = await _client.from('blackjack_rooms')
+          .select().eq('code', code.toUpperCase())
+          .eq('status', 'waiting').maybeSingle();
+      return d != null ? BJRoom.fromJson(d) : null;
+    } catch (_) { return null; }
+  }
+
   Future<String?> joinRoom(String code) async {
     try {
       final result = await _client.rpc('bj_join_room', params: {

@@ -63,6 +63,16 @@ class CoinflipService {
     } catch (_) { return null; }
   }
 
+  /// Recupere une room par son code (pour pre-check du solde avant join)
+  Future<CFRoom?> getRoomByCode(String code) async {
+    try {
+      final d = await _client.from('coinflip_rooms')
+          .select().eq('code', code.toUpperCase())
+          .eq('status', 'waiting').maybeSingle();
+      return d != null ? CFRoom.fromJson(d) : null;
+    } catch (_) { return null; }
+  }
+
   Future<List<Map<String, dynamic>>> getPlayers(String roomId) async {
     try {
       return List<Map<String, dynamic>>.from(

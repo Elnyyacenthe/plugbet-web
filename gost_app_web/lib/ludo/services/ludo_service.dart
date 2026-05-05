@@ -434,6 +434,16 @@ class LudoService {
     }
   }
 
+  /// Pre-check : recupere une room par son code pour valider le solde avant join.
+  Future<LudoRoom?> getRoomByCode(String code) async {
+    try {
+      final d = await _client.from('ludo_rooms')
+          .select().eq('code', code.toUpperCase())
+          .eq('status', 'waiting').maybeSingle();
+      return d != null ? LudoRoom.fromJson(d) : null;
+    } catch (_) { return null; }
+  }
+
   /// Rejoindre une salle par code
   Future<String?> joinRoom(String code) async {
     try {

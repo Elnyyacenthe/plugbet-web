@@ -456,6 +456,9 @@ class LudoProvider extends ChangeNotifier {
     }
   }
 
+  /// Pre-check : recupere une room par son code (pour valider le solde avant join).
+  Future<LudoRoom?> getRoomByCode(String code) => _service.getRoomByCode(code);
+
   /// Rejoindre une salle par code, retourne le gameId ou null
   Future<String?> joinRoom(String code) async {
     _error = null;

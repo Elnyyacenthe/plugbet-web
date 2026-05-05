@@ -38,6 +38,16 @@ class RouletteService {
     } catch (e) { debugPrint('[RLT] joinRoom: $e'); rethrow; }
   }
 
+  /// Pre-check : recupere une room par son code pour valider le solde avant join.
+  Future<RouletteRoom?> getRoomByCode(String code) async {
+    try {
+      final d = await _client.from('roulette_rooms')
+          .select().eq('code', code.toUpperCase())
+          .eq('status', 'waiting').maybeSingle();
+      return d != null ? RouletteRoom.fromJson(d) : null;
+    } catch (_) { return null; }
+  }
+
   Future<String?> startGame(String roomId) async {
     try {
       final result = await _client.rpc('rlt_start_game', params: {'p_room_id': roomId});

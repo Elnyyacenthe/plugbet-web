@@ -72,6 +72,12 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
   // ── Start new game ──
   Future<void> _startGame() async {
     if (_loading) return;
+    // Check solde avant d'appeler createSession
+    final wallet = context.read<WalletProvider>();
+    if (wallet.coins < _betAmount) {
+      _showError('Solde insuffisant : il vous faut $_betAmount FCFA');
+      return;
+    }
     setState(() => _loading = true);
 
     final session = await _svc.createSession(

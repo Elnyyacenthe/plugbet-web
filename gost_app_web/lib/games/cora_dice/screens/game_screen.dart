@@ -555,19 +555,17 @@ class _CoraGameScreenState extends State<CoraGameScreen>
 
   Future<void> _rollDice({DiceRoll? forcedRoll}) async {
     if (_isRolling) return; // Anti double-tap
-    // Reset timeout counter quand le joueur joue manuellement
     if (forcedRoll == null) _consecutiveTimeouts = 0;
     setState(() => _isRolling = true);
 
     try {
-      // Lancer les dés (ou utiliser un lancer forcé pour l'auto-play)
-      final roll = forcedRoll ?? await _service.rollDice();
-
-      // Animer
-      _animateRoll(roll);
-
-      // Soumettre au serveur
-      await _service.submitRoll(gameId: widget.gameId, roll: roll);
+      // ANTI-CHEAT : le SERVEUR genere les des. Le client recoit le resultat
+      // et l'utilise pour l'animation. forcedRoll est ignore (impossible
+      // de forcer un lancer cote serveur).
+      final serverRoll = await _service.submitRollAndGetServerDice(
+        gameId: widget.gameId,
+      );
+      if (serverRoll != null) _animateRoll(serverRoll);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

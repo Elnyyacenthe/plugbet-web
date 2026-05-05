@@ -364,30 +364,24 @@ class AviatorProvider extends ChangeNotifier {
   void _executeCashOut(AviatorBet bet) {
     bet.cashedOut      = true;
     bet.cashMultiplier = multiplier;
-    final payout       = (bet.amount * multiplier).floor();
-    bet.profit         = payout - bet.amount;
+    final grossPayout  = (bet.amount * multiplier).floor();
+    // Gain NET (apres commission 10%) = ce que le joueur va REELLEMENT recevoir.
+    final netPayout    = (grossPayout * 0.90).floor();
+    bet.profit         = netPayout - bet.amount;
 
-    if (payout > 0 && !isDemoMode) {
+    if (grossPayout > 0 && !isDemoMode) {
       if (multiplier > bestMultiplier) bestMultiplier = multiplier;
       if (bet.profit! > 0) totalWon += bet.profit!;
 
-      // RPC atomique : update aviator_bets (cashed_out_at + win_amount) + credit coins
-      // → broadcast realtime vers tous les autres joueurs (panneau gains live)
+      // SEUL appel monetaire : aviator_cashout RPC.
+      // Cette RPC fait DEJA le payout via apply_game_payout (90% user, 10% caisse).
+      // NE PAS appeler game_treasury_pay_win en plus -> double credit !
       final cashMult = multiplier;
       _svc.cashoutRpc(
         roundNum: _currentRoundNum,
         slot: bet.slot,
         mult: cashMult,
       );
-
-      // Cashout : on paie depuis la caisse du jeu (comptabilite house)
-      final uid = Supabase.instance.client.auth.currentUser?.id;
-      Supabase.instance.client.rpc('game_treasury_pay_win', params: {
-        'p_amount': payout,
-        'p_game_type': 'aviator',
-        'p_user_id': uid,
-        'p_description': 'Aviator: cashout @x${cashMult.toStringAsFixed(2)}',
-      }).then((_) {}, onError: (_) {});
 
       _svc.getUsername().then((username) {
         _svc.sendCashOutMessage(

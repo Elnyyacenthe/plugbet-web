@@ -37,6 +37,14 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
   Future<void> _create() async {
     final bet = int.tryParse(_betCtrl.text) ?? 100;
     if (bet < 50) return;
+    // Check solde avant de creer la room (sinon RPC server rejette)
+    final wallet = context.read<WalletProvider>();
+    if (wallet.coins < bet) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Solde insuffisant : il vous faut $bet FCFA'),
+        backgroundColor: Colors.red));
+      return;
+    }
     setState(() => _loading = true);
     try {
       final r = await _svc.createRoom(betAmount: bet);
@@ -56,8 +64,24 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
   Future<void> _join() async {
     final code = _codeCtrl.text.trim();
     if (code.isEmpty) return;
+    // Pre-fetch la room pour connaitre la mise + check solde
     setState(() => _loading = true);
     try {
+      final room = await _svc.getRoomByCode(code);
+      if (!mounted) return;
+      if (room == null) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Code invalide ou room introuvable'),
+          backgroundColor: Colors.red));
+        return;
+      }
+      final wallet = context.read<WalletProvider>();
+      if (wallet.coins < room.betAmount) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Solde insuffisant : il vous faut ${room.betAmount} FCFA'),
+          backgroundColor: Colors.red));
+        return;
+      }
       final roomId = await _svc.joinRoom(code);
       if (roomId != null && mounted) {
         // Le join démarre automatiquement (duel = 2 joueurs)

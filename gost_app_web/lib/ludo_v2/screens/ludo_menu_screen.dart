@@ -11,6 +11,7 @@ import '../../theme/app_theme.dart';
 import '../../l10n/generated/app_localizations.dart';
 import '../providers/ludo_game_provider.dart';
 import '../services/ludo_service.dart';
+import '../../providers/wallet_provider.dart';
 import 'ludo_game_screen.dart';
 
 class LudoV2MenuScreen extends StatefulWidget {
@@ -53,6 +54,13 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
     final bet = int.tryParse(_betCtrl.text) ?? 0;
     if (bet < 0) {
       setState(() => _error = 'Mise invalide');
+      return;
+    }
+
+    // Check solde avant de creer la partie
+    final wallet = context.read<WalletProvider>();
+    if (wallet.coins < bet) {
+      setState(() => _error = 'Solde insuffisant : il vous faut $bet FCFA');
       return;
     }
 
@@ -105,6 +113,24 @@ class _LudoV2MenuScreenState extends State<LudoV2MenuScreen> {
     setState(() { _loading = true; _error = null; });
 
     try {
+      // Pre-check solde
+      final room = await _svc.getRoomByCode(code);
+      if (!mounted) return;
+      if (room == null) {
+        setState(() {
+          _loading = false;
+          _error = 'Code invalide ou room introuvable';
+        });
+        return;
+      }
+      final wallet = context.read<WalletProvider>();
+      if (wallet.coins < room.betAmount) {
+        setState(() {
+          _loading = false;
+          _error = 'Solde insuffisant : il vous faut ${room.betAmount} FCFA';
+        });
+        return;
+      }
       final result = await _svc.joinRoom(code);
       final gameId = result['game_id'] as String?;
       final started = result['started'] as bool? ?? false;

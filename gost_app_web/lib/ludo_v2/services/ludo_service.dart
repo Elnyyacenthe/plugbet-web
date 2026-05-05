@@ -44,6 +44,16 @@ class LudoV2Service {
     return Map<String, dynamic>.from(result as Map);
   }
 
+  /// Pre-check : recupere une room par son code pour valider le solde avant join.
+  Future<LudoV2Room?> getRoomByCode(String code) async {
+    try {
+      final d = await _client.from('ludo_v2_rooms')
+          .select().eq('code', code.toUpperCase())
+          .eq('status', 'waiting').maybeSingle();
+      return d != null ? LudoV2Room.fromJson(d) : null;
+    } catch (_) { return null; }
+  }
+
   /// Rejoint une room, retourne {room_id, game_id, started}
   Future<Map<String, dynamic>> joinRoom(String code) async {
     final result = await _client.rpc('ludo_v2_join_room', params: {

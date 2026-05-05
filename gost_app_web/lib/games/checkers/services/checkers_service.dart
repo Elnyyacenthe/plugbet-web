@@ -1,5 +1,5 @@
 // ============================================================
-// Checkers – Service Supabase (rooms, état de jeu, coins)
+// Checkers – Service Supabase (rooms, état de jeu, FCFA)
 // ============================================================
 
 import 'dart:math';
@@ -25,7 +25,7 @@ class CheckersService {
   // ROOMS
   // ============================================================
 
-  /// Crée une room et débite la mise
+  /// Crée une room et débite la mise via le treasury unifie.
   Future<CheckersRoom?> createRoom({
     required int betAmount,
     required bool isPrivate,
@@ -33,68 +33,38 @@ class CheckersService {
     final uid = currentUserId;
     if (uid == null) return null;
 
-    final ok = await deductCoins(betAmount);
-    if (!ok) return null;
-
     try {
-      final username = await getUsername();
-      final code = isPrivate ? _generateCode() : null;
       final color = Random().nextBool() ? 'red' : 'black';
-
-      final data = await _client.from('checkers_rooms').insert({
-        'host_id': uid,
-        'host_username': username,
-        'bet_amount': betAmount,
-        'is_private': isPrivate,
-        'private_code': code,
-        'status': 'waiting',
-        'host_color': color,
-        'pot': betAmount,
-      }).select().single();
-
-      return CheckersRoom.fromJson(data);
+      final result = await _client.rpc('checkers_create_room', params: {
+        'p_bet_amount': betAmount,
+        'p_is_private': isPrivate,
+        'p_host_color': color,
+      });
+      if (result is Map) {
+        return CheckersRoom.fromJson(Map<String, dynamic>.from(result));
+      }
+      return null;
     } catch (e) {
-      // Rembourser si création échoue
-      await addCoins(betAmount);
       debugPrint('[CHECKERS] createRoom error: $e');
       return null;
     }
   }
 
-  /// Rejoindre une room par ID
+  /// Rejoindre une room par ID via le treasury unifie.
   Future<CheckersRoom?> joinRoom(String roomId) async {
     final uid = currentUserId;
     if (uid == null) return null;
 
     try {
-      final roomData = await _client
-          .from('checkers_rooms')
-          .select()
-          .eq('id', roomId)
-          .single();
-      final room = CheckersRoom.fromJson(roomData);
-
-      if (room.isFull || room.status != CheckersRoomStatus.waiting) return null;
-
-      final ok = await deductCoins(room.betAmount);
-      if (!ok) return null;
-
-      final username = await getUsername();
-      final guestColor = room.hostColor == 'red' ? 'black' : 'red';
-
-      // Initialise l’état du jeu
       final initialState = CheckersGameState.initial();
-
-      final updated = await _client.from('checkers_rooms').update({
-        'guest_id': uid,
-        'guest_username': username,
-        'guest_color': guestColor,
-        'status': 'playing',
-        'pot': room.betAmount * 2,
-        'game_state': initialState.toJson(),
-      }).eq('id', roomId).select().single();
-
-      return CheckersRoom.fromJson(updated);
+      final result = await _client.rpc('checkers_join_room', params: {
+        'p_room_id': roomId,
+        'p_initial_state': initialState.toJson(),
+      });
+      if (result is Map) {
+        return CheckersRoom.fromJson(Map<String, dynamic>.from(result));
+      }
+      return null;
     } catch (e) {
       debugPrint('[CHECKERS] joinRoom error: $e');
       return null;
@@ -128,6 +98,22 @@ class CheckersService {
     } catch (_) {}
   }
 
+  /// Recuperer une room par son ID (utilise par le polling de secours)
+  Future<CheckersRoom?> getRoom(String roomId) async {
+    try {
+      final data = await _client
+          .from('checkers_rooms')
+          .select()
+          .eq('id', roomId)
+          .maybeSingle();
+      if (data == null) return null;
+      return CheckersRoom.fromJson(data);
+    } catch (e) {
+      debugPrint('[CHECKERS] getRoom error: $e');
+      return null;
+    }
+  }
+
   /// Rooms publiques en attente
   Future<List<CheckersRoom>> getPublicRooms() async {
     try {
@@ -149,18 +135,28 @@ class CheckersService {
   // ÉTAT DE JEU
   // ============================================================
 
-  /// Met à jour l’état du jeu sur Supabase
+  /// Met à jour l'état du jeu via la RPC dédiée (anti-cheat).
+  /// Le UPDATE direct est bloqué par RLS depuis checkers_anti_cheat_v1.sql.
+  /// Pour terminer la partie, utiliser distributeWinnings (->finish_game RPC),
+  /// pas updateGameState (qui rejette les states avec isGameOver=true).
   Future<void> updateGameState(String roomId, CheckersGameState state) async {
     try {
-      await _client
-          .from('checkers_rooms')
-          .update({'game_state': state.toJson()}).eq('id', roomId);
+      // On ne pousse PAS l'etat de fin via cette route — la RPC le rejette.
+      // La fin sera transmise par distributeWinnings (checkers_finish_game).
+      if (state.isGameOver) return;
+      await _client.rpc('checkers_update_state', params: {
+        'p_room_id': roomId,
+        'p_game_state': state.toJson(),
+      });
     } catch (e) {
       debugPrint('[CHECKERS] updateGameState error: $e');
     }
   }
 
-  /// Distribue les FCFA à la fin de la partie
+  /// Distribue les FCFA à la fin de la partie via le treasury unifie.
+  /// - Vainqueur connu : checkers_finish_game (90% au winner, 10% caisse)
+  /// - Match nul        : checkers_draw_game (refund 100% sans commission)
+  /// Throw si le RPC echoue : le caller doit gerer pour informer l'utilisateur.
   Future<void> distributeWinnings({
     required String roomId,
     required String? winnerId,
@@ -169,26 +165,17 @@ class CheckersService {
     required int pot,
     CheckersGameState? finalState,
   }) async {
-    try {
-      if (winnerId != null) {
-        await addCoinsToUser(winnerId, pot);
-      } else {
-        final half = pot ~/ 2;
-        await addCoinsToUser(hostId, half);
-        if (guestId != null) await addCoinsToUser(guestId, half);
-      }
-
-      // Mettre à jour room ET game_state pour que l'adversaire voit le résultat
-      final updateData = <String, dynamic>{
-        'status': 'finished',
-        'winner_id': winnerId,
-      };
-      if (finalState != null) {
-        updateData['game_state'] = finalState.toJson();
-      }
-      await _client.from('checkers_rooms').update(updateData).eq('id', roomId);
-    } catch (e) {
-      debugPrint('[CHECKERS] distributeWinnings error: $e');
+    if (winnerId != null) {
+      await _client.rpc('checkers_finish_game', params: {
+        'p_room_id': roomId,
+        'p_winner_id': winnerId,
+        if (finalState != null) 'p_final_state': finalState.toJson(),
+      });
+    } else {
+      await _client.rpc('checkers_draw_game', params: {
+        'p_room_id': roomId,
+        if (finalState != null) 'p_final_state': finalState.toJson(),
+      });
     }
   }
 
@@ -291,13 +278,4 @@ class CheckersService {
         .subscribe();
   }
 
-  // ============================================================
-  // UTILS
-  // ============================================================
-
-  String _generateCode() {
-    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-    final rng = Random();
-    return List.generate(6, (_) => chars[rng.nextInt(chars.length)]).join();
-  }
 }
