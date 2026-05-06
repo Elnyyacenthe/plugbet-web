@@ -1,16 +1,18 @@
 // ============================================================
-// LUDO V2 — Game Provider (ChangeNotifier)
+// LUDO V2 — Game Provider (PRODUCTION : debounce, server-lives, recovery)
 // ============================================================
 
 import 'dart:async';
-import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../engine/ludo_engine.dart';
 import '../models/ludo_models.dart';
 import '../services/ludo_service.dart';
 
-class LudoV2GameProvider extends ChangeNotifier {
+class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
   final LudoV2Service _svc = LudoV2Service.instance;
+  final _uuid = const Uuid();
 
   // ── State ──────────────────────────────────────────────
   LudoV2Game? _game;
@@ -18,19 +20,22 @@ class LudoV2GameProvider extends ChangeNotifier {
   String? _error;
   bool _loading = false;
   bool _rolling = false;
+  bool _moving = false;       // anti double-clic playMove
+  bool _forfeiting = false;   // anti double-clic forfeit
   List<PawnMove> _playableMoves = [];
 
-  // ── Timer + Vies ───────────────────────────────────────
+  // ── Timer + Vies serveur ───────────────────────────────
   RealtimeChannel? _gameChannel;
   Timer? _turnTimer;
   Timer? _countdownTimer;
+  Timer? _idleClaimWatcher;   // surveille les adversaires AFK
   int _secondsLeft = 0;
-  int _lives = 5; // 5 vies, à 0 = forfait auto
 
   // ── Callbacks ──────────────────────────────────────────
   void Function(bool captured, bool won, bool extraTurn)? onMoveResult;
   void Function()? onTurnTimeout;
   void Function(String winnerId)? onGameOver;
+  void Function()? onForfeitedByTimeouts;
 
   // ── Getters ────────────────────────────────────────────
   LudoV2Game? get game => _game;
@@ -38,6 +43,7 @@ class LudoV2GameProvider extends ChangeNotifier {
   String? get error => _error;
   bool get loading => _loading;
   bool get rolling => _rolling;
+  bool get moving => _moving;
   List<PawnMove> get playableMoves => _playableMoves;
 
   String get myId => _svc.currentUserId ?? '';
@@ -45,11 +51,16 @@ class LudoV2GameProvider extends ChangeNotifier {
   int get myColor => _game?.myColor(myId) ?? 0;
   List<int> get myPawns => _game?.myPawns(myId) ?? [0, 0, 0, 0];
   int get secondsLeft => _secondsLeft;
-  int get lives => _lives;
+  int get timeoutsLeft {
+    if (_game == null) return 3;
+    final left = 3 - _game!.consecutiveTimeouts;
+    if (left < 0) return 0;
+    if (left > 3) return 3;
+    return left;
+  }
 
   // ── Lifecycle ──────────────────────────────────────────
 
-  /// Charge une partie et s'abonne aux updates
   Future<void> loadGame(String gameId) async {
     _loading = true;
     _error = null;
@@ -59,12 +70,13 @@ class LudoV2GameProvider extends ChangeNotifier {
       _game = await _svc.getGame(gameId);
       if (_game == null) throw Exception('Partie introuvable');
 
-      // S'abonner au Realtime
       _gameChannel?.let(_svc.unsubscribe);
       _gameChannel = _svc.subscribeGame(gameId, _onGameUpdate);
+      WidgetsBinding.instance.addObserver(this);
 
       _computePlayable();
       _startTurnTimer();
+      _startIdleClaimWatcher();
     } catch (e) {
       _error = e.toString();
       debugPrint('[LUDO-V2-PROV] loadGame error: $e');
@@ -74,13 +86,32 @@ class LudoV2GameProvider extends ChangeNotifier {
     }
   }
 
-  /// Callback Realtime : le jeu a changé
+  /// Au resume de l'app, on refetch l'etat (en cas de Realtime perdu).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && _game != null && !_game!.isFinished) {
+      _refreshGame();
+    }
+  }
+
+  Future<void> _refreshGame() async {
+    if (_game == null) return;
+    try {
+      final fresh = await _svc.getGame(_game!.id);
+      if (fresh != null) _onGameUpdate(fresh);
+    } catch (e) {
+      debugPrint('[LUDO-V2-PROV] refresh error: $e');
+    }
+  }
+
   void _onGameUpdate(LudoV2Game updated) {
     _previousGame = _game;
     _game = updated;
     _rolling = false;
+    _moving = false;
     _computePlayable();
     _startTurnTimer();
+    _startIdleClaimWatcher();
 
     if (updated.isFinished && updated.winnerId != null) {
       onGameOver?.call(updated.winnerId!);
@@ -91,20 +122,18 @@ class LudoV2GameProvider extends ChangeNotifier {
 
   // ── Actions ────────────────────────────────────────────
 
-  /// Lancer le dé (serveur uniquement)
   Future<int?> rollDice() async {
-    if (_game == null || !isMyTurn || (_game!.diceRolled)) return null;
+    if (_game == null || !isMyTurn || _game!.diceRolled) return null;
+    if (_rolling) return null;
 
     _rolling = true;
     _error = null;
     notifyListeners();
 
+    final reqId = _uuid.v4();
     try {
-      final dice = await _svc.rollDice(_game!.id);
+      final dice = await _svc.rollDice(_game!.id, requestId: reqId);
       debugPrint('[LUDO-V2-PROV] Dice: $dice');
-
-      // On attend l'update Realtime pour mettre à jour l'état
-      // Mais on retourne le dé immédiatement pour l'animation
       return dice;
     } catch (e) {
       _error = e.toString();
@@ -114,51 +143,69 @@ class LudoV2GameProvider extends ChangeNotifier {
     }
   }
 
-  /// Jouer un pion
   Future<LudoV2MoveResult?> playMove(int pawnIndex) async {
     if (_game == null || !isMyTurn || !_game!.diceRolled) return null;
-
-    // Vérifier que ce pion est jouable
+    if (_moving) return null;  // anti double-clic
     final isPlayable = _playableMoves.any((m) => m.pawnIndex == pawnIndex);
     if (!isPlayable) return null;
 
+    _moving = true;
     _error = null;
+    notifyListeners();
+
+    final reqId = _uuid.v4();
     try {
-      final result = await _svc.playMove(_game!.id, pawnIndex);
+      final result = await _svc.playMove(_game!.id, pawnIndex, requestId: reqId);
       onMoveResult?.call(result.captured, result.won, result.extraTurn);
       return result;
     } catch (e) {
-      // Ignorer "Pas votre tour" silencieusement (race condition Realtime)
       final msg = e.toString();
-      if (!msg.contains('Pas votre tour')) {
+      // Ignorer les race conditions de tour silencieusement (Realtime arrive)
+      if (!msg.contains('NOT_YOUR_TURN') && !msg.contains('Pas votre tour')) {
         _error = msg;
         notifyListeners();
       }
+      _moving = false;
       debugPrint('[LUDO-V2-PROV] playMove error: $e');
       return null;
     }
   }
 
-  /// Passer le tour (automatique si aucun coup)
   Future<void> skipTurn() async {
     if (_game == null || !isMyTurn || !_game!.diceRolled) return;
-
+    final reqId = _uuid.v4();
     try {
-      await _svc.skipTurn(_game!.id);
+      await _svc.skipTurn(_game!.id, requestId: reqId);
     } catch (e) {
-      // Ignorer silencieusement les erreurs de tour
       debugPrint('[LUDO-V2-PROV] skipTurn error: $e');
     }
   }
 
-  /// Forfait : le joueur quitte → l'adversaire gagne
   Future<void> forfeit() async {
     if (_game == null || _game!.status != 'playing') return;
+    if (_forfeiting) return;
+    _forfeiting = true;
+    final reqId = _uuid.v4();
     try {
-      await _svc.forfeit(_game!.id);
-      debugPrint('[LUDO-V2-PROV] Forfait envoyé');
+      await _svc.forfeit(_game!.id, requestId: reqId);
     } catch (e) {
       debugPrint('[LUDO-V2-PROV] forfeit error: $e');
+    } finally {
+      _forfeiting = false;
+    }
+  }
+
+  /// Reclame une victoire si l'adversaire courant est idle > 90s.
+  Future<bool> claimIdleWin() async {
+    if (_game == null || _game!.status != 'playing') return false;
+    if (_game!.currentTurn == myId) return false;
+    try {
+      final r = await _svc.claimIdleWin(_game!.id);
+      debugPrint('[LUDO-V2-PROV] claimIdleWin: $r');
+      return r['claimed'] == true;
+    } catch (e) {
+      debugPrint('[LUDO-V2-PROV] claimIdleWin error: $e');
+      return false;
     }
   }
 
@@ -179,22 +226,14 @@ class LudoV2GameProvider extends ChangeNotifier {
       myId: myId,
     );
 
-    // Auto-skip si aucun coup possible
     if (_playableMoves.isEmpty && isMyTurn && _game!.diceRolled) {
-      Future.delayed(const Duration(seconds: 1), () {
-        if (_game != null && isMyTurn && _playableMoves.isEmpty) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (_game != null && isMyTurn && _playableMoves.isEmpty &&
+            _game!.diceRolled && !_moving) {
           skipTurn();
         }
       });
     }
-
-    // Auto-play si un seul coup possible
-    // (optionnel, décommenter si tu veux)
-    // if (_playableMoves.length == 1) {
-    //   Future.delayed(const Duration(milliseconds: 500), () {
-    //     playMove(_playableMoves.first.pawnIndex);
-    //   });
-    // }
   }
 
   static const int _turnDuration = 15;
@@ -204,7 +243,6 @@ class LudoV2GameProvider extends ChangeNotifier {
     _countdownTimer?.cancel();
     if (_game == null || !isMyTurn || _game!.isFinished) return;
 
-    // Countdown visuel
     _secondsLeft = _turnDuration;
     notifyListeners();
 
@@ -215,41 +253,38 @@ class LudoV2GameProvider extends ChangeNotifier {
       }
     });
 
-    // Timeout après 15s
-    _turnTimer = Timer(const Duration(seconds: _turnDuration), () {
+    _turnTimer = Timer(const Duration(seconds: _turnDuration), () async {
       _countdownTimer?.cancel();
       _secondsLeft = 0;
 
       if (_game == null || !isMyTurn) return;
 
-      // Perdre une vie
-      _lives--;
-      debugPrint('[LUDO-V2-PROV] Timeout! Vies restantes: $_lives');
       onTurnTimeout?.call();
-      notifyListeners();
 
-      // 0 vies = forfait automatique
-      if (_lives <= 0) {
-        debugPrint('[LUDO-V2-PROV] Plus de vies → forfait');
-        forfeit();
-        return;
+      // Enregistre le timeout serveur (qui forfait auto a 3 timeouts)
+      try {
+        final r = await _svc.registerTimeout(_game!.id);
+        if (r['forfeited'] == true) {
+          onForfeitedByTimeouts?.call();
+          return;
+        }
+      } catch (e) {
+        debugPrint('[LUDO-V2-PROV] registerTimeout error: $e');
       }
 
-      // Auto-action
+      // Auto-action : roll si pas roule, sinon move/skip
       if (!_game!.diceRolled) {
-        rollDice().then((dice) {
-          if (dice != null) {
-            Future.delayed(const Duration(seconds: 1), () {
-              if (_game != null && isMyTurn) {
-                if (_playableMoves.isEmpty) {
-                  skipTurn();
-                } else {
-                  playMove(_playableMoves.first.pawnIndex);
-                }
-              }
-            });
+        final dice = await rollDice();
+        if (dice != null) {
+          await Future.delayed(const Duration(seconds: 1));
+          if (_game != null && isMyTurn) {
+            if (_playableMoves.isEmpty) {
+              skipTurn();
+            } else {
+              playMove(_playableMoves.first.pawnIndex);
+            }
           }
-        });
+        }
       } else if (_playableMoves.isEmpty) {
         skipTurn();
       } else {
@@ -258,18 +293,41 @@ class LudoV2GameProvider extends ChangeNotifier {
     });
   }
 
+  /// Surveille en local si l'adversaire courant est AFK > 90s
+  /// pour proposer un bouton "claim idle win" dans l'UI.
+  void _startIdleClaimWatcher() {
+    _idleClaimWatcher?.cancel();
+    if (_game == null || _game!.isFinished || isMyTurn) return;
+
+    _idleClaimWatcher = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (_game == null) return;
+      notifyListeners();  // pour rafraichir l'UI qui peut afficher un bouton apres 90s
+    });
+  }
+
+  /// Calcul cote client : depuis combien de temps le tour de l'adversaire dure.
+  int adversaryIdleSeconds() {
+    if (_game == null || isMyTurn) return 0;
+    return DateTime.now().difference(_game!.turnStartedAt).inSeconds;
+  }
+
+  bool get canClaimIdleWin =>
+      _game != null && !_game!.isFinished && !isMyTurn &&
+      adversaryIdleSeconds() >= 90;
+
   // ── Cleanup ────────────────────────────────────────────
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _turnTimer?.cancel();
     _countdownTimer?.cancel();
+    _idleClaimWatcher?.cancel();
     if (_gameChannel != null) _svc.unsubscribe(_gameChannel!);
     super.dispose();
   }
 }
 
-/// Extension pour null-safe let
 extension _NullSafe<T> on T? {
   void let(void Function(T) fn) {
     if (this != null) fn(this as T);

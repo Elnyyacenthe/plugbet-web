@@ -1,27 +1,31 @@
 // ============================================================
-// LUDO V2 — Supabase Service (RPC + Realtime)
+// LUDO V2 — Supabase Service (RPC + Realtime) - PRODUCTION
 // ============================================================
 
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../models/ludo_models.dart';
 
 class LudoV2Service {
   static final LudoV2Service instance = LudoV2Service._();
   LudoV2Service._();
 
+  final _uuid = const Uuid();
   SupabaseClient get _client => Supabase.instance.client;
   String? get currentUserId => _client.auth.currentUser?.id;
 
+  /// Genere un request_id unique pour idempotence
+  String _newRequestId() => _uuid.v4();
+
   // ── CLEANUP ─────────────────────────────────────────────
 
-  /// Supprime les salles en attente depuis plus d'1 heure
+  /// Cleanup serveur (idempotent, peut etre appele au demarrage de l'app).
+  /// Necessite une RPC dediee si appelle non-admin sinon les rooms d'autres
+  /// utilisateurs ne sont pas affectees.
   Future<void> cleanupStaleRooms() async {
     try {
-      await _client.from('ludo_v2_rooms')
-          .delete()
-          .eq('status', 'waiting')
-          .lt('created_at', DateTime.now().subtract(const Duration(hours: 1)).toIso8601String());
+      await _client.rpc('ludo_v2_cleanup_stale');
     } catch (e) {
       debugPrint('[LUDO-V2] cleanup error: $e');
     }
@@ -29,7 +33,6 @@ class LudoV2Service {
 
   // ── ROOMS ──────────────────────────────────────────────
 
-  /// Crée une room et retourne {room_id, code}
   Future<Map<String, dynamic>> createRoom({
     int playerCount = 2,
     int bet = 0,
@@ -44,7 +47,6 @@ class LudoV2Service {
     return Map<String, dynamic>.from(result as Map);
   }
 
-  /// Pre-check : recupere une room par son code pour valider le solde avant join.
   Future<LudoV2Room?> getRoomByCode(String code) async {
     try {
       final d = await _client.from('ludo_v2_rooms')
@@ -54,7 +56,6 @@ class LudoV2Service {
     } catch (_) { return null; }
   }
 
-  /// Rejoint une room, retourne {room_id, game_id, started}
   Future<Map<String, dynamic>> joinRoom(String code) async {
     final result = await _client.rpc('ludo_v2_join_room', params: {
       'p_code': code.toUpperCase(),
@@ -63,7 +64,6 @@ class LudoV2Service {
     return Map<String, dynamic>.from(result as Map);
   }
 
-  /// Liste les rooms publiques en attente
   Future<List<LudoV2Room>> getPublicRooms() async {
     final data = await _client
         .from('ludo_v2_rooms')
@@ -75,7 +75,6 @@ class LudoV2Service {
     return (data as List).map((j) => LudoV2Room.fromJson(j)).toList();
   }
 
-  /// Détail d'une room avec ses joueurs
   Future<LudoV2Room?> getRoom(String roomId) async {
     final data = await _client
         .from('ludo_v2_rooms')
@@ -86,14 +85,12 @@ class LudoV2Service {
     return LudoV2Room.fromJson(data);
   }
 
-  /// Supprime une room (host only)
   Future<void> deleteRoom(String roomId) async {
     await _client.from('ludo_v2_rooms').delete().eq('id', roomId);
   }
 
   // ── GAME ───────────────────────────────────────────────
 
-  /// Charge une partie
   Future<LudoV2Game?> getGame(String gameId) async {
     final data = await _client
         .from('ludo_v2_games')
@@ -104,43 +101,59 @@ class LudoV2Service {
     return LudoV2Game.fromJson(data);
   }
 
-  /// Lance le dé (côté serveur uniquement)
-  Future<int> rollDice(String gameId) async {
+  /// Lance le dé. request_id pour idempotence sur retry.
+  Future<int> rollDice(String gameId, {String? requestId}) async {
     final result = await _client.rpc('ludo_v2_roll_dice', params: {
       'p_game_id': gameId,
+      'p_request_id': requestId ?? _newRequestId(),
     });
     debugPrint('[LUDO-V2] rollDice: $result');
     return (result as num).toInt();
   }
 
-  /// Joue un mouvement
-  Future<LudoV2MoveResult> playMove(String gameId, int pawnIndex) async {
+  /// Joue un mouvement (idempotent via request_id).
+  Future<LudoV2MoveResult> playMove(String gameId, int pawnIndex, {String? requestId}) async {
     final result = await _client.rpc('ludo_v2_play_move', params: {
       'p_game_id': gameId,
       'p_pawn_index': pawnIndex,
+      'p_request_id': requestId ?? _newRequestId(),
     });
     debugPrint('[LUDO-V2] playMove: $result');
     return LudoV2MoveResult.fromJson(Map<String, dynamic>.from(result as Map));
   }
 
-  /// Passe le tour (aucun coup possible)
-  Future<void> skipTurn(String gameId) async {
+  Future<void> skipTurn(String gameId, {String? requestId}) async {
     await _client.rpc('ludo_v2_skip_turn', params: {
       'p_game_id': gameId,
+      'p_request_id': requestId ?? _newRequestId(),
     });
-    debugPrint('[LUDO-V2] skipTurn');
   }
 
-  Future<void> forfeit(String gameId) async {
+  Future<void> forfeit(String gameId, {String? requestId}) async {
     await _client.rpc('ludo_v2_forfeit', params: {
       'p_game_id': gameId,
+      'p_request_id': requestId ?? _newRequestId(),
     });
-    debugPrint('[LUDO-V2] forfeit');
+  }
+
+  /// Compte un timeout cote serveur. Retourne {forfeited, timeouts, max}.
+  Future<Map<String, dynamic>> registerTimeout(String gameId) async {
+    final r = await _client.rpc('ludo_v2_register_timeout', params: {
+      'p_game_id': gameId,
+    });
+    return Map<String, dynamic>.from(r as Map);
+  }
+
+  /// Reclame une victoire si l'adversaire est idle > 90s.
+  Future<Map<String, dynamic>> claimIdleWin(String gameId) async {
+    final r = await _client.rpc('ludo_v2_claim_idle_win', params: {
+      'p_game_id': gameId,
+    });
+    return Map<String, dynamic>.from(r as Map);
   }
 
   // ── REALTIME ───────────────────────────────────────────
 
-  /// S'abonne aux changements d'une partie
   RealtimeChannel subscribeGame(
     String gameId,
     void Function(LudoV2Game game) onUpdate,
@@ -159,7 +172,7 @@ class LudoV2Service {
           callback: (payload) {
             try {
               final game = LudoV2Game.fromJson(payload.newRecord);
-              debugPrint('[LUDO-V2-RT] Game update: turn=${game.currentTurn}, dice=${game.diceValue}, status=${game.status}');
+              debugPrint('[LUDO-V2-RT] Update: turn=${game.currentTurn} dice=${game.diceValue} status=${game.status}');
               onUpdate(game);
             } catch (e) {
               debugPrint('[LUDO-V2-RT] Parse error: $e');
@@ -169,7 +182,6 @@ class LudoV2Service {
         .subscribe();
   }
 
-  /// S'abonne aux changements d'une room (joueurs qui rejoignent)
   RealtimeChannel subscribeRoom(
     String roomId,
     void Function(LudoV2Room room) onUpdate,
@@ -185,9 +197,8 @@ class LudoV2Service {
             column: 'id',
             value: roomId,
           ),
-          callback: (payload) async {
+          callback: (_) async {
             try {
-              // Refetch full room with players
               final room = await getRoom(roomId);
               if (room != null) onUpdate(room);
             } catch (e) {

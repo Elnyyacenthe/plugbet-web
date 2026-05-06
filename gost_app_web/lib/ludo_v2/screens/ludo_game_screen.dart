@@ -240,7 +240,7 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
     final isMyTurn = prov.isMyTurn;
     final turnColor = _colorForPlayer(game, game.currentTurn);
     final seconds = prov.secondsLeft;
-    final lives = prov.lives;
+    final lives = prov.timeoutsLeft;  // serveur : timeouts restants avant forfait
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),

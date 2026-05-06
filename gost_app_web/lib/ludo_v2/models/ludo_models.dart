@@ -82,6 +82,8 @@ class LudoV2Game {
   final String? winnerId;
   final int turnNumber;
   final int betAmount;
+  final int consecutiveTimeouts;          // serveur : nb timeouts consecutifs
+  final DateTime turnStartedAt;            // pour idle-claim
 
   const LudoV2Game({
     required this.id,
@@ -97,6 +99,8 @@ class LudoV2Game {
     this.winnerId,
     this.turnNumber = 0,
     this.betAmount = 0,
+    this.consecutiveTimeouts = 0,
+    required this.turnStartedAt,
   });
 
   bool get isPlaying => status == 'playing';
@@ -154,6 +158,9 @@ class LudoV2Game {
       winnerId: j['winner_id'] as String?,
       turnNumber: j['turn_number'] as int? ?? 0,
       betAmount: j['bet_amount'] as int? ?? 0,
+      consecutiveTimeouts: j['consecutive_timeouts'] as int? ?? 0,
+      turnStartedAt: DateTime.tryParse(j['turn_started_at'] as String? ?? '')
+          ?? DateTime.now(),
     );
   }
 }
