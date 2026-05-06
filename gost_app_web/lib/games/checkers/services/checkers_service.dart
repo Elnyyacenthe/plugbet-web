@@ -2,10 +2,13 @@
 // Checkers – Service Supabase (rooms, état de jeu, FCFA)
 // ============================================================
 
+import 'dart:async';
 import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../../../services/wallet_service.dart';
+import '../../../services/game_audit_service.dart';
 import '../models/checkers_models.dart';
 
 class CheckersService {
@@ -41,7 +44,15 @@ class CheckersService {
         'p_host_color': color,
       });
       if (result is Map) {
-        return CheckersRoom.fromJson(Map<String, dynamic>.from(result));
+        final room = CheckersRoom.fromJson(Map<String, dynamic>.from(result));
+        unawaited(GameAuditService.instance.logGameStart(
+          gameId: room.id, gameType: 'checkers',
+          payload: {'bet': betAmount, 'is_private': isPrivate, 'host_color': color},
+        ));
+        unawaited(GameAuditService.instance.logBetPlaced(
+          gameId: room.id, gameType: 'checkers', amount: betAmount,
+        ));
+        return room;
       }
       return null;
     } catch (e) {
@@ -62,7 +73,12 @@ class CheckersService {
         'p_initial_state': initialState.toJson(),
       });
       if (result is Map) {
-        return CheckersRoom.fromJson(Map<String, dynamic>.from(result));
+        final room = CheckersRoom.fromJson(Map<String, dynamic>.from(result));
+        unawaited(GameAuditService.instance.logEvent(
+          gameId: room.id, gameType: 'checkers',
+          eventType: 'player_joined',
+        ));
+        return room;
       }
       return null;
     } catch (e) {
@@ -135,22 +151,70 @@ class CheckersService {
   // ÉTAT DE JEU
   // ============================================================
 
-  /// Met à jour l'état du jeu via la RPC dédiée (anti-cheat).
-  /// Le UPDATE direct est bloqué par RLS depuis checkers_anti_cheat_v1.sql.
-  /// Pour terminer la partie, utiliser distributeWinnings (->finish_game RPC),
-  /// pas updateGameState (qui rejette les states avec isGameOver=true).
+  /// DEPRECATED depuis checkers_v2_production.sql.
+  /// Le client n'applique JAMAIS le move localement : tout passe par
+  /// checkers_play_move() qui valide serveur. Cette methode reste pour
+  /// compatibilite (no-op).
   Future<void> updateGameState(String roomId, CheckersGameState state) async {
-    try {
-      // On ne pousse PAS l'etat de fin via cette route — la RPC le rejette.
-      // La fin sera transmise par distributeWinnings (checkers_finish_game).
-      if (state.isGameOver) return;
-      await _client.rpc('checkers_update_state', params: {
-        'p_room_id': roomId,
-        'p_game_state': state.toJson(),
-      });
-    } catch (e) {
-      debugPrint('[CHECKERS] updateGameState error: $e');
-    }
+    debugPrint('[CHECKERS] updateGameState called (deprecated, use playMove)');
+  }
+
+  /// Joue un move via la RPC serveur. Le serveur valide TOUT et renvoie le
+  /// nouvel etat via Realtime. Le client se contente d'envoyer (from, to).
+  ///
+  /// Retour : Map avec :
+  ///   - success: bool
+  ///   - captured: bool
+  ///   - promoted: bool
+  ///   - must_continue: bool  (multi-capture obligatoire depuis dst)
+  ///   - game_over: bool
+  ///   - winner_color: 'red' | 'black' | null
+  ///
+  /// Idempotent : meme requestId = no-op.
+  Future<Map<String, dynamic>> playMove({
+    required String roomId,
+    required int fromRow,
+    required int fromCol,
+    required int toRow,
+    required int toCol,
+    String? requestId,
+  }) async {
+    final reqId = requestId ?? Uuid().v4();
+    final r = await _client.rpc('checkers_play_move', params: {
+      'p_room_id': roomId,
+      'p_from_r': fromRow,
+      'p_from_c': fromCol,
+      'p_to_r': toRow,
+      'p_to_c': toCol,
+      'p_request_id': reqId,
+    });
+    final result = Map<String, dynamic>.from(r as Map);
+    unawaited(GameAuditService.instance.logMove(
+      gameId: roomId, gameType: 'checkers',
+      moveData: {
+        'from': [fromRow, fromCol],
+        'to': [toRow, toCol],
+        'request_id': reqId,
+        'result': result,
+      },
+    ));
+    return result;
+  }
+
+  /// Compte un timeout serveur. Si 3 timeouts → forfait auto.
+  Future<Map<String, dynamic>> registerTimeout(String roomId) async {
+    final r = await _client.rpc('checkers_register_timeout', params: {
+      'p_room_id': roomId,
+    });
+    return Map<String, dynamic>.from(r as Map);
+  }
+
+  /// Reclame une victoire si l'adversaire est idle > 90s.
+  Future<Map<String, dynamic>> claimIdleWin(String roomId) async {
+    final r = await _client.rpc('checkers_claim_idle_win', params: {
+      'p_room_id': roomId,
+    });
+    return Map<String, dynamic>.from(r as Map);
   }
 
   /// Distribue les FCFA à la fin de la partie via le treasury unifie.
@@ -171,11 +235,19 @@ class CheckersService {
         'p_winner_id': winnerId,
         if (finalState != null) 'p_final_state': finalState.toJson(),
       });
+      unawaited(GameAuditService.instance.logGameEnd(
+        gameId: roomId, gameType: 'checkers', won: true,
+        extra: {'winner_id': winnerId, 'pot': pot},
+      ));
     } else {
       await _client.rpc('checkers_draw_game', params: {
         'p_room_id': roomId,
         if (finalState != null) 'p_final_state': finalState.toJson(),
       });
+      unawaited(GameAuditService.instance.logEvent(
+        gameId: roomId, gameType: 'checkers', eventType: 'game_draw',
+        payload: {'pot': pot, 'reason': 'draw_refund'},
+      ));
     }
   }
 

@@ -262,28 +262,30 @@ grant execute on function public.treasury_refund_all(text, text, uuid[], int) to
 -- ╔══════════════════════════════════════════════════════════╗
 -- ║ 3) RATE LIMITING — anti-DDoS                             ║
 -- ╚══════════════════════════════════════════════════════════╝
+-- Note : il existe deja une table `rate_limits` (rate_limiting.sql)
+-- avec une structure differente (user_id, action, last_at, count_window).
+-- On utilise un nom dedie pour eviter la collision.
 
-create table if not exists public.rate_limits (
+create table if not exists public.rate_limit_buckets_v2 (
   id          bigserial primary key,
   user_id     uuid references public.user_profiles(id) on delete cascade,
-  scope       text not null,            -- 'create_room' | 'join_room' | 'roll_dice' | 'play_move' | 'forfeit'
+  scope       text not null,            -- 'create_room' | 'join_room' | etc
   count       int not null default 1,
   window_start timestamptz not null default now(),
   unique (user_id, scope, window_start)
 );
 
-create index if not exists idx_rate_limits_lookup
-  on public.rate_limits(user_id, scope, window_start desc);
+create index if not exists idx_rate_limit_buckets_v2_lookup
+  on public.rate_limit_buckets_v2(user_id, scope, window_start desc);
 
-alter table public.rate_limits enable row level security;
-drop policy if exists "rl_no_direct_access" on public.rate_limits;
-create policy "rl_no_direct_access" on public.rate_limits for all to authenticated
+alter table public.rate_limit_buckets_v2 enable row level security;
+drop policy if exists "rlb2_no_direct_access" on public.rate_limit_buckets_v2;
+create policy "rlb2_no_direct_access" on public.rate_limit_buckets_v2 for all to authenticated
   using (false) with check (false);
 
 -- Helper : verifie + incremente le compteur. Raise si depasse.
--- p_max : nb max d'appels dans la fenetre
--- p_window_seconds : fenetre en secondes (ex: 60 = par minute)
-create or replace function public.check_rate_limit(
+-- Nom unique pour eviter collision avec les check_rate_limit existants.
+create or replace function public.check_rate_limit_v2(
   p_scope text, p_max int, p_window_seconds int
 ) returns void
 language plpgsql security definer set search_path = public as $$
@@ -294,15 +296,13 @@ declare
 begin
   if v_uid is null then raise exception 'RATE_LIMIT_NOT_AUTH'; end if;
 
-  -- Window aligned (ex: pour 60s : start of current minute)
   v_window_start := date_trunc('minute', now())
     - (extract(epoch from now())::int % p_window_seconds || ' seconds')::interval;
 
-  -- Atomique : insert ou update
-  insert into public.rate_limits (user_id, scope, count, window_start)
+  insert into public.rate_limit_buckets_v2 (user_id, scope, count, window_start)
   values (v_uid, p_scope, 1, v_window_start)
   on conflict (user_id, scope, window_start)
-  do update set count = public.rate_limits.count + 1
+  do update set count = public.rate_limit_buckets_v2.count + 1
   returning count into v_count;
 
   if v_count > p_max then
@@ -315,20 +315,20 @@ begin
 end;
 $$;
 
-grant execute on function public.check_rate_limit(text, int, int) to authenticated;
+grant execute on function public.check_rate_limit_v2(text, int, int) to authenticated;
 
--- Cleanup des anciennes lignes rate_limits (> 1h)
-create or replace function public.cleanup_old_rate_limits()
+-- Cleanup des anciennes lignes (> 1h)
+create or replace function public.cleanup_old_rate_limit_buckets_v2()
 returns int language plpgsql security definer set search_path = public as $$
 declare v_count int;
 begin
-  delete from public.rate_limits
+  delete from public.rate_limit_buckets_v2
     where window_start < now() - interval '1 hour';
   get diagnostics v_count = row_count;
   return v_count;
 end;
 $$;
-grant execute on function public.cleanup_old_rate_limits() to authenticated;
+grant execute on function public.cleanup_old_rate_limit_buckets_v2() to authenticated;
 
 
 -- ╔══════════════════════════════════════════════════════════╗
@@ -352,7 +352,7 @@ begin
   if p_bet < 0 or p_bet > 10000000 then raise exception 'INVALID_BET'; end if;
 
   -- RATE LIMIT : 10 rooms/minute
-  perform public.check_rate_limit('ludo_v2_create_room', 10, 60);
+  perform public.check_rate_limit_v2('ludo_v2_create_room', 10, 60);
 
   loop
     v_code := upper(substr(md5(random()::text), 1, 6));
@@ -388,7 +388,7 @@ begin
   if v_uid is null then raise exception 'NOT_AUTH'; end if;
 
   -- RATE LIMIT : 30 tentatives/minute (anti-brute force codes)
-  perform public.check_rate_limit('ludo_v2_join_room', 30, 60);
+  perform public.check_rate_limit_v2('ludo_v2_join_room', 30, 60);
 
   select * into v_room from public.ludo_v2_rooms
     where code = upper(p_code) and status = 'waiting' for update;
@@ -845,8 +845,8 @@ grant execute on function public.log_admin_action(text, uuid, int, text, jsonb) 
 -- select cron.schedule('ludo_v2_cleanup', '*/15 * * * *',
 --   'select public.ludo_v2_cleanup_stale()');
 --
--- select cron.schedule('cleanup_rate_limits', '0 * * * *',
---   'select public.cleanup_old_rate_limits()');
+-- select cron.schedule('cleanup_rate_limit_buckets', '0 * * * *',
+--   'select public.cleanup_old_rate_limit_buckets_v2()');
 --
 -- select cron.schedule('daily_treasury_snapshot', '5 0 * * *',
 --   'select public.create_treasury_snapshot()');

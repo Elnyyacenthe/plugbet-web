@@ -33,6 +33,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   List<CheckerMove> _possibleMoves = [];
   bool _myTurn = false;
   bool _gameOver = false;
+  bool _moving = false;  // verrou anti double-clic pendant l'attente serveur
   late AnimationController _pulseCtrl;
 
   // Timer de tour : 8 secondes par joueur
@@ -77,13 +78,16 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     if (!mounted || _gameOver) return;
     final state = updated.gameState;
     if (state == null) return;
-    // Eviter une boucle de setState si l'etat est identique
+    // Eviter une boucle de setState si l'etat est identique (compare le board JSON)
     final changed = state.toJson().toString() != _gameState.toJson().toString();
     if (changed) {
       setState(() {
         _gameState = state;
-        _updateTurn();
+        _selected = null;       // reset selection sur changement serveur
+        _possibleMoves = [];
+        _moving = false;        // libere le verrou apres confirmation serveur
       });
+      _updateTurn();
     }
     if (state.isGameOver && !_gameOver) {
       _handleGameOver(state);
@@ -93,7 +97,9 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   void _updateTurn() {
     _myTurn = _gameState.currentTurn == widget.myColor;
     if (!_gameState.isGameOver) _startTurnTimer();
-    if (!_myTurn && !_gameState.isGameOver && widget.room.isAI) _scheduleAIMove();
+    // PROD : pas d'auto-play AI cote client. L'IA tourne via cron serveur
+    // (ou via une RPC dediee qu'on declenche explicitement, jamais en
+    // reaction passive a un Realtime update).
   }
 
   void _startTurnTimer() {
@@ -109,19 +115,28 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     });
   }
 
-  void _onTurnTimeout() {
+  Future<void> _onTurnTimeout() async {
     if (_gameOver || _gameState.isGameOver) return;
-    // En multi, ne gérer que mes propres timeouts. En IA, gérer les deux.
-    if (!_myTurn && !widget.room.isAI) return;
-    _consecutiveTimeouts++;
-    if (_consecutiveTimeouts >= 4) {
-      _handleForfeit();
-      return;
-    }
-    // Jouer un coup automatique biaisé vers les mauvais déplacements
-    final moves = CheckersLogic.getLegalMoves(_gameState.board, _gameState.currentTurn);
-    if (moves.isNotEmpty) {
-      _applyMove(_pickAutoMove(moves));
+    if (!_myTurn) return;  // jamais agir pour l'autre joueur
+
+    // SERVEUR-AUTHORITATIVE : on demande au serveur d'incrementer le compteur
+    // de timeouts. Apres N timeouts, le serveur forfait automatiquement.
+    if (!widget.room.isAI && widget.room.guestId != null) {
+      try {
+        final r = await _service.registerTimeout(widget.room.id);
+        if (r['forfeited'] == true) {
+          // Le serveur a deja propage la fin de partie via Realtime
+          return;
+        }
+      } catch (e) {
+        debugPrint('[CHECKERS] registerTimeout error: $e');
+      }
+    } else {
+      // Mode AI / solo : forfeit local apres 4 timeouts
+      _consecutiveTimeouts++;
+      if (_consecutiveTimeouts >= 4) {
+        _handleForfeit();
+      }
     }
   }
 
@@ -190,30 +205,13 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     }
   }
 
-  /// Sélection biaisée : 65% vers les coups sous-optimaux, 35% aléatoire
-  CheckerMove _pickAutoMove(List<CheckerMove> moves) {
-    if (moves.length == 1) return moves.first;
-    final rng = Random();
-    final shuffled = [...moves]..shuffle(rng);
-    final badChance = 1.0 - GameSettings.instance.aiBestMoveChance;
-    if (shuffled.length > 2 && rng.nextDouble() < badChance) {
-      final worse = shuffled.sublist((shuffled.length / 2).ceil());
-      if (worse.isNotEmpty) return worse[rng.nextInt(worse.length)];
-    }
-    return shuffled[rng.nextInt(shuffled.length)];
-  }
-
-  void _scheduleAIMove() {
-    Future.delayed(const Duration(milliseconds: 900), () {
-      if (!mounted || _gameState.isGameOver) return;
-      final aiColor = widget.myColor == PieceColor.red ? PieceColor.black : PieceColor.red;
-      final move = CheckersLogic.getBestMove(_gameState, aiColor, depth: 3);
-      if (move != null) _applyMove(move);
-    });
-  }
+  // _pickAutoMove + _scheduleAIMove supprimes : auto-play retire en V2 prod.
+  // L'IA tourne uniquement en mode solo (`widget.room.isAI`) via les actions
+  // explicites du joueur, pas en reaction passive aux Realtime updates.
 
   void _onCellTap(int row, int col) {
     if (!_myTurn || _gameState.isGameOver) return;
+    if (_moving) return;  // serveur en cours de validation, ignore les taps
     final piece = _gameState.board[row][col];
     final tappedPos = BoardPos(row, col);
 
@@ -243,20 +241,52 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     }
   }
 
-  void _applyMove(CheckerMove move) {
-    final newState = CheckersLogic.applyMove(_gameState, move);
-    setState(() {
-      _gameState = newState;
-      _selected = null;
-      _possibleMoves = [];
-    });
-    _updateTurn();
+  Future<void> _applyMove(CheckerMove move) async {
+    if (_moving) return;  // anti double-click serveur-authoritative
 
-    if (!widget.room.isAI && widget.room.guestId != null) {
-      _service.updateGameState(widget.room.id, newState);
+    if (widget.room.isAI || widget.room.guestId == null) {
+      // Mode AI/solo : le moteur reste local (pas d'argent reel impacte
+      // par le multi-joueur). Le moteur SQL ne gere que le multi.
+      final newState = CheckersLogic.applyMove(_gameState, move);
+      setState(() {
+        _gameState = newState;
+        _selected = null;
+        _possibleMoves = [];
+      });
+      _updateTurn();
+      if (newState.isGameOver) _handleGameOver(newState);
+      return;
     }
 
-    if (newState.isGameOver) _handleGameOver(newState);
+    // MULTIJOUEUR : envoie au serveur, attend Realtime, ne touche PAS au state local.
+    setState(() { _moving = true; });
+    try {
+      final result = await _service.playMove(
+        roomId: widget.room.id,
+        fromRow: move.from.row,
+        fromCol: move.from.col,
+        toRow: move.to.row,
+        toCol: move.to.col,
+      );
+      // Le serveur a applique. Le Realtime _handleRemoteRoomUpdate va
+      // arriver sous peu et mettre a jour _gameState + reset _moving.
+      // En cas de must_continue, on garde la selection sur la nouvelle case.
+      if (result['must_continue'] == true && mounted) {
+        // On laisse le Realtime arriver et on attend la nouvelle position
+        // pour permettre au joueur de continuer la multi-capture.
+      }
+      _consecutiveTimeouts = 0;
+    } catch (e) {
+      debugPrint('[CHECKERS] playMove error: $e');
+      if (mounted) {
+        setState(() { _moving = false; });
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+          content: Text('Coup invalide : $e'.replaceAll('PostgrestException(message: ', '').replaceAll(',', '')),
+          backgroundColor: AppColors.neonRed,
+          duration: const Duration(seconds: 3),
+        ));
+      }
+    }
   }
 
   void _confirmExit() {

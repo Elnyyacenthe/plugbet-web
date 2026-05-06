@@ -255,10 +255,12 @@ create policy "ludo_v2_games_no_direct_update"
   on public.ludo_v2_games for update to authenticated
   using (false) with check (false);
 
+drop policy if exists "ludo_v2_games_insert" on public.ludo_v2_games;
 drop policy if exists "ludo_v2_games_no_direct_insert" on public.ludo_v2_games;
 create policy "ludo_v2_games_no_direct_insert"
   on public.ludo_v2_games for insert to authenticated with check (false);
 
+drop policy if exists "ludo_v2_games_delete" on public.ludo_v2_games;
 drop policy if exists "ludo_v2_games_no_direct_delete" on public.ludo_v2_games;
 create policy "ludo_v2_games_no_direct_delete"
   on public.ludo_v2_games for delete to authenticated using (false);
@@ -272,6 +274,7 @@ create policy "ludo_v2_rooms_no_direct_update"
 
 -- ludo_v2_room_players : interdit DELETE direct (un joueur peut quitter via RPC dediee)
 drop policy if exists "ludo_v2_rp_delete" on public.ludo_v2_room_players;
+drop policy if exists "ludo_v2_rp_no_direct_delete" on public.ludo_v2_room_players;
 create policy "ludo_v2_rp_no_direct_delete"
   on public.ludo_v2_room_players for delete to authenticated using (false);
 
