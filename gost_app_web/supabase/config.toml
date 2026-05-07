@@ -8,3 +8,11 @@
 # Corrige le bug "Unsupported JWT algorithm ES256" sur les projets
 # recents qui utilisent des JWT asymetriques.
 verify_jwt = false
+
+[functions.freemopay_reconcile]
+# Cette fonction est appelee par cron externe (cron-job.org / GitHub Actions)
+# avec un CRON_SECRET. Elle valide elle-meme l'autorisation.
+verify_jwt = false
+
+[functions.ludo_v2_cron]
+verify_jwt = false
