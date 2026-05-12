@@ -1793,7 +1793,7 @@ abstract class AppLocalizations {
   /// No description provided for @authPhoneHint.
   ///
   /// In fr, this message translates to:
-  /// **'+237 6XX XXX XXX'**
+  /// **'Numero de telephone'**
   String get authPhoneHint;
 
   /// No description provided for @authSendOtp.

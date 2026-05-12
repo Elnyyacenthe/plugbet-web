@@ -8,7 +8,7 @@
 //   • Zone UEMOA (XOF) : SN, CI, BF, ML, NE, BJ, TG, GW -> FCFA
 //   • Zone euro : FR, BE, DE, IT, ES, etc. -> EUR
 //   • USA / UK -> USD / GBP
-//   • Par defaut : FCFA (marche principal Cameroun)
+//   • Par defaut : FCFA
 // ============================================================
 
 import 'dart:ui';

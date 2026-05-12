@@ -307,7 +307,7 @@
   "authGoogleSignIn": "Continue with Google",
   "authPhoneSignIn": "Continue with phone",
   "authPhoneNumber": "Phone number",
-  "authPhoneHint": "+237 6XX XXX XXX",
+  "authPhoneHint": "Phone number",
   "authSendOtp": "Send code",
   "authOtpSent": "Code sent to {phone}",
   "authOtpCode": "Verification code",

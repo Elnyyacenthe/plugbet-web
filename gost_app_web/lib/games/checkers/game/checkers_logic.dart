@@ -90,7 +90,11 @@ class CheckersLogic {
       if (continuations.isEmpty) {
         moves.add(CheckerMove(from: pos, to: landPos, captured: captured));
       } else {
-        moves.addAll(continuations);
+        // BUG fix : forcer `from` = pos local (et au top-level = origine du pion).
+        // Sans ca, les multi-captures retournaient from = premier atterrissage.
+        for (final c in continuations) {
+          moves.add(CheckerMove(from: pos, to: c.to, captured: c.captured));
+        }
       }
     }
 

@@ -2,6 +2,8 @@
 // Checkers (Dames) – Modèles de données
 // ============================================================
 
+import 'dart:convert';
+
 /// Couleur d'un pion
 enum PieceColor { red, black }
 
@@ -79,6 +81,7 @@ class CheckersRoom {
   final String? hostColor; // 'red' ou 'black'
   final String? guestColor; // 'red' ou 'black'
   final Map<String, dynamic>? gameStateJson; // état du jeu sérialisé
+  final BoardPos? currentJumpFrom; // multi-capture en cours (null sinon)
 
   CheckersRoom({
     required this.id,
@@ -93,6 +96,7 @@ class CheckersRoom {
     this.hostColor,
     this.guestColor,
     this.gameStateJson,
+    this.currentJumpFrom,
   });
 
   bool get isAI => guestId == 'AI';
@@ -112,10 +116,33 @@ class CheckersRoom {
         guestUsername: j['guest_username'] as String?,
         hostColor: j['host_color'] as String?,
         guestColor: j['guest_color'] as String?,
-        gameStateJson: j['game_state'] is Map<String, dynamic>
-            ? j['game_state'] as Map<String, dynamic>
-            : null,
+        gameStateJson: _parseJsonMap(j['game_state']),
+        currentJumpFrom: _parseJumpFrom(j['current_jump_from']),
       );
+
+  static Map<String, dynamic>? _parseJsonMap(dynamic raw) {
+    if (raw == null) return null;
+    if (raw is Map) return Map<String, dynamic>.from(raw);
+    if (raw is String && raw.isNotEmpty) {
+      try { return Map<String, dynamic>.from(jsonDecode(raw) as Map); }
+      catch (_) { return null; }
+    }
+    return null;
+  }
+
+  static BoardPos? _parseJumpFrom(dynamic raw) {
+    Map? m;
+    if (raw == null) return null;
+    if (raw is Map) {
+      m = raw;
+    } else if (raw is String && raw.isNotEmpty) {
+      try { m = jsonDecode(raw) as Map; } catch (_) { return null; }
+    }
+    if (m == null) return null;
+    final r = m['row']; final c = m['col'];
+    if (r is num && c is num) return BoardPos(r.toInt(), c.toInt());
+    return null;
+  }
 
   Map<String, dynamic> toJson() => {
         'id': id,

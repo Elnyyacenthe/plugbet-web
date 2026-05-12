@@ -869,7 +869,7 @@ class AppLocalizationsEn extends AppLocalizations {
   String get authPhoneNumber => 'Phone number';
 
   @override
-  String get authPhoneHint => '+237 6XX XXX XXX';
+  String get authPhoneHint => 'Phone number';
 
   @override
   String get authSendOtp => 'Send code';

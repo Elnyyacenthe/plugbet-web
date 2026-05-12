@@ -333,7 +333,7 @@
   "authGoogleSignIn": "Continuer avec Google",
   "authPhoneSignIn": "Continuer avec telephone",
   "authPhoneNumber": "Numero de telephone",
-  "authPhoneHint": "+237 6XX XXX XXX",
+  "authPhoneHint": "Numero de telephone",
   "authSendOtp": "Envoyer le code",
   "authOtpSent": "Code envoye a {phone}",
   "@authOtpSent": {

@@ -7,6 +7,7 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/wallet_provider.dart';
@@ -534,19 +535,24 @@ class _ProfileScreenState extends State<ProfileScreen>
 
           SizedBox(height: 16),
 
-          // Stats rapides
-          Row(
-            children: [
-              Expanded(child: _statCard('Parties jouées',
-                  '${_stats?['games_played'] ?? 0}', AppColors.neonBlue)),
-              SizedBox(width: 8),
-              Expanded(child: _statCard('Victoires',
-                  '${_stats?['wins'] ?? 0}', AppColors.neonGreen)),
-              SizedBox(width: 8),
-              Expanded(child: _statCard('Défaites',
-                  '${_stats?['losses'] ?? 0}', AppColors.neonRed)),
-            ],
-          ),
+          // Stats rapides (sources : user_profiles)
+          Builder(builder: (_) {
+            final played = (_stats?['games_played'] as int?) ?? 0;
+            final won = (_stats?['games_won'] as int?) ?? 0;
+            final lost = (played - won).clamp(0, played);
+            return Row(
+              children: [
+                Expanded(child: _statCard('Parties jouées',
+                    '$played', AppColors.neonBlue)),
+                SizedBox(width: 8),
+                Expanded(child: _statCard('Victoires',
+                    '$won', AppColors.neonGreen)),
+                SizedBox(width: 8),
+                Expanded(child: _statCard('Défaites',
+                    '$lost', AppColors.neonRed)),
+              ],
+            );
+          }),
 
           SizedBox(height: 24),
 
@@ -1896,8 +1902,32 @@ class _ProfileScreenState extends State<ProfileScreen>
                         return;
                       }
 
-                      if (amount > currentCoins) {
-                        setS(() => error = 'Solde insuffisant');
+                      // Lecture FRAICHE du solde via RPC wallet_balance (source de
+                      // verite = wallet_ledger). Evite les soldes stale du provider.
+                      int freshBalance = currentCoins;
+                      try {
+                        final r = await Supabase.instance.client
+                            .rpc('wallet_balance');
+                        if (r is int) {
+                          freshBalance = r;
+                        } else if (r is num) {
+                          freshBalance = r.toInt();
+                        }
+                        // Sync provider tant qu'on a la valeur fraiche
+                        if (mounted) {
+                          context.read<WalletProvider>().updateLocal(freshBalance);
+                        }
+                      } catch (_) {
+                        // En cas d'echec : on retombe sur currentCoins
+                        // (et on declenche un refresh complet asynchrone)
+                        if (mounted) {
+                          unawaited(context.read<WalletProvider>().refresh());
+                        }
+                      }
+
+                      if (amount > freshBalance) {
+                        setS(() => error =
+                            'Solde insuffisant (vous avez $freshBalance FCFA)');
                         return;
                       }
 
@@ -1912,21 +1942,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                         error = null;
                       });
 
-                      // 1. Débiter d'abord les coins
-                      final deducted = await _walletService.deductCoins(
-                        amount,
-                        source: 'freemopay_withdrawal',
-                      );
-
-                      if (!deducted) {
-                        setS(() {
-                          loading = false;
-                          error = 'Impossible de débiter le solde';
-                        });
-                        return;
-                      }
-
-                      // 2. Initier le retrait Freemopay
+                      // Le service initiateWithdrawal gere maintenant :
+                      //   1. Le debit atomique via ledger V2
+                      //   2. L'appel Freemopay
+                      //   3. Le refund auto si Freemopay echoue
+                      // Plus de double-debit ici.
                       final cleanedPhone =
                           _freemopayService.cleanPhoneNumber(phone);
                       final result =
@@ -1934,6 +1954,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                         receiver: cleanedPhone,
                         amount: amount,
                       );
+
+                      // Sync le wallet provider (le debit a deja modifie user_profiles)
+                      if (mounted) {
+                        unawaited(context.read<WalletProvider>().refresh());
+                      }
 
                       if (!ctx.mounted) return;
 

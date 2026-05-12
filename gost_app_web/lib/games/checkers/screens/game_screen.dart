@@ -34,6 +34,12 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   bool _myTurn = false;
   bool _gameOver = false;
   bool _moving = false;  // verrou anti double-clic pendant l'attente serveur
+  BoardPos? _serverJumpFrom; // multi-capture en cours (envoyé par serveur)
+  bool _reconnecting = false; // true pendant retry reseau
+  DateTime? _opponentTurnStartedAt; // pour anti-AFK adversaire
+  Timer? _afkCheckTimer;
+  bool _claimingIdle = false;
+  static const int _idleClaimSeconds = 90; // match serveur
   late AnimationController _pulseCtrl;
 
   // Timer de tour : 8 secondes par joueur
@@ -66,7 +72,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     if (!widget.room.isAI && widget.room.guestId != null) {
       _service.subscribeToRoom(widget.room.id, _handleRemoteRoomUpdate);
       // Fallback polling toutes les 2s au cas ou le realtime ne livre pas
-      _pollTimer = Timer.periodic(const Duration(seconds: 2), (_) async {
+      _pollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
         if (!mounted || _gameOver) return;
         final fresh = await _service.getRoom(widget.room.id);
         if (fresh != null) _handleRemoteRoomUpdate(fresh);
@@ -74,21 +80,64 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     }
   }
 
+  bool _boardEqual(List<List<CheckerPiece?>> a, List<List<CheckerPiece?>> b) {
+    for (int r = 0; r < 8; r++) {
+      for (int c = 0; c < 8; c++) {
+        final pa = a[r][c]; final pb = b[r][c];
+        if (pa == null && pb == null) continue;
+        if (pa == null || pb == null) return false;
+        if (pa.color != pb.color || pa.type != pb.type) return false;
+      }
+    }
+    return true;
+  }
+
   void _handleRemoteRoomUpdate(CheckersRoom updated) {
     if (!mounted || _gameOver) return;
     final state = updated.gameState;
     if (state == null) return;
-    // Eviter une boucle de setState si l'etat est identique (compare le board JSON)
-    final changed = state.toJson().toString() != _gameState.toJson().toString();
-    if (changed) {
-      setState(() {
-        _gameState = state;
-        _selected = null;       // reset selection sur changement serveur
-        _possibleMoves = [];
-        _moving = false;        // libere le verrou apres confirmation serveur
-      });
-      _updateTurn();
+
+    final jumpFrom = updated.currentJumpFrom;
+    final isMyTurn = state.currentTurn == widget.myColor;
+    final turnChanged = state.currentTurn != _gameState.currentTurn;
+    final boardChanged = !_boardEqual(state.board, _gameState.board);
+    final gameOverChanged = state.isGameOver != _gameState.isGameOver;
+    final jumpChanged = _serverJumpFrom != jumpFrom;
+    final realChange = turnChanged || boardChanged || gameOverChanged || jumpChanged;
+
+    if (!realChange) {
+      // Polling tick sans changement : ne PAS toucher au selected/timer
+      return;
     }
+
+    setState(() {
+      _gameState = state;
+      _serverJumpFrom = jumpFrom;
+      _moving = false;
+      if (jumpFrom != null && isMyTurn) {
+        _selected = jumpFrom;
+        _possibleMoves = CheckersLogic.getLegalMoves(state.board, widget.myColor)
+            .where((m) => m.from == jumpFrom).toList();
+      } else if (turnChanged || boardChanged) {
+        // Tour a change ou board a change : reset selection
+        _selected = null;
+        _possibleMoves = [];
+      }
+    });
+
+    // Restart timer SEULEMENT si le tour a vraiment change
+    if (turnChanged) {
+      _updateTurn();
+      // Anti-AFK : reset timer adversaire
+      if (!isMyTurn && !state.isGameOver) {
+        _opponentTurnStartedAt = DateTime.now();
+        _startAfkCheck();
+      } else {
+        _opponentTurnStartedAt = null;
+        _afkCheckTimer?.cancel();
+      }
+    }
+
     if (state.isGameOver && !_gameOver) {
       _handleGameOver(state);
     }
@@ -118,25 +167,29 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   Future<void> _onTurnTimeout() async {
     if (_gameOver || _gameState.isGameOver) return;
     if (!_myTurn) return;  // jamais agir pour l'autre joueur
+    if (_moving) return;   // un move est deja en cours d'envoi
 
-    // SERVEUR-AUTHORITATIVE : on demande au serveur d'incrementer le compteur
-    // de timeouts. Apres N timeouts, le serveur forfait automatiquement.
+    var legalMoves = CheckersLogic.getLegalMoves(_gameState.board, widget.myColor);
+    if (_serverJumpFrom != null) {
+      legalMoves = legalMoves.where((m) => m.from == _serverJumpFrom).toList();
+    }
+    if (legalMoves.isNotEmpty) {
+      final randomMove = legalMoves[Random().nextInt(legalMoves.length)];
+      _consecutiveTimeouts = 0;
+      _applyMove(randomMove);
+      return;
+    }
+
     if (!widget.room.isAI && widget.room.guestId != null) {
       try {
         final r = await _service.registerTimeout(widget.room.id);
-        if (r['forfeited'] == true) {
-          // Le serveur a deja propage la fin de partie via Realtime
-          return;
-        }
+        if (r['forfeited'] == true) return;
       } catch (e) {
         debugPrint('[CHECKERS] registerTimeout error: $e');
       }
     } else {
-      // Mode AI / solo : forfeit local apres 4 timeouts
       _consecutiveTimeouts++;
-      if (_consecutiveTimeouts >= 4) {
-        _handleForfeit();
-      }
+      if (_consecutiveTimeouts >= 4) _handleForfeit();
     }
   }
 
@@ -215,11 +268,18 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     final piece = _gameState.board[row][col];
     final tappedPos = BoardPos(row, col);
 
+    // Si multi-capture en cours cote serveur, seule la piece a current_jump_from
+    // peut bouger. On force la selection sur cette case.
+    if (_serverJumpFrom != null && tappedPos != _serverJumpFrom) {
+      if (_selected == null && piece?.color == widget.myColor) {
+        // Pas le bon pion — ignorer le tap au lieu de bloquer le serveur
+        return;
+      }
+    }
+
     if (_selected == null) {
       if (piece?.color == widget.myColor) {
-        final legal = CheckersLogic.getLegalMoves(_gameState.board, widget.myColor)
-            .where((m) => m.from == tappedPos)
-            .toList();
+        final legal = _legalMovesFromHere(tappedPos);
         setState(() { _selected = tappedPos; _possibleMoves = legal; });
       }
     } else {
@@ -231,14 +291,94 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         _consecutiveTimeouts = 0;
         _applyMove(move);
       } else if (piece?.color == widget.myColor) {
-        final legal = CheckersLogic.getLegalMoves(_gameState.board, widget.myColor)
-            .where((m) => m.from == tappedPos)
-            .toList();
+        final legal = _legalMovesFromHere(tappedPos);
         setState(() { _selected = tappedPos; _possibleMoves = legal; });
       } else {
         setState(() { _selected = null; _possibleMoves = []; });
       }
     }
+  }
+
+  // Anti-AFK : verifie toutes les secondes si l'adversaire est inactif
+  // depuis trop longtemps. Auto-reclame la victoire au seuil serveur (90s).
+  void _startAfkCheck() {
+    _afkCheckTimer?.cancel();
+    _afkCheckTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
+      if (!mounted || _gameOver || _gameState.isGameOver) { t.cancel(); return; }
+      if (_opponentTurnStartedAt == null) { t.cancel(); return; }
+      final isMyTurn = _gameState.currentTurn == widget.myColor;
+      if (isMyTurn) { t.cancel(); return; }
+      final elapsed = DateTime.now().difference(_opponentTurnStartedAt!).inSeconds;
+      if (elapsed >= _idleClaimSeconds && !_claimingIdle) {
+        t.cancel();
+        await _claimIdleWin();
+      } else if (mounted) {
+        setState(() {}); // refresh banner countdown
+      }
+    });
+  }
+
+  Future<void> _claimIdleWin() async {
+    if (_claimingIdle || _gameOver) return;
+    setState(() => _claimingIdle = true);
+    try {
+      await _service.claimIdleWin(widget.room.id);
+      // Le serveur a marque la room finished + paye. Le realtime va arriver
+      // et declencher _handleGameOver.
+    } catch (e) {
+      debugPrint('[CHECKERS] claimIdleWin error: $e');
+      if (mounted) setState(() => _claimingIdle = false);
+    }
+  }
+
+  // Wrapper retry pour playMove : robustesse perte reseau.
+  // Reessaie jusqu'a 8 fois avec backoff (1s, 2s, 4s, 8s, 16s, 30s, 30s, 30s).
+  // Affiche un indicateur 'reconnexion' pendant les retries.
+  // Echoue uniquement si > 2 min sans reseau.
+  Future<Map<String, dynamic>> _playMoveWithRetry({
+    required int fromRow, required int fromCol,
+    required int toRow, required int toCol,
+  }) async {
+    const delays = [1, 2, 4, 8, 16, 30, 30, 30];
+    for (int attempt = 0; attempt < delays.length; attempt++) {
+      try {
+        final r = await _service.playMove(
+          roomId: widget.room.id,
+          fromRow: fromRow, fromCol: fromCol,
+          toRow: toRow, toCol: toCol,
+        );
+        if (_reconnecting && mounted) {
+          setState(() => _reconnecting = false);
+        }
+        return r;
+      } catch (e) {
+        final msg = e.toString();
+        final isNetwork = msg.contains('SocketException')
+            || msg.contains('Failed host lookup')
+            || msg.contains('Network is unreachable')
+            || msg.contains('Connection timed out')
+            || msg.contains('Connection failed');
+        if (!isNetwork) rethrow; // erreur metier serveur -> remonte
+        if (mounted && !_reconnecting) {
+          setState(() => _reconnecting = true);
+        }
+        if (attempt == delays.length - 1) rethrow;
+        await Future.delayed(Duration(seconds: delays[attempt]));
+        if (!mounted) rethrow;
+      }
+    }
+    throw Exception('UNREACHABLE');
+  }
+
+  // Renvoie les moves legaux depuis tappedPos.
+  // Si le serveur impose une multi-capture en cours, on filtre uniquement
+  // les moves depuis _serverJumpFrom.
+  List<CheckerMove> _legalMovesFromHere(BoardPos tappedPos) {
+    final all = CheckersLogic.getLegalMoves(_gameState.board, widget.myColor);
+    if (_serverJumpFrom != null) {
+      return all.where((m) => m.from == _serverJumpFrom).toList();
+    }
+    return all.where((m) => m.from == tappedPos).toList();
   }
 
   Future<void> _applyMove(CheckerMove move) async {
@@ -258,24 +398,30 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       return;
     }
 
-    // MULTIJOUEUR : envoie au serveur, attend Realtime, ne touche PAS au state local.
+    // MULTIJOUEUR : envoie au serveur. Pour multi-capture, decompose la chaine
+    // en sauts individuels (le serveur valide 1 saut a la fois).
     setState(() { _moving = true; });
     try {
-      final result = await _service.playMove(
-        roomId: widget.room.id,
-        fromRow: move.from.row,
-        fromCol: move.from.col,
-        toRow: move.to.row,
-        toCol: move.to.col,
-      );
-      // Le serveur a applique. Le Realtime _handleRemoteRoomUpdate va
-      // arriver sous peu et mettre a jour _gameState + reset _moving.
-      // En cas de must_continue, on garde la selection sur la nouvelle case.
-      if (result['must_continue'] == true && mounted) {
-        // On laisse le Realtime arriver et on attend la nouvelle position
-        // pour permettre au joueur de continuer la multi-capture.
+      if (move.captured.length <= 1) {
+        await _playMoveWithRetry(
+          fromRow: move.from.row, fromCol: move.from.col,
+          toRow: move.to.row, toCol: move.to.col,
+        );
+      } else {
+        BoardPos current = move.from;
+        for (final cap in move.captured) {
+          final landingR = 2 * cap.row - current.row;
+          final landingC = 2 * cap.col - current.col;
+          final r = await _playMoveWithRetry(
+            fromRow: current.row, fromCol: current.col,
+            toRow: landingR, toCol: landingC,
+          );
+          current = BoardPos(landingR, landingC);
+          if (r['must_continue'] != true) break;
+        }
       }
       _consecutiveTimeouts = 0;
+      if (mounted) setState(() { _moving = false; });
     } catch (e) {
       debugPrint('[CHECKERS] playMove error: $e');
       if (mounted) {
@@ -432,6 +578,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   void dispose() {
     _turnTimer?.cancel();
     _pollTimer?.cancel();
+    _afkCheckTimer?.cancel();
     _pulseCtrl.dispose();
     _service.unsubscribe();
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
@@ -454,6 +601,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
             child: Column(
               children: [
                 _buildTopBar(),
+                if (_reconnecting) _buildReconnectingBanner(),
+                if (_buildAfkRemainingSeconds() != null) _buildAfkBanner(),
                 const Spacer(),
                 _buildBoard(),
                 const Spacer(),
@@ -461,6 +610,86 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
               ],
             ),
           ),
+        ),
+      ),
+    );
+  }
+
+  // Renvoie les secondes restantes avant auto-claim (0..30), sinon null
+  int? _buildAfkRemainingSeconds() {
+    if (_opponentTurnStartedAt == null || _gameOver || _gameState.isGameOver) return null;
+    final isMyTurn = _gameState.currentTurn == widget.myColor;
+    if (isMyTurn) return null;
+    final elapsed = DateTime.now().difference(_opponentTurnStartedAt!).inSeconds;
+    final remaining = _idleClaimSeconds - elapsed;
+    // On affiche le banner seulement les 30 dernieres secondes
+    if (remaining > 30) return null;
+    return remaining.clamp(0, _idleClaimSeconds);
+  }
+
+  Widget _buildAfkBanner() {
+    final remaining = _buildAfkRemainingSeconds() ?? 0;
+    final claiming = _claimingIdle;
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.neonOrange.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.neonOrange.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(claiming ? Icons.emoji_events : Icons.warning_amber_rounded,
+                 color: AppColors.neonOrange, size: 16),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                claiming
+                  ? 'Reclamation de la victoire...'
+                  : 'Adversaire inactif. Victoire dans ${remaining}s.',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.neonOrange, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildReconnectingBanner() {
+    return RepaintBoundary(
+      child: Container(
+        margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: AppColors.neonYellow.withValues(alpha: 0.15),
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.5)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14, height: 14,
+              child: CircularProgressIndicator(
+                strokeWidth: 2,
+                valueColor: AlwaysStoppedAnimation(AppColors.neonYellow),
+              ),
+            ),
+            const SizedBox(width: 10),
+            Flexible(
+              child: Text(
+                'Reconnexion au serveur...',
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(color: AppColors.neonYellow, fontSize: 13, fontWeight: FontWeight.w600),
+              ),
+            ),
+          ],
         ),
       ),
     );

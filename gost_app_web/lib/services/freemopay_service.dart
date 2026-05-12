@@ -226,6 +226,27 @@ class FreemopayService {
 
     final externalId = 'WITHDRAW_${_uuid.v4().substring(0, 8)}_$uid';
 
+    // 1. DEBIT WALLET via ledger V2 (atomique + idempotent)
+    // Avant tout appel Freemopay, on debite le solde via la RPC ledger.
+    // Si solde insuffisant -> rejet immediat, pas d'appel Freemopay.
+    final debitRes = await _client.rpc('freemopay_debit_for_withdrawal', params: {
+      'p_amount': amount,
+      'p_external_id': externalId,
+    });
+    if (debitRes is! Map || debitRes['success'] != true) {
+      final err = (debitRes is Map ? debitRes['error'] : null) ?? 'DEBIT_FAILED';
+      if (err == 'INSUFFICIENT_FUNDS') {
+        final bal = (debitRes is Map ? debitRes['balance'] : null) ?? 0;
+        return {
+          'success': false,
+          'message': 'Solde insuffisant (vous avez $bal FCFA).',
+        };
+      }
+      _log.warn('Debit ledger refused: $err');
+      return {'success': false, 'message': 'Erreur debit solde: $err'};
+    }
+
+    // 2. APPEL FREEMOPAY
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/payment/direct-withdraw'),
@@ -239,7 +260,7 @@ class FreemopayService {
           'externalId': externalId,
           'callback': _webhookUrl ?? '',
         }),
-      );
+      ).timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
@@ -266,19 +287,37 @@ class FreemopayService {
           'message': 'Retrait en cours. Vous recevrez l\'argent sous peu.',
         };
       } else {
-        _log.warn('initiateWithdrawal failed: $data');
+        // 3. ECHEC FREEMOPAY -> REFUND auto
+        _log.warn('initiateWithdrawal Freemopay failed: $data');
+        await _refundWithdrawal(amount, externalId, 'freemopay_init_failed');
         return {
           'success': false,
           'message': data['message']?['fr'] ?? data['message'] ??
-              'Erreur lors de l\'initialisation du retrait.',
+              'Erreur lors de l\'initialisation du retrait. Solde restauré.',
         };
       }
     } catch (e, s) {
+      // 3bis. ERREUR RESEAU/TIMEOUT -> REFUND auto
       _log.error('initiateWithdrawal', e, s);
+      await _refundWithdrawal(amount, externalId, 'network_error');
       return {
         'success': false,
-        'message': 'Erreur réseau. Vérifiez votre connexion.',
+        'message': 'Erreur réseau. Solde restauré, réessayez plus tard.',
       };
+    }
+  }
+
+  /// Refund interne si l'init Freemopay echoue apres le debit.
+  Future<void> _refundWithdrawal(int amount, String externalId, String reason) async {
+    try {
+      await _client.rpc('freemopay_refund_withdrawal', params: {
+        'p_amount': amount,
+        'p_external_id': externalId,
+        'p_reason': reason,
+      });
+    } catch (e) {
+      _log.error('refundWithdrawal', e, null);
+      // Si meme le refund plante, on log et le cron prendra le relai
     }
   }
 
@@ -366,17 +405,32 @@ class FreemopayService {
     }
   }
 
-  /// Valide le format d'un numéro de téléphone (Cameroun/international)
-  /// Format attendu: 237XXXXXXXXX (9 chiffres après 237)
-  bool validatePhoneNumber(String phone) {
-    final cleaned = phone.replaceAll(RegExp(r'[\s\-\(\)]'), '');
-    // Accepte: 237XXXXXXXXX ou +237XXXXXXXXX
-    final pattern = RegExp(r'^\+?237[0-9]{9}$');
-    return pattern.hasMatch(cleaned);
+  /// Normalise un numero de telephone en format API (sans +, sans espace,
+  /// avec prefixe 237 auto-ajoute si absent).
+  ///
+  /// Accepte tous ces formats et retourne '237XXXXXXXXX' :
+  ///   - '699123456'       -> '237699123456'
+  ///   - '237699123456'    -> '237699123456'
+  ///   - '+237 699 123 456' -> '237699123456'
+  ///   - '00237699123456'  -> '237699123456'
+  String normalizePhoneNumber(String phone) {
+    // 1. Retire tout ce qui n'est pas chiffre
+    var digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
+    // 2. Retire prefixe international 00 si present
+    if (digits.startsWith('00')) digits = digits.substring(2);
+    // 3. Si commence deja par 237 -> garder
+    if (digits.startsWith('237')) return digits;
+    // 4. Sinon prepend 237 (cas du user qui tape juste son numero local)
+    return '237$digits';
   }
 
-  /// Nettoie un numéro de téléphone pour l'API
-  String cleanPhoneNumber(String phone) {
-    return phone.replaceAll(RegExp(r'[\s\-\(\)\+]'), '');
+  /// Valide le format d'un numéro de téléphone après normalisation.
+  /// Format attendu: 237XXXXXXXXX (9 chiffres après le préfixe)
+  bool validatePhoneNumber(String phone) {
+    final n = normalizePhoneNumber(phone);
+    return RegExp(r'^237[0-9]{9}$').hasMatch(n);
   }
+
+  /// Nettoie un numéro de téléphone pour l'API (alias de normalizePhoneNumber).
+  String cleanPhoneNumber(String phone) => normalizePhoneNumber(phone);
 }

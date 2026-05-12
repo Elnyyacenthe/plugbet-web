@@ -60,7 +60,7 @@ class GamesScreen extends StatelessWidget {
       ),
       _Game(
         title: 'Cora Dice',
-        subtitle: 'Jeu de dés camerounais',
+        subtitle: 'Jeu de dés multijoueur',
         icon: Icons.casino_rounded,
         imageAsset: 'assets/games/cora_dice.jpg',
         color: AppColors.neonGreen,

@@ -13,6 +13,7 @@ import '../models/cora_models.dart';
 import '../services/cora_service.dart';
 import 'create_room_screen.dart';
 import 'lobby_screen.dart';
+import 'game_screen.dart';
 
 class CoraDiceScreen extends StatefulWidget {
   const CoraDiceScreen({super.key});
@@ -44,7 +45,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) context.read<WalletProvider>().refresh();
     });
-    _service.cleanupStaleRooms(); // Nettoyer les salles > 1h
+    // V3 : le cleanup des stale rooms est géré côté serveur via pg_cron.
     await _loadPublicRooms();
   }
 
@@ -65,12 +66,15 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
 
   Future<void> _joinRoom(String code, int betAmount) async {
     final coins = context.read<WalletProvider>().coins;
-    if (coins < betAmount) {
+    // V3.4 : Cora exige 2× la mise (mise + Cora penalty potentielle)
+    final required = betAmount * 2;
+    if (coins < required) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              'Solde insuffisant ! Vous avez $coins FCFA, il faut $betAmount FCFA.',
+              'Solde insuffisant ! Vous avez $coins FCFA, il faut $required FCFA '
+              '(mise $betAmount + Cora penalty $betAmount).',
             ),
             backgroundColor: AppColors.neonRed,
           ),
@@ -80,8 +84,26 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
     }
 
     try {
-      final roomId = await _service.joinRoom(code);
-      if (roomId != null && mounted) {
+      final result = await _service.joinRoom(code);
+      if (!mounted) return;
+
+      // V3.3 : si le join a rempli la room → game déjà démarrée côté serveur,
+      // on saute le lobby et on va direct sur l'écran de jeu.
+      if (result?['started'] == true && result?['game_id'] != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CoraGameScreen(
+              gameId: result!['game_id'] as String,
+            ),
+          ),
+        ).then((_) => _loadData());
+        return;
+      }
+
+      // Room pas encore full → lobby normal
+      final roomId = result?['room_id'] as String?;
+      if (roomId != null) {
         _navigateToLobby(roomId);
       }
     } catch (e) {
@@ -214,7 +236,7 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
           if (!isSmallScreen) ...[
             SizedBox(height: 4),
             Text(
-              'Jeu de dés camerounais • Virtual Coins',
+              'Jeu de dés • Virtual Coins',
               style: TextStyle(
                 fontSize: 13,
                 color: AppColors.textSecondary.withValues(alpha: 0.7),
@@ -392,7 +414,8 @@ class _CoraDiceScreenState extends State<CoraDiceScreen> {
 
   Widget _buildRoomCard(CoraRoom room, bool isSmallScreen) {
     final coins = context.watch<WalletProvider>().coins;
-    final canAfford = coins >= room.betAmount;
+    // V3.4 : il faut 2× la mise pour entrer (mise + Cora penalty potentielle)
+    final canAfford = coins >= room.betAmount * 2;
 
     return Container(
       margin: EdgeInsets.only(bottom: isSmallScreen ? 8 : 12),

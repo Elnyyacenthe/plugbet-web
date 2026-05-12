@@ -1,6 +1,6 @@
 // ============================================================
 // CORA DICE - Modèles de données
-// Jeu de dés camerounais virtuel (coins uniquement)
+// Jeu de dés (coins uniquement)
 // ============================================================
 
 import 'dart:convert';
@@ -39,8 +39,8 @@ class DiceRoll {
 
   factory DiceRoll.fromJson(Map<String, dynamic> json) {
     return DiceRoll(
-      dice1: json['dice1'] as int,
-      dice2: json['dice2'] as int,
+      dice1: (json['dice1'] as num).toInt(),
+      dice2: (json['dice2'] as num).toInt(),
       timestamp: json['timestamp'] != null
           ? DateTime.parse(json['timestamp'] as String)
           : DateTime.now(),
@@ -52,6 +52,17 @@ class DiceRoll {
         'dice2': dice2,
         'timestamp': timestamp.toIso8601String(),
       };
+
+  // Égalité par valeur des dés uniquement (le timestamp ne compte pas).
+  // Permet de détecter qu'un nouveau roll est arrivé via realtime sans
+  // re-déclencher l'animation pour la même valeur.
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      other is DiceRoll && other.dice1 == dice1 && other.dice2 == dice2;
+
+  @override
+  int get hashCode => Object.hash(dice1, dice2);
 }
 
 /// Joueur dans une partie Cora
@@ -75,14 +86,15 @@ class CoraPlayer {
   bool get hasSeven => roll?.isSeven ?? false;
 
   factory CoraPlayer.fromJson(Map<String, dynamic> json) {
+    final rollData = json['roll'];
     return CoraPlayer(
       userId: json['user_id'] as String,
       username: json['username'] as String? ?? 'Joueur',
       isReady: json['is_ready'] as bool? ?? false,
-      roll: json['roll'] != null
-          ? DiceRoll.fromJson(json['roll'] as Map<String, dynamic>)
+      roll: (rollData is Map)
+          ? DiceRoll.fromJson(Map<String, dynamic>.from(rollData))
           : null,
-      finalScore: json['final_score'] as int?,
+      finalScore: (json['final_score'] as num?)?.toInt(),
     );
   }
 
@@ -110,6 +122,55 @@ class CoraPlayer {
       );
 }
 
+/// État de revanche entre 2 parties (V3.6).
+/// status : pending | accepted | refused | expired
+class CoraRematchState {
+  final String status;
+  final List<String> acceptedIds;
+  final List<String> refusedIds;
+  final String? proposerId;
+  final String? newGameId;
+  final String? newRoomId;
+  final DateTime? expiresAt;
+
+  const CoraRematchState({
+    required this.status,
+    this.acceptedIds = const [],
+    this.refusedIds = const [],
+    this.proposerId,
+    this.newGameId,
+    this.newRoomId,
+    this.expiresAt,
+  });
+
+  bool get isPending => status == 'pending';
+  bool get isAccepted => status == 'accepted';
+  bool get isRefused => status == 'refused';
+  bool get isExpired => status == 'expired';
+
+  bool didIVote(String userId) =>
+      acceptedIds.contains(userId) || refusedIds.contains(userId);
+  bool didIAccept(String userId) => acceptedIds.contains(userId);
+
+  factory CoraRematchState.fromJson(Map<String, dynamic> json) {
+    return CoraRematchState(
+      status: json['status'] as String? ?? 'pending',
+      acceptedIds:
+          (json['accepted_ids'] as List?)?.map((e) => e.toString()).toList() ??
+              const [],
+      refusedIds:
+          (json['refused_ids'] as List?)?.map((e) => e.toString()).toList() ??
+              const [],
+      proposerId: json['proposer_id'] as String?,
+      newGameId: json['new_game_id'] as String?,
+      newRoomId: json['new_room_id'] as String?,
+      expiresAt: json['expires_at'] != null
+          ? DateTime.tryParse(json['expires_at'].toString())
+          : null,
+    );
+  }
+}
+
 /// État du jeu Cora
 class CoraGameState {
   final Map<String, CoraPlayer> players;
@@ -117,6 +178,11 @@ class CoraGameState {
   final List<String> winners; // Peut avoir plusieurs gagnants si Cora
   final bool isFinished;
   final String? result; // Description du résultat
+  // Flag explicite renseigné par le serveur : true = partie annulée
+  // (refund intégral), false/absent = partie terminée normalement.
+  final bool isCancelled;
+  // Système de revanche (V3.6). Null tant que personne n'a cliqué "Rejouer".
+  final CoraRematchState? rematch;
 
   const CoraGameState({
     required this.players,
@@ -124,6 +190,8 @@ class CoraGameState {
     this.winners = const [],
     this.isFinished = false,
     this.result,
+    this.isCancelled = false,
+    this.rematch,
   });
 
   factory CoraGameState.initial(List<Map<String, String>> playersList) {
@@ -145,16 +213,25 @@ class CoraGameState {
     final playersRaw = json['players'] as Map<String, dynamic>? ?? {};
     final players = <String, CoraPlayer>{};
     for (final entry in playersRaw.entries) {
-      players[entry.key] =
-          CoraPlayer.fromJson(entry.value as Map<String, dynamic>);
+      // Le serveur stocke les players keyed par user_id mais NE met pas
+      // user_id dans l'objet. On l'injecte avant de parser pour que
+      // CoraPlayer.fromJson trouve la valeur attendue.
+      final playerJson = Map<String, dynamic>.from(entry.value as Map);
+      playerJson['user_id'] = entry.key;
+      players[entry.key] = CoraPlayer.fromJson(playerJson);
     }
 
+    final rematchData = json['rematch'];
     return CoraGameState(
       players: players,
       currentTurn: json['current_turn'] as String?,
       winners: (json['winners'] as List?)?.cast<String>() ?? [],
       isFinished: json['is_finished'] as bool? ?? false,
       result: json['result'] as String?,
+      isCancelled: json['is_cancelled'] as bool? ?? false,
+      rematch: (rematchData is Map)
+          ? CoraRematchState.fromJson(Map<String, dynamic>.from(rematchData))
+          : null,
     );
   }
 
@@ -164,6 +241,7 @@ class CoraGameState {
         'winners': winners,
         'is_finished': isFinished,
         'result': result,
+        'is_cancelled': isCancelled,
       };
 
   bool get allPlayersRolled => players.values.every((p) => p.hasRolled);
@@ -184,6 +262,9 @@ class CoraRoom {
   final String? gameId;
   final DateTime createdAt;
   final String? hostUsername;
+  // Deadline d'auto-start (V3.2). À deadline : si ≥2 ready → démarre, sinon
+  // la room est annulée et tout le monde refundé.
+  final DateTime? startDeadline;
 
   const CoraRoom({
     required this.id,
@@ -196,6 +277,7 @@ class CoraRoom {
     this.gameId,
     required this.createdAt,
     this.hostUsername,
+    this.startDeadline,
   });
 
   int get potAmount => betAmount * playerCount;
@@ -206,7 +288,7 @@ class CoraRoom {
       code: json['code'] as String,
       hostId: json['host_id'] as String,
       playerCount: json['player_count'] as int? ?? 2,
-      betAmount: json['bet_amount'] as int? ?? 200,
+      betAmount: (json['bet_amount'] as num?)?.toInt() ?? 200,
       isPrivate: json['is_private'] as bool? ?? false,
       status: coraRoomStatusFromString(json['status'] as String? ?? 'waiting'),
       gameId: json['game_id'] as String?,
@@ -214,6 +296,9 @@ class CoraRoom {
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),
       hostUsername: json['host_username'] as String?,
+      startDeadline: json['start_deadline'] != null
+          ? DateTime.parse(json['start_deadline'] as String)
+          : null,
     );
   }
 }
@@ -256,11 +341,14 @@ class CoraGame {
     return CoraGame(
       id: json['id'] as String,
       roomId: json['room_id'] as String,
-      betAmount: json['bet_amount'] as int? ?? 200,
-      playerCount: json['player_count'] as int? ?? 2,
+      betAmount: (json['bet_amount'] as num?)?.toInt() ?? 200,
+      playerCount: (json['player_count'] as num?)?.toInt() ?? 2,
       gameState: CoraGameState.fromJson(stateMap),
       status: coraRoomStatusFromString(json['status'] as String? ?? 'playing'),
-      winnerIds: (json['winner_ids'] as List?)?.cast<String>() ?? [],
+      winnerIds: (json['winner_ids'] as List?)
+              ?.map((e) => e.toString())
+              .toList() ??
+          [],
       createdAt: json['created_at'] != null
           ? DateTime.parse(json['created_at'] as String)
           : DateTime.now(),

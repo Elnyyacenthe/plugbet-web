@@ -13,6 +13,7 @@ import '../providers/ludo_game_provider.dart';
 import '../widgets/dice_widget.dart';
 import '../widgets/ludo_board_widget.dart';
 import 'ludo_result_screen.dart';
+import '../../ludo/services/audio_service.dart';
 
 class LudoV2GameScreen extends StatefulWidget {
   final String gameId;
@@ -90,6 +91,14 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
 
   void _onMoveResult(bool captured, bool won, bool extraTurn) {
     if (!mounted) return;
+    // SFX : capture > win > pawn_move (priorite)
+    if (won) {
+      AudioService.instance.playWin();
+    } else if (captured) {
+      AudioService.instance.playCapture();
+    } else {
+      AudioService.instance.playPawnMove();
+    }
     String? msg;
     if (won) msg = 'Victoire !';
     else if (captured) msg = 'Pion capturé !';
@@ -127,6 +136,7 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
 
   Future<void> _rollDice(LudoV2GameProvider prov) async {
     setState(() => _diceAnimating = true);
+    AudioService.instance.playDiceRoll();
     final dice = await prov.rollDice();
     if (dice != null) _lastDice = dice;
     // Animation dure 600ms, on attend la fin

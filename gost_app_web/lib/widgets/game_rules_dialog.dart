@@ -296,7 +296,7 @@ class GameRulesLibrary {
     title: 'Cora Dice',
     emoji: '🎲',
     description:
-        "Jeu de des camerounais. Chaque joueur lance 2 des. "
+        "Jeu de des multijoueur. Chaque joueur lance 2 des. "
         "Le total le plus eleve gagne !",
     howToPlay: [
       'Rejoignez une salle avec une mise.',

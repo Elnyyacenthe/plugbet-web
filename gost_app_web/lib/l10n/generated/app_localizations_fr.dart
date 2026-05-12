@@ -884,7 +884,7 @@ class AppLocalizationsFr extends AppLocalizations {
   String get authPhoneNumber => 'Numero de telephone';
 
   @override
-  String get authPhoneHint => '+237 6XX XXX XXX';
+  String get authPhoneHint => 'Numero de telephone';
 
   @override
   String get authSendOtp => 'Envoyer le code';

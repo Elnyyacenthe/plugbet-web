@@ -3,6 +3,7 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
 import '../services/support_service.dart';
 import '../l10n/generated/app_localizations.dart';
@@ -86,6 +87,99 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
   }
 
   Future<void> _markRead() => _service.markRead(_ticketId);
+
+  Future<void> _pickImage(ImageSource source) async {
+    if (_sending || _status == 'closed') return;
+    try {
+      final xfile = await ImagePicker().pickImage(
+        source: source,
+        maxWidth: 1600,
+        imageQuality: 80,
+      );
+      if (xfile == null) return;
+      if (!mounted) return;
+      setState(() => _sending = true);
+      final caption = _msgCtrl.text.trim();
+      _msgCtrl.clear();
+      // Web-compatible : lire bytes au lieu d'utiliser File(path)
+      final bytes = await xfile.readAsBytes();
+      final ext = xfile.name.contains('.')
+          ? xfile.name.split('.').last.toLowerCase()
+          : 'jpg';
+      await _service.sendImageBytes(
+        _ticketId,
+        bytes,
+        fileExt: ext,
+        caption: caption.isNotEmpty ? caption : null,
+      );
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Envoi photo impossible : $e'), backgroundColor: AppColors.neonRed),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _sending = false);
+    }
+  }
+
+  void _showAttachMenu() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: AppColors.bgCard,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Padding(
+          padding: EdgeInsets.all(20),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _attachOption(ctx, Icons.photo_library, 'Galerie', () => _pickImage(ImageSource.gallery)),
+              _attachOption(ctx, Icons.photo_camera, 'Photo', () => _pickImage(ImageSource.camera)),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _attachOption(BuildContext ctx, IconData icon, String label, VoidCallback onTap) {
+    return GestureDetector(
+      onTap: () { Navigator.pop(ctx); onTap(); },
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 56, height: 56,
+            decoration: BoxDecoration(
+              color: AppColors.neonGreen.withValues(alpha: 0.15),
+              shape: BoxShape.circle,
+              border: Border.all(color: AppColors.neonGreen.withValues(alpha: 0.4)),
+            ),
+            child: Icon(icon, color: AppColors.neonGreen, size: 24),
+          ),
+          SizedBox(height: 6),
+          Text(label, style: TextStyle(color: AppColors.textPrimary, fontSize: 12)),
+        ],
+      ),
+    );
+  }
+
+  void _openImagePreview(String url) {
+    showDialog(
+      context: context,
+      builder: (ctx) => Dialog(
+        backgroundColor: Colors.black,
+        insetPadding: EdgeInsets.all(8),
+        child: GestureDetector(
+          onTap: () => Navigator.pop(ctx),
+          child: InteractiveViewer(
+            child: Image.network(url, fit: BoxFit.contain),
+          ),
+        ),
+      ),
+    );
+  }
 
   Future<void> _sendMessage() async {
     final text = _msgCtrl.text.trim();
@@ -246,6 +340,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
   Widget _messageBubble(Map<String, dynamic> msg) {
     final isAdmin   = msg['is_admin'] as bool? ?? false;
     final content   = msg['content'] as String? ?? '';
+    final imageUrl  = msg['image_url'] as String?;
     final createdAt = msg['created_at'] != null
         ? DateTime.tryParse(msg['created_at'] as String)
         : null;
@@ -279,7 +374,9 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
                         style: TextStyle(color: AppColors.neonGreen, fontSize: 10, fontWeight: FontWeight.w700)),
                   ),
                 Container(
-                  padding: EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  padding: imageUrl != null
+                      ? EdgeInsets.all(4)
+                      : EdgeInsets.symmetric(horizontal: 14, vertical: 10),
                   constraints: BoxConstraints(maxWidth: MediaQuery.of(context).size.width * 0.72),
                   decoration: BoxDecoration(
                     color: isAdmin ? AppColors.bgCard : AppColors.neonGreen.withValues(alpha: 0.15),
@@ -295,8 +392,46 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
                           : AppColors.neonGreen.withValues(alpha: 0.3),
                     ),
                   ),
-                  child: Text(content,
-                      style: TextStyle(color: AppColors.textPrimary, fontSize: 14, height: 1.4)),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      if (imageUrl != null)
+                        GestureDetector(
+                          onTap: () => _openImagePreview(imageUrl),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(12),
+                            child: Image.network(
+                              imageUrl,
+                              fit: BoxFit.cover,
+                              loadingBuilder: (_, child, progress) {
+                                if (progress == null) return child;
+                                return Container(
+                                  height: 180,
+                                  alignment: Alignment.center,
+                                  child: CircularProgressIndicator(
+                                    color: AppColors.neonGreen, strokeWidth: 2,
+                                  ),
+                                );
+                              },
+                              errorBuilder: (_, __, ___) => Container(
+                                height: 100,
+                                alignment: Alignment.center,
+                                child: Icon(Icons.broken_image, color: AppColors.neonRed, size: 32),
+                              ),
+                            ),
+                          ),
+                        ),
+                      if (content.isNotEmpty)
+                        Padding(
+                          padding: imageUrl != null
+                              ? EdgeInsets.fromLTRB(10, 8, 10, 6)
+                              : EdgeInsets.zero,
+                          child: Text(content,
+                              style: TextStyle(color: AppColors.textPrimary, fontSize: 14, height: 1.4)),
+                        ),
+                    ],
+                  ),
                 ),
                 if (createdAt != null)
                   Padding(
@@ -335,6 +470,19 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
       child: SafeArea(
         top: false,
         child: Row(children: [
+          GestureDetector(
+            onTap: _sending ? null : _showAttachMenu,
+            child: Container(
+              width: 44, height: 44,
+              margin: EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: AppColors.divider),
+              ),
+              child: Icon(Icons.attach_file_rounded, color: AppColors.neonGreen, size: 20),
+            ),
+          ),
           Expanded(
             child: TextField(
               controller: _msgCtrl,

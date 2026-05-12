@@ -17,6 +17,7 @@ import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
 // lobby_screen import removed - not needed
 import '../../../services/game_settings.dart';
+import '../../../ludo/services/audio_service.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
 import '../components/dice_animation.dart';
@@ -37,6 +38,12 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   bool _isLoading = true;
   bool _isRolling = false;
   DiceRoll? _lastRoll;
+  String? _loadError;
+  // Notifier pour que le dialog de fin réagisse aux updates realtime
+  // (notamment l'arrivée de votes rematch des autres joueurs).
+  final ValueNotifier<CoraGame?> _gameNotifier = ValueNotifier<CoraGame?>(null);
+  bool _resultDialogOpen = false;
+  bool _rematchNavigated = false;
 
   // Turn timer
   static const int _turnSeconds = 12;
@@ -84,20 +91,53 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     _diceController.dispose();
     _coraController.dispose();
     _sevenController.dispose();
+    _gameNotifier.dispose();
     if (_gameChannel != null) _service.unsubscribe(_gameChannel!);
+    // Forfait silencieux si on quitte une partie en cours sans finir.
+    // Le RPC est idempotent et tolérant : si la partie est déjà finie,
+    // il ne fait rien. On ne bloque pas dispose() : fire-and-forget.
+    final game = _game;
+    if (game != null &&
+        game.status == CoraRoomStatus.playing &&
+        !game.gameState.isFinished) {
+      // ignore: discarded_futures
+      _service.forfeit(widget.gameId);
+    }
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
     try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
     super.dispose();
   }
 
   Future<void> _loadGame() async {
-    _game = await _service.getGame(widget.gameId);
-    if (mounted) setState(() => _isLoading = false);
+    setState(() { _isLoading = true; _loadError = null; });
+    try {
+      final g = await _service.getGame(widget.gameId);
+      if (!mounted) return;
+      if (g == null) {
+        setState(() {
+          _isLoading = false;
+          _loadError = 'Partie introuvable. Elle a peut-être été annulée ou tu n\'es pas un participant.';
+        });
+        return;
+      }
+      setState(() {
+        _game = g;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Erreur de chargement : $e';
+      });
+    }
   }
 
   void _subscribeToGame() {
     _gameChannel = _service.subscribeGame(widget.gameId, (game) {
-      if (mounted) setState(() => _game = game);
+      if (!mounted) return;
+      setState(() => _game = game);
+      _gameNotifier.value = game;
 
       // Start/reset turn timer when turn changes
       final currentTurnId = game.gameState.currentTurn;
@@ -116,10 +156,27 @@ class _CoraGameScreenState extends State<CoraGameScreen>
         }
       }
 
+      // Si rematch accepté → naviguer vers la nouvelle game
+      final rm = game.gameState.rematch;
+      if (rm != null && rm.isAccepted && rm.newGameId != null && !_rematchNavigated) {
+        _rematchNavigated = true;
+        // Ferme le dialog si ouvert puis navigate
+        if (_resultDialogOpen && Navigator.canPop(context)) {
+          Navigator.pop(context);
+        }
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CoraGameScreen(gameId: rm.newGameId!),
+          ),
+        );
+        return;
+      }
+
       // Si partie terminée, afficher résultat après 2s
-      if (game.gameState.isFinished) {
+      if (game.gameState.isFinished && !_resultDialogOpen) {
         Future.delayed(const Duration(seconds: 2), () {
-          if (mounted) _showResultDialog();
+          if (mounted && !_resultDialogOpen) _showResultDialog();
         });
       }
     });
@@ -145,11 +202,53 @@ class _CoraGameScreenState extends State<CoraGameScreen>
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || _game == null) {
+    if (_isLoading) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,
         body: Center(
           child: CircularProgressIndicator(color: AppColors.neonGreen),
+        ),
+      );
+    }
+    if (_game == null) {
+      return Scaffold(
+        backgroundColor: AppColors.bgDark,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, color: AppColors.neonRed, size: 64),
+                const SizedBox(height: 16),
+                Text(
+                  _loadError ?? 'Impossible de charger la partie',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Retour',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: _loadGame,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.neonGreen,
+                        foregroundColor: AppColors.bgDark,
+                      ),
+                      child: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -557,6 +656,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     if (_isRolling) return; // Anti double-tap
     if (forcedRoll == null) _consecutiveTimeouts = 0;
     setState(() => _isRolling = true);
+    AudioService.instance.playDiceRoll();
 
     try {
       // ANTI-CHEAT : le SERVEUR genere les des. Le client recoit le resultat
@@ -586,7 +686,10 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     final myId = _service.currentUserId;
     final isWinner = _game!.gameState.winners.contains(myId);
     final result = _game!.gameState.result ?? 'Partie terminée';
-    final isCancelled = result.contains('annulé') || result.contains('Cancelled');
+    final isCancelled = _game!.gameState.isCancelled;
+    if (!isCancelled && isWinner) {
+      AudioService.instance.playWin();
+    }
     // Cora double le pot SEULEMENT s'il y a exactement 1 Cora (pas annulé si plusieurs)
     final prize = isWinner
         ? (_game!.gameState.coraCount == 1 ? _game!.potAmount * 2 : _game!.potAmount)
@@ -606,61 +709,270 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       } catch (_) {}
     }
 
+    final betAmount = _game!.betAmount;
+    final myUid = _service.currentUserId ?? '';
+
+    _resultDialogOpen = true;
     showDialog(
       context: context,
       barrierDismissible: false,
-      builder: (ctx) {
-        final autoTimer = Timer(Duration(seconds: 5), () {
-          if (mounted) _coraAutoContinue(ctx);
-        });
-        return PopScope(
-          onPopInvokedWithResult: (_, __) => autoTimer.cancel(),
-          child: AlertDialog(
+      builder: (ctx) => ValueListenableBuilder<CoraGame?>(
+        valueListenable: _gameNotifier,
+        builder: (ctx, game, _) {
+          final rematch = game?.gameState.rematch;
+          final iVoted = rematch?.didIVote(myUid) ?? false;
+          final iAccepted = rematch?.didIAccept(myUid) ?? false;
+          final acceptedCount = rematch?.acceptedIds.length ?? 0;
+          final totalNeeded = game?.playerCount ?? 2;
+          final isPending = rematch?.isPending ?? false;
+          final isRefused = rematch?.isRefused ?? false;
+          final isExpired = rematch?.isExpired ?? false;
+
+          return AlertDialog(
             backgroundColor: AppColors.bgCard,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Row(children: [
-              Icon(isWinner ? Icons.emoji_events : Icons.info_outline,
-                color: isWinner ? AppColors.neonYellow : AppColors.textSecondary, size: 32),
-              SizedBox(width: 12),
-              Text(isWinner ? 'Victoire !' : 'Partie terminée',
-                style: TextStyle(color: isWinner ? AppColors.neonYellow : AppColors.textPrimary)),
+              Icon(
+                isWinner
+                    ? Icons.emoji_events
+                    : (isCancelled ? Icons.refresh : Icons.info_outline),
+                color: isWinner
+                    ? AppColors.neonYellow
+                    : (isCancelled ? AppColors.neonBlue : AppColors.textSecondary),
+                size: 32,
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  isWinner
+                      ? 'Victoire !'
+                      : (isCancelled ? 'Partie annulée' : 'Partie terminée'),
+                  style: TextStyle(
+                    color: isWinner ? AppColors.neonYellow : AppColors.textPrimary,
+                    fontSize: 18,
+                  ),
+                ),
+              ),
             ]),
             content: Column(mainAxisSize: MainAxisSize.min, children: [
-              Text(result, textAlign: TextAlign.center,
-                style: TextStyle(color: AppColors.textPrimary, fontSize: 16)),
+              Text(result,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 15)),
               if (isWinner) ...[
-                SizedBox(height: 12),
-                Text('+${_game!.gameState.coraCount == 1 ? _game!.potAmount * 2 : _game!.potAmount} FCFA',
-                  style: TextStyle(color: AppColors.neonYellow, fontSize: 24, fontWeight: FontWeight.w900)),
+                const SizedBox(height: 12),
+                Text('+$prize FCFA',
+                    style: TextStyle(
+                      color: AppColors.neonYellow,
+                      fontSize: 28,
+                      fontWeight: FontWeight.w900,
+                    )),
+              ] else if (!isCancelled) ...[
+                const SizedBox(height: 12),
+                Text('-$betAmount FCFA',
+                    style: TextStyle(
+                      color: AppColors.neonRed,
+                      fontSize: 22,
+                      fontWeight: FontWeight.w800,
+                    )),
               ],
-              SizedBox(height: 8),
-              Text(AppLocalizations.of(context)!.gameNextRound, style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+              const SizedBox(height: 12),
+              Consumer<WalletProvider>(
+                builder: (_, w, __) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.bgElevated,
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(color: AppColors.divider.withValues(alpha: 0.4)),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(Icons.account_balance_wallet,
+                          color: AppColors.neonYellow, size: 18),
+                      const SizedBox(width: 8),
+                      Text('Solde : ${w.coins} FCFA',
+                          style: TextStyle(
+                            color: AppColors.textPrimary,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w700,
+                          )),
+                    ],
+                  ),
+                ),
+              ),
+              // Section rematch — visible une fois que quelqu'un a voté
+              if (rematch != null) ...[
+                const SizedBox(height: 14),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: isRefused || isExpired
+                        ? AppColors.neonRed.withValues(alpha: 0.15)
+                        : AppColors.neonGreen.withValues(alpha: 0.15),
+                    borderRadius: BorderRadius.circular(10),
+                    border: Border.all(
+                      color: isRefused || isExpired
+                          ? AppColors.neonRed.withValues(alpha: 0.4)
+                          : AppColors.neonGreen.withValues(alpha: 0.4),
+                    ),
+                  ),
+                  child: Text(
+                    isRefused
+                        ? 'Revanche refusée par un joueur.'
+                        : isExpired
+                            ? 'Délai écoulé. Revanche annulée.'
+                            : isPending
+                                ? (iAccepted
+                                    ? 'En attente des autres joueurs… ($acceptedCount/$totalNeeded prêts)'
+                                    : 'Revanche proposée. Acceptes-tu de rejouer ?')
+                                : '',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ],
             ]),
-            actions: [
-              TextButton(
-                onPressed: () { autoTimer.cancel(); Navigator.pop(ctx); Navigator.pop(context); },
-                child: Text(AppLocalizations.of(context)!.gameQuit, style: TextStyle(color: AppColors.neonRed))),
-            ],
-          ),
-        );
-      },
-    );
+            actions: _buildResultActions(
+              ctx, betAmount, rematch, iVoted, iAccepted, isPending,
+              isRefused, isExpired,
+            ),
+          );
+        },
+      ),
+    ).whenComplete(() => _resultDialogOpen = false);
   }
 
-  Future<void> _coraAutoContinue(BuildContext ctx) async {
-    if (!mounted) return;
+  List<Widget> _buildResultActions(
+    BuildContext ctx,
+    int betAmount,
+    CoraRematchState? rematch,
+    bool iVoted,
+    bool iAccepted,
+    bool isPending,
+    bool isRefused,
+    bool isExpired,
+  ) {
+    // Cas terminal : refusé ou expiré → seul "Quitter"
+    if (isRefused || isExpired) {
+      return [
+        ElevatedButton(
+          onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
+          style: ElevatedButton.styleFrom(
+            backgroundColor: AppColors.neonRed,
+            foregroundColor: Colors.white,
+          ),
+          child: const Text('Quitter', style: TextStyle(fontWeight: FontWeight.w800)),
+        ),
+      ];
+    }
+
+    // Cas pending et j'ai déjà voté accept → juste attendre + bouton Annuler
+    if (isPending && iAccepted) {
+      return [
+        TextButton(
+          onPressed: () async {
+            await _voteRematch(false);
+          },
+          child: Text('Annuler ma revanche',
+              style: TextStyle(color: AppColors.neonRed)),
+        ),
+      ];
+    }
+
+    // Cas pending mais quelqu'un d'autre a proposé → Refuser + Accepter
+    if (isPending && !iVoted) {
+      return [
+        TextButton(
+          onPressed: () async {
+            await _voteRematch(false);
+          },
+          child: Text('Refuser', style: TextStyle(color: AppColors.neonRed)),
+        ),
+        Consumer<WalletProvider>(
+          builder: (_, w, __) {
+            final canReplay = w.coins >= betAmount * 2;
+            return ElevatedButton.icon(
+              icon: const Icon(Icons.refresh, size: 20),
+              onPressed: canReplay ? () async => await _voteRematch(true) : null,
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.neonGreen,
+                foregroundColor: AppColors.bgDark,
+                disabledBackgroundColor: AppColors.bgElevated,
+                disabledForegroundColor: AppColors.textMuted,
+              ),
+              label: Text(canReplay ? 'Accepter' : 'Solde insuffisant',
+                  style: const TextStyle(fontWeight: FontWeight.w800)),
+            );
+          },
+        ),
+      ];
+    }
+
+    // Cas initial (pas encore de rematch demandé) → Quitter + Rejouer
+    return [
+      TextButton(
+        onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
+        child: Text(AppLocalizations.of(context)!.gameQuit,
+            style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
+      ),
+      Consumer<WalletProvider>(
+        builder: (_, w, __) {
+          final canReplay = w.coins >= betAmount * 2;
+          return ElevatedButton.icon(
+            icon: const Icon(Icons.refresh, size: 20),
+            onPressed: canReplay ? () async => await _voteRematch(true) : null,
+            style: ElevatedButton.styleFrom(
+              backgroundColor: AppColors.neonGreen,
+              foregroundColor: AppColors.bgDark,
+              disabledBackgroundColor: AppColors.bgElevated,
+              disabledForegroundColor: AppColors.textMuted,
+            ),
+            label: Text(
+              canReplay ? 'Rejouer ($betAmount FCFA)' : 'Solde insuffisant',
+              style: const TextStyle(fontWeight: FontWeight.w800),
+            ),
+          );
+        },
+      ),
+    ];
+  }
+
+  /// Vote pour la revanche (accept=true ou refuse=false).
+  /// Met à jour le state via realtime — le dialog se rebuild tout seul
+  /// grâce au ValueListenableBuilder + _gameNotifier.
+  Future<void> _voteRematch(bool accept) async {
     try {
-      final result = await _service.autoContinue(widget.gameId);
+      final res = await _service.requestRematch(widget.gameId, accept: accept);
       if (!mounted) return;
-      try { Navigator.pop(ctx); } catch (_) {}
-      if (result == 'ended') {
+      // Si le serveur a finalisé immédiatement (ex: tous ont accepté en même temps),
+      // l'event realtime UPDATE arrivera et on naviguera. Mais on peut aussi
+      // déclencher la navigation tout de suite si la réponse contient new_game_id.
+      if (res != null && res['status'] == 'accepted' && res['new_game_id'] != null) {
+        _rematchNavigated = true;
+        if (Navigator.canPop(context)) Navigator.pop(context); // close dialog
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CoraGameScreen(gameId: res['new_game_id'] as String),
+          ),
+        );
+      } else if (res != null && res['status'] == 'refused' && !accept) {
+        // J'ai refusé → ferme tout et retourne à l'écran principal
+        if (Navigator.canPop(context)) Navigator.pop(context);
         Navigator.pop(context);
-      } else {
-        try { context.read<WalletProvider>().refresh(); } catch (_) {}
-        await _loadGame();
       }
-    } catch (_) {
-      if (mounted) { try { Navigator.pop(ctx); } catch (_) {} Navigator.pop(context); }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Erreur revanche : $e'),
+          backgroundColor: AppColors.neonRed,
+        ),
+      );
     }
   }
 
@@ -687,9 +999,16 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                 style: TextStyle(color: AppColors.textSecondary)),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              Navigator.pop(context);
+              // Forfait explicite côté serveur AVANT de naviguer hors de l'écran
+              // pour que l'utilisateur voie immédiatement son solde mis à jour.
+              try {
+                await _service.forfeit(widget.gameId);
+              } catch (_) {}
+              if (!mounted) return;
+              try { context.read<WalletProvider>().refresh(); } catch (_) {}
+              if (mounted) Navigator.pop(context);
             },
             child: Text(AppLocalizations.of(context)!.gameForfeit,
                 style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),

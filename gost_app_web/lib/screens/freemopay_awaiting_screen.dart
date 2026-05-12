@@ -6,6 +6,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../services/freemopay_service.dart';
 import '../services/wallet_service.dart';
@@ -46,6 +47,7 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
   bool _isCompleted = false;
   bool _hasNetworkError = false;
   int _consecutiveErrors = 0;
+  RealtimeChannel? _txChannel;
 
   late AnimationController _animationController;
   late Animation<double> _scaleAnimation;
@@ -61,16 +63,15 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
       CurvedAnimation(parent: _animationController, curve: Curves.easeInOut),
     );
 
-    // Démarrer le polling immédiatement
-    _checkStatus();
-    _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-      if (!_isCompleted) {
-        _secondsElapsed += 5;
-        _checkStatus();
-      }
-    });
+    // 1. Realtime : push instantane des qu'un autre canal (cron/webhook) marque SUCCESS/FAILED
+    _subscribeRealtime();
 
-    // Timeout après 5 minutes
+    // 2. Polling Flutter : fallback si realtime ne livre pas
+    //    Premier check immediat, puis intervalles courts qui s'allongent
+    _checkStatus();
+    _scheduleNextPoll();
+
+    // Timeout apres 5 minutes
     Future.delayed(const Duration(minutes: 5), () {
       if (!_isCompleted && mounted) {
         _handleTimeout();
@@ -78,9 +79,55 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
     });
   }
 
+  void _subscribeRealtime() {
+    try {
+      _txChannel = Supabase.instance.client
+          .channel('freemopay_tx_${widget.reference}')
+          .onPostgresChanges(
+            event: PostgresChangeEvent.update,
+            schema: 'public',
+            table: 'freemopay_transactions',
+            filter: PostgresChangeFilter(
+              type: PostgresChangeFilterType.eq,
+              column: 'reference',
+              value: widget.reference,
+            ),
+            callback: (payload) {
+              final newStatus = payload.newRecord['status'] as String? ?? '';
+              if (newStatus == 'SUCCESS' && !_isCompleted) {
+                _handleSuccess();
+              } else if (newStatus == 'FAILED' && !_isCompleted) {
+                final reason = payload.newRecord['message'] as String? ?? '';
+                _handleFailure(reason);
+              }
+            },
+          )
+          .subscribe();
+    } catch (e) {
+      _log.warn('subscribeRealtime: $e');
+    }
+  }
+
+  void _scheduleNextPoll() {
+    // Backoff : 2s, 5s, 10s, puis 5s steady
+    final delays = [2, 5, 10, 5, 5, 5, 5, 5];
+    final idx = (_secondsElapsed / 5).floor().clamp(0, delays.length - 1);
+    final next = delays[idx];
+    _pollingTimer?.cancel();
+    _pollingTimer = Timer(Duration(seconds: next), () {
+      if (_isCompleted || !mounted) return;
+      _secondsElapsed += next;
+      _checkStatus();
+      _scheduleNextPoll();
+    });
+  }
+
   @override
   void dispose() {
     _pollingTimer?.cancel();
+    if (_txChannel != null) {
+      Supabase.instance.client.removeChannel(_txChannel!);
+    }
     _animationController.dispose();
     super.dispose();
   }
@@ -147,37 +194,57 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
   }
 
   Future<void> _handleSuccess() async {
-    setState(() {
-      _isCompleted = true;
-      _message = 'Transaction réussie !';
-    });
     _pollingTimer?.cancel();
-    _animationController.stop();
 
     // ANTI-DOUBLE-CRÉDIT : check si déjà crédité par webhook/cron avant
     final alreadyCredited = await _freemopayService.isAlreadyCredited(widget.reference);
 
-    // Mettre à jour le statut dans freemopay_transactions
+    // ============================================================
+    // 1) CRÉDIT D'ABORD (si dépôt non déjà crédité)
+    // Si le crédit échoue, on NE marque PAS SUCCESS dans la DB
+    // → la transaction reste PENDING → le cron reconcile la finalisera
+    // ============================================================
+    bool creditOk = true;
+    if (widget.transactionType == 'DEPOSIT' && !alreadyCredited) {
+      creditOk = await _walletService.addCoins(
+        widget.amount,
+        source: 'freemopay_deposit',
+        referenceId: widget.reference,
+        note: 'Dépôt Mobile Money - ${widget.phoneNumber}',
+      );
+      if (!creditOk) {
+        _log.error('addCoins failed for reference=${widget.reference}, transaction stays PENDING', null, null);
+        // On ne marque PAS SUCCESS dans la DB. Le cron reconcile prendra
+        // le relais (transaction reste PENDING jusqu'a credit reussi).
+        if (mounted) {
+          setState(() {
+            _isCompleted = true;
+            _status = 'PENDING';
+            _message = 'Paiement reçu mais crédit en cours. Réessayez plus tard.';
+          });
+          _animationController.stop();
+        }
+        await Future.delayed(const Duration(seconds: 3));
+        if (mounted) Navigator.pop(context, false);
+        return;
+      }
+    }
+
+    // ============================================================
+    // 2) Marque SUCCESS dans la DB SEULEMENT si credit ok (ou deja credite)
+    // ============================================================
     await _freemopayService.updateTransactionStatus(
       reference: widget.reference,
       status: 'SUCCESS',
       message: 'Transaction confirmée',
     );
 
-    // Si c'est un dépôt et pas encore crédité, créditer le wallet
-    if (widget.transactionType == 'DEPOSIT' && !alreadyCredited) {
-      final success = await _walletService.addCoins(
-        widget.amount,
-        source: 'freemopay_deposit',
-        referenceId: widget.reference,
-        note: 'Dépôt Mobile Money - ${widget.phoneNumber}',
-      );
-
-      if (success && mounted) {
-        context.read<WalletProvider>().refresh();
-      }
-    } else if (alreadyCredited && mounted) {
-      // Déjà crédité par webhook/cron : juste rafraîchir l'affichage
+    if (mounted) {
+      setState(() {
+        _isCompleted = true;
+        _message = 'Transaction réussie !';
+      });
+      _animationController.stop();
       context.read<WalletProvider>().refresh();
     }
 
@@ -249,20 +316,9 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
       _consecutiveErrors = 0;
       _message = 'Vérification en cours...';
     });
-
-    // Redémarrer le polling si arrêté
-    if (_pollingTimer == null || !_pollingTimer!.isActive) {
-      _checkStatus();
-      _pollingTimer = Timer.periodic(const Duration(seconds: 5), (_) {
-        if (!_isCompleted) {
-          _secondsElapsed += 5;
-          _checkStatus();
-        }
-      });
-    } else {
-      // Juste vérifier immédiatement
-      _checkStatus();
-    }
+    // Redemarre le polling adaptatif
+    _checkStatus();
+    _scheduleNextPoll();
   }
 
 

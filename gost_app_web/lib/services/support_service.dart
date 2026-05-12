@@ -1,6 +1,8 @@
 // ============================================================
 // SupportService — Tickets de support et messagerie associee
 // ============================================================
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 
@@ -80,6 +82,63 @@ class SupportService {
       });
     } catch (e, s) {
       _log.error('sendMessage', e, s);
+      rethrow;
+    }
+  }
+
+  /// Envoie une image (depuis bytes - cross-platform mobile+web)
+  Future<void> sendImageBytes(
+    String ticketId,
+    Uint8List bytes, {
+    String fileExt = 'jpg',
+    String? caption,
+  }) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+    try {
+      final ext = fileExt.toLowerCase().isEmpty ? 'jpg' : fileExt.toLowerCase();
+      final path = 'support/$ticketId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await _client.storage.from('chat-media').uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+        ),
+      );
+      final url = _client.storage.from('chat-media').getPublicUrl(path);
+
+      await _client.from('support_messages').insert({
+        'ticket_id': ticketId,
+        'sender_id': uid,
+        'is_admin': false,
+        'content': (caption != null && caption.trim().isNotEmpty) ? caption : null,
+        'image_url': url,
+      });
+    } catch (e, s) {
+      _log.error('sendImageBytes', e, s);
+      rethrow;
+    }
+  }
+
+  /// Envoie une image (legacy File - mobile/desktop only)
+  Future<void> sendImage(String ticketId, File imageFile, {String? caption}) async {
+    final uid = currentUserId;
+    if (uid == null) return;
+    try {
+      final ext = imageFile.path.split('.').last.toLowerCase();
+      final path = 'support/$ticketId/${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await _client.storage.from('chat-media').upload(path, imageFile);
+      final url = _client.storage.from('chat-media').getPublicUrl(path);
+
+      await _client.from('support_messages').insert({
+        'ticket_id': ticketId,
+        'sender_id': uid,
+        'is_admin': false,
+        'content': (caption != null && caption.trim().isNotEmpty) ? caption : null,
+        'image_url': url,
+      });
+    } catch (e, s) {
+      _log.error('sendImage', e, s);
       rethrow;
     }
   }
