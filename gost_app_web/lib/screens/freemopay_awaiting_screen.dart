@@ -154,14 +154,31 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
     _pollingTimer?.cancel();
     _animationController.stop();
 
-    // PHASE 1 LOCKDOWN : le client ne credite PLUS le wallet.
-    // C'est le webhook (HMAC-validated) ou le cron reconcile qui s'en charge
-    // serveur-side. Le client se contente d'afficher.
-    //
-    // On rafraichit juste l'affichage local (qui lit les nouveaux coins
-    // depuis user_profiles via Realtime - le webhook a deja mis a jour).
-    if (mounted) {
-      try { context.read<WalletProvider>().refresh(); } catch (_) {}
+    // ANTI-DOUBLE-CRÉDIT : check si déjà crédité par webhook/cron avant
+    final alreadyCredited = await _freemopayService.isAlreadyCredited(widget.reference);
+
+    // Mettre à jour le statut dans freemopay_transactions
+    await _freemopayService.updateTransactionStatus(
+      reference: widget.reference,
+      status: 'SUCCESS',
+      message: 'Transaction confirmée',
+    );
+
+    // Si c'est un dépôt et pas encore crédité, créditer le wallet
+    if (widget.transactionType == 'DEPOSIT' && !alreadyCredited) {
+      final success = await _walletService.addCoins(
+        widget.amount,
+        source: 'freemopay_deposit',
+        referenceId: widget.reference,
+        note: 'Dépôt Mobile Money - ${widget.phoneNumber}',
+      );
+
+      if (success && mounted) {
+        context.read<WalletProvider>().refresh();
+      }
+    } else if (alreadyCredited && mounted) {
+      // Déjà crédité par webhook/cron : juste rafraîchir l'affichage
+      context.read<WalletProvider>().refresh();
     }
 
     // Attendre 2 secondes puis retourner au profil
@@ -179,17 +196,18 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
     _pollingTimer?.cancel();
     _animationController.stop();
 
-    // PHASE 1 LOCKDOWN : le client ne MODIFIE plus le statut DB ni le wallet.
-    // Le webhook (ou le cron reconcile) marque le statut + refund le retrait.
-    // On rafraichit juste le wallet pour afficher le refund eventuel.
-    if (mounted) {
-      try { context.read<WalletProvider>().refresh(); } catch (_) {}
-    }
+    // ANTI-DOUBLE-REFUND : check si déjà refundé par webhook/cron
+    final alreadyRefunded = await _freemopayService.isAlreadyCredited(widget.reference);
 
-    // Code legacy ci-dessous DESACTIVE (commente pour reference).
-    // Si webhook/reconcile ne fait pas son taf, le user contactera support.
-    /*
-    if (widget.transactionType == 'WITHDRAW') {
+    // Mettre à jour le statut dans freemopay_transactions
+    await _freemopayService.updateTransactionStatus(
+      reference: widget.reference,
+      status: 'FAILED',
+      message: reason,
+    );
+
+    // Si c'est un retrait échoué et pas déjà refundé, re-créditer le wallet
+    if (widget.transactionType == 'WITHDRAW' && !alreadyRefunded) {
       final success = await _walletService.addCoins(
         widget.amount,
         source: 'freemopay_withdrawal_refund',
@@ -201,7 +219,6 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
         context.read<WalletProvider>().refresh();
       }
     }
-    */ // ← fin du legacy commenté (PHASE 1 LOCKDOWN)
 
     // Attendre 3 secondes puis retourner au profil
     await Future.delayed(const Duration(seconds: 3));

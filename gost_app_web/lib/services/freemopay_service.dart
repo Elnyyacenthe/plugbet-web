@@ -127,7 +127,7 @@ class FreemopayService {
           'description': 'Dépôt de $amount FCFA',
           'callback': _webhookUrl ?? '',
         }),
-      );
+      ).timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
 
@@ -155,7 +155,7 @@ class FreemopayService {
               'Transaction initiée. Validez le paiement sur votre téléphone.',
         };
       } else {
-        _log.warn('initiateDeposit failed: ${data}');
+        _log.warn('initiateDeposit failed: $data');
         return {
           'success': false,
           'message': data['message']?['fr'] ?? data['message'] ??
@@ -266,7 +266,7 @@ class FreemopayService {
           'message': 'Retrait en cours. Vous recevrez l\'argent sous peu.',
         };
       } else {
-        _log.warn('initiateWithdrawal failed: ${data}');
+        _log.warn('initiateWithdrawal failed: $data');
         return {
           'success': false,
           'message': data['message']?['fr'] ?? data['message'] ??
@@ -285,6 +285,20 @@ class FreemopayService {
   // ============================================================
   // STATUS – Récupérer le statut d'une transaction
   // ============================================================
+
+  /// Verifie si une transaction a deja ete creditee (anti-double-credit).
+  /// Le webhook ou le cron reconcile peuvent avoir credite avant que le
+  /// polling client n'arrive. On evite le doublon.
+  Future<bool> isAlreadyCredited(String reference) async {
+    try {
+      final r = await _client.rpc('is_freemopay_credited',
+          params: {'p_reference': reference});
+      return r == true;
+    } catch (e) {
+      _log.warn('isAlreadyCredited check failed: $e');
+      return false;  // En cas d'erreur, on laisse passer (fallback safe)
+    }
+  }
 
   /// Récupère le statut d'une transaction Freemopay
   /// Utile pour le polling manuel si pas de webhook

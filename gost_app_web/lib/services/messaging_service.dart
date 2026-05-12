@@ -5,6 +5,7 @@
 // ============================================================
 
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/chat_models.dart';
 import '../utils/logger.dart';
@@ -557,7 +558,57 @@ class MessagingService {
   // STATUTS / STORIES (24h)
   // ============================================================
 
-  /// Cree un nouveau statut (image)
+  /// Cree un nouveau statut (image) - WEB compatible (bytes)
+  /// dart:io File ne marche pas sur web, on passe par Uint8List.
+  Future<UserStatus?> createImageStatusFromBytes(
+    Uint8List bytes, {
+    String? caption,
+    String fileExt = 'jpg',
+  }) async {
+    final myId = _myId;
+    if (myId == null) return null;
+    try {
+      final ext = fileExt.toLowerCase().isEmpty ? 'jpg' : fileExt.toLowerCase();
+      final path = 'statuses/${myId}_${DateTime.now().millisecondsSinceEpoch}.$ext';
+      await _client.storage.from('chat-media').uploadBinary(
+        path,
+        bytes,
+        fileOptions: FileOptions(
+          contentType: ext == 'png' ? 'image/png' : 'image/jpeg',
+        ),
+      );
+      final url = _client.storage.from('chat-media').getPublicUrl(path);
+
+      final inserted = await _client
+          .from('user_statuses')
+          .insert({
+            'user_id': myId,
+            'media_url': url,
+            'media_type': 'image',
+            if (caption != null && caption.isNotEmpty) 'caption': caption,
+          })
+          .select()
+          .single();
+
+      final profile = await _client
+          .from('user_profiles')
+          .select('username, avatar_url')
+          .eq('id', myId)
+          .maybeSingle();
+
+      return UserStatus.fromJson({
+        ...inserted,
+        'username': profile?['username'] ?? 'Moi',
+        'avatar_url': profile?['avatar_url'],
+        'viewed_by_me': true,
+      });
+    } catch (e) {
+      _log.error('createImageStatusFromBytes', e);
+      return null;
+    }
+  }
+
+  /// Cree un nouveau statut (image) - legacy File (mobile/desktop only)
   Future<UserStatus?> createImageStatus(File imageFile, {String? caption}) async {
     final myId = _myId;
     if (myId == null) return null;

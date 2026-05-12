@@ -23,6 +23,7 @@ import '../widgets/user_avatar.dart';
 import 'auth_screen.dart';
 import 'user_search_screen.dart';
 import 'freemopay_awaiting_screen.dart';
+import 'my_payments_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -488,6 +489,47 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
               ),
             ],
+          ),
+
+          SizedBox(height: 12),
+
+          // Lien vers l'historique complet Mobile Money
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MyPaymentsScreen()),
+              );
+            },
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+              decoration: BoxDecoration(
+                color: AppColors.bgCard,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: AppColors.neonBlue.withValues(alpha: 0.3),
+                ),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.history, color: AppColors.neonBlue, size: 18),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Mes paiements Mobile Money',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                  Icon(Icons.chevron_right,
+                       color: AppColors.textSecondary, size: 18),
+                ],
+              ),
+            ),
           ),
 
           SizedBox(height: 16),
