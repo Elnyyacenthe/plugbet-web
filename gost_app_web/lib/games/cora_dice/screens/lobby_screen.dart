@@ -6,9 +6,11 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
 import '../../../l10n/generated/app_localizations.dart';
+import '../../../providers/wallet_provider.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
 import 'game_screen.dart';
@@ -27,7 +29,6 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
   CoraRoom? _room;
   List<Map<String, dynamic>> _players = [];
   List<CoraMessage> _messages = [];
-  bool _isReady = false;
   bool _isLoading = true;
 
   RealtimeChannel? _roomChannel;
@@ -37,6 +38,10 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
   final _messageController = TextEditingController();
   final _scrollController = ScrollController();
 
+  // Countdown timer pour l'auto-start (V3.2 : 2 min)
+  Timer? _countdownTimer;
+  Duration _remaining = Duration.zero;
+
   @override
   void initState() {
     super.initState();
@@ -44,10 +49,26 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
     _loadPlayers();
     _loadMessages();
     _subscribeToUpdates();
+    _startCountdownTicker();
+  }
+
+  void _startCountdownTicker() {
+    _countdownTimer?.cancel();
+    _countdownTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+      if (!mounted) return;
+      final dl = _room?.startDeadline;
+      if (dl == null) {
+        setState(() => _remaining = Duration.zero);
+        return;
+      }
+      final r = dl.difference(DateTime.now());
+      setState(() => _remaining = r.isNegative ? Duration.zero : r);
+    });
   }
 
   @override
   void dispose() {
+    _countdownTimer?.cancel();
     _messageController.dispose();
     _scrollController.dispose();
     if (_roomChannel != null) _service.unsubscribe(_roomChannel!);
@@ -56,9 +77,49 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
     super.dispose();
   }
 
+  String? _loadError;
+
   Future<void> _loadRoom() async {
-    _room = await _service.getRoom(widget.roomId);
-    setState(() => _isLoading = false);
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
+    try {
+      final room = await _service.getRoom(widget.roomId);
+      if (!mounted) return;
+      if (room == null) {
+        setState(() {
+          _isLoading = false;
+          _loadError = 'Salle introuvable. Elle a peut-être été annulée.';
+        });
+        return;
+      }
+
+      // Filet de sécurité : si la room est DÉJÀ en 'playing' au moment où
+      // on ouvre le lobby (ex. join a déclenché _cora_start_game avant que
+      // l'écran soit prêt), on saute le lobby et on file directement vers
+      // l'écran de jeu. Sinon le user resterait bloqué en spinner.
+      if (room.status == CoraRoomStatus.playing && room.gameId != null) {
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CoraGameScreen(gameId: room.gameId!),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        _room = room;
+        _isLoading = false;
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _loadError = 'Erreur de chargement : $e';
+      });
+    }
   }
 
   Future<void> _loadPlayers() async {
@@ -69,16 +130,7 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
           .eq('room_id', widget.roomId)
           .order('joined_at');
       setState(() => _players = List<Map<String, dynamic>>.from(data));
-
-      // Vérifier si je suis prêt
-      final myId = _service.currentUserId;
-      final me = _players.firstWhere(
-        (p) => p['user_id'] == myId,
-        orElse: () => {},
-      );
-      if (me.isNotEmpty) {
-        setState(() => _isReady = me['is_ready'] as bool? ?? false);
-      }
+      // V3.3 : système Ready supprimé — tous les joueurs sont auto-ready au join.
     } catch (e) {
       debugPrint('Erreur loadPlayers: $e');
     }
@@ -93,6 +145,7 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
   void _subscribeToUpdates() {
     // Room updates
     _roomChannel = _service.subscribeRoom(widget.roomId, (room) {
+      if (!mounted) return;
       setState(() => _room = room);
 
       // Si partie démarrée, naviguer vers le jeu
@@ -103,6 +156,24 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
             builder: (_) => CoraGameScreen(gameId: room.gameId!),
           ),
         );
+      }
+      // Si la room a été annulée (deadline auto-cancel ou host_left),
+      // on remonte avec un message clair + refresh du wallet pour que
+      // l'utilisateur voie son refund tout de suite.
+      else if (room.status == CoraRoomStatus.cancelled) {
+        try { context.read<WalletProvider>().refresh(); } catch (_) {}
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Room annulée — pas assez de joueurs prêts. Mise refundée.',
+            ),
+            backgroundColor: AppColors.neonRed,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+        Future.delayed(const Duration(milliseconds: 1500), () {
+          if (mounted) Navigator.pop(context);
+        });
       }
     });
 
@@ -144,11 +215,54 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading || _room == null) {
+    if (_isLoading) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,
         body: Center(
           child: CircularProgressIndicator(color: AppColors.neonGreen),
+        ),
+      );
+    }
+    if (_room == null) {
+      // État d'erreur explicite : on évite le spinner infini.
+      return Scaffold(
+        backgroundColor: AppColors.bgDark,
+        body: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(Icons.error_outline, color: AppColors.neonRed, size: 64),
+                const SizedBox(height: 16),
+                Text(
+                  _loadError ?? 'Impossible de charger la salle',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: AppColors.textPrimary, fontSize: 16),
+                ),
+                const SizedBox(height: 24),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: Text('Retour',
+                          style: TextStyle(color: AppColors.textSecondary)),
+                    ),
+                    const SizedBox(width: 12),
+                    ElevatedButton(
+                      onPressed: _loadRoom,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: AppColors.neonGreen,
+                        foregroundColor: AppColors.bgDark,
+                      ),
+                      child: const Text('Réessayer'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ),
       );
     }
@@ -225,28 +339,77 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
   }
 
   Widget _buildPotInfo() {
-    return Container(
-      margin: EdgeInsets.all(16),
-      padding: EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.neonYellow.withValues(alpha: 0.2),
-            Colors.orange.withValues(alpha: 0.2),
-          ],
+    final mins = _remaining.inMinutes;
+    final secs = _remaining.inSeconds % 60;
+    final hasDeadline = _room!.startDeadline != null;
+    final timedOut = hasDeadline && _remaining == Duration.zero;
+    final isFull = _players.length >= _room!.playerCount;
+    final timerColor = _remaining.inSeconds < 30
+        ? AppColors.neonRed
+        : (_remaining.inSeconds < 60 ? AppColors.neonYellow : AppColors.neonGreen);
+
+    return Column(
+      children: [
+        Container(
+          margin: EdgeInsets.all(16),
+          padding: EdgeInsets.all(16),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              colors: [
+                AppColors.neonYellow.withValues(alpha: 0.2),
+                Colors.orange.withValues(alpha: 0.2),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.3)),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+            children: [
+              _infoItem(Icons.people, '${_players.length}/${_room!.playerCount}',
+                  'Joueurs'),
+              _infoItem(Icons.monetization_on, '${_room!.potAmount}', 'Pot total'),
+              _infoItem(Icons.casino, '${_room!.betAmount}', 'Mise'),
+            ],
+          ),
         ),
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.3)),
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-        children: [
-          _infoItem(Icons.people, '${_players.length}/${_room!.playerCount}',
-              'Joueurs'),
-          _infoItem(Icons.monetization_on, '${_room!.potAmount}', 'Pot total'),
-          _infoItem(Icons.casino, '${_room!.betAmount}', 'Mise'),
-        ],
-      ),
+        if (hasDeadline)
+          Container(
+            margin: const EdgeInsets.symmetric(horizontal: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+            decoration: BoxDecoration(
+              color: timerColor.withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: timerColor.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              children: [
+                Icon(
+                  isFull ? Icons.play_circle_outline : Icons.timer_outlined,
+                  color: timerColor,
+                  size: 20,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    isFull
+                        ? 'Salle complète — démarrage en cours…'
+                        : timedOut
+                            ? 'Délai écoulé — salle non remplie.\nRoom annulée, mise refundée.'
+                            : 'Démarrage auto dans ${mins.toString().padLeft(2, '0')}:${secs.toString().padLeft(2, '0')}\n'
+                              'En attente de joueurs (${_players.length}/${_room!.playerCount})',
+                    style: TextStyle(
+                      color: timerColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      height: 1.3,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+      ],
     );
   }
 
@@ -296,7 +459,6 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
 
   Widget _buildPlayerCard(Map<String, dynamic> player) {
     final username = player['username'] as String;
-    final isReady = player['is_ready'] as bool? ?? false;
     final isMe = player['user_id'] == _service.currentUserId;
 
     return Container(
@@ -323,70 +485,47 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
         child: Padding(
           padding: const EdgeInsets.symmetric(vertical: 6),
           child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          // Avatar
-          CircleAvatar(
-            radius: 20,
-            backgroundColor:
-                isReady ? AppColors.neonGreen : AppColors.bgElevated,
-            child: Text(
-              username.isNotEmpty ? username[0].toUpperCase() : '?',
-              style: TextStyle(
-                color: isReady ? AppColors.bgDark : AppColors.textPrimary,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ),
-          SizedBox(height: 4),
-
-          // Nom
-          Text(
-            username,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: isMe ? AppColors.neonGreen : AppColors.textPrimary,
-              fontSize: 12,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          SizedBox(height: 2),
-
-          // Statut
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: isReady
-                  ? AppColors.neonGreen.withValues(alpha: 0.2)
-                  : AppColors.bgElevated,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  isReady ? Icons.check_circle : Icons.schedule,
-                  color: isReady ? AppColors.neonGreen : AppColors.textMuted,
-                  size: 14,
-                ),
-                SizedBox(width: 4),
-                Text(
-                  isReady ? 'Prêt' : 'En attente',
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Avatar (toujours vert : tout le monde est ready par défaut)
+              CircleAvatar(
+                radius: 22,
+                backgroundColor: AppColors.neonGreen,
+                child: Text(
+                  username.isNotEmpty ? username[0].toUpperCase() : '?',
                   style: TextStyle(
-                    color: isReady ? AppColors.neonGreen : AppColors.textMuted,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w600,
+                    color: AppColors.bgDark,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Text(
+                username,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: isMe ? AppColors.neonGreen : AppColors.textPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                ),
+              ),
+              if (isMe) ...[
+                const SizedBox(height: 2),
+                Text(
+                  '(toi)',
+                  style: TextStyle(
+                    color: AppColors.neonGreen,
+                    fontSize: 10,
+                    fontStyle: FontStyle.italic,
                   ),
                 ),
               ],
-            ),
+            ],
           ),
-        ],
-      ),
-      ),
+        ),
       ),
     );
   }
@@ -554,34 +693,28 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
     );
   }
 
+  // V3.3 : plus de bouton Prêt — bouton "Quitter la salle"
   Widget _buildReadyButton() {
-    final allReady =
-        _players.length == _room!.playerCount &&
-        _players.every((p) => p['is_ready'] as bool? ?? false);
-
+    final isFull = _players.length >= _room!.playerCount;
     return Container(
       padding: EdgeInsets.all(16),
       child: SizedBox(
         width: double.infinity,
         height: 56,
         child: ElevatedButton(
-          onPressed: allReady ? null : _toggleReady,
+          onPressed: isFull ? null : _confirmExit,
           style: ElevatedButton.styleFrom(
-            backgroundColor: _isReady ? AppColors.neonRed : AppColors.neonGreen,
-            foregroundColor: AppColors.bgDark,
+            backgroundColor: isFull ? AppColors.bgElevated : AppColors.neonRed,
+            foregroundColor: isFull ? AppColors.textMuted : Colors.white,
             shape: RoundedRectangleBorder(
               borderRadius: BorderRadius.circular(16),
             ),
           ),
           child: Text(
-            allReady
-                ? 'Démarrage...'
-                : _isReady
-                    ? 'Annuler'
-                    : 'PRÊT !',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w900,
+            isFull ? 'Démarrage…' : 'Quitter la salle',
+            style: const TextStyle(
+              fontSize: 17,
+              fontWeight: FontWeight.w800,
             ),
           ),
         ),
@@ -595,33 +728,6 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
 
     await _service.sendMessage(widget.roomId, text);
     _messageController.clear();
-  }
-
-  Future<void> _toggleReady() async {
-    HapticFeedback.heavyImpact();
-    final newReady = !_isReady;
-    await _service.markReady(widget.roomId, newReady);
-    setState(() => _isReady = newReady);
-
-    // Si tous prêts → démarrer la partie (le dernier à appuyer PRÊT lance)
-    if (newReady) {
-      // Petit délai pour que le Realtime synchronise
-      await Future.delayed(const Duration(milliseconds: 500));
-      await _loadPlayers();
-      final allReady = _players.length == _room!.playerCount &&
-          _players.every((p) => p['is_ready'] as bool? ?? false);
-      if (allReady && mounted) {
-        debugPrint('[CORA-LOBBY] Tous prêts, démarrage...');
-        final gameId = await _service.startGame(widget.roomId);
-        debugPrint('[CORA-LOBBY] gameId: $gameId');
-        if (gameId != null && mounted) {
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(builder: (_) => CoraGameScreen(gameId: gameId)),
-          );
-        }
-      }
-    }
   }
 
   void _confirmExit() {
@@ -641,9 +747,14 @@ class _CoraLobbyScreenState extends State<CoraLobbyScreen> {
             child: Text(AppLocalizations.of(context)!.commonCancel),
           ),
           TextButton(
-            onPressed: () {
+            onPressed: () async {
               Navigator.pop(ctx);
-              Navigator.pop(context);
+              // V3 : cora_leave_room refund la mise du joueur via le ledger
+              // si la room est encore en attente. Idempotent côté serveur.
+              try {
+                await _service.leaveRoom(widget.roomId);
+              } catch (_) {}
+              if (mounted) Navigator.pop(context);
             },
             child: Text(AppLocalizations.of(context)!.gameQuit,
                 style: TextStyle(color: AppColors.neonRed)),

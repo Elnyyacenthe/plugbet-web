@@ -171,6 +171,8 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
                       children: [
                         // Solde actuel
                         _buildBalanceCard(),
+                        // Bandeau d'info règle Cora 2x
+                        _buildCoraExplain(),
                         SizedBox(height: isSmallScreen ? 16 : 24),
 
                         // Nombre de joueurs
@@ -202,7 +204,8 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
 
   Widget _buildBalanceCard() {
     final coins = _userProfile?.coins ?? 0;
-    final hasEnoughCoins = coins >= _betAmount;
+    // V3.4 : Cora exige 2× la mise (mise + Cora penalty potentielle)
+    final hasEnoughCoins = coins >= _betAmount * 2;
 
     return Container(
       padding: EdgeInsets.all(16),
@@ -260,7 +263,7 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
                 border: Border.all(color: AppColors.neonRed),
               ),
               child: Text(
-                'Solde insuffisant',
+                'Min ${(_betAmount * 2).toInt()} requis',
                 style: TextStyle(
                   color: AppColors.neonRed,
                   fontSize: 11,
@@ -268,6 +271,36 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
                 ),
               ),
             ),
+        ],
+      ),
+    );
+  }
+
+  /// Bandeau d'info Cora : explique la règle 2× mise
+  Widget _buildCoraExplain() {
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: AppColors.neonYellow.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.4)),
+      ),
+      child: Row(
+        children: [
+          Icon(Icons.info_outline, color: AppColors.neonYellow, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Solde minimum requis : ${(_betAmount * 2).toInt()} FCFA '
+              '(mise + Cora penalty potentielle)',
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 11,
+                height: 1.3,
+              ),
+            ),
+          ),
         ],
       ),
     );
@@ -640,11 +673,13 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
 
   Future<void> _createRoom() async {
     final coins = _userProfile?.coins ?? 0;
-    if (coins < _betAmount) {
+    final required = (_betAmount * 2).toInt();
+    if (coins < required) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            'Solde insuffisant ! Vous avez $coins FCFA, il faut ${_betAmount.toInt()} FCFA.',
+            'Solde insuffisant ! Vous avez $coins FCFA, il faut $required FCFA '
+            '(mise ${_betAmount.toInt()} + Cora penalty ${_betAmount.toInt()}).',
           ),
           backgroundColor: AppColors.neonRed,
         ),
@@ -666,10 +701,44 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
         Navigator.pop(context, result['room_id']);
       }
     } catch (e) {
-      if (mounted) {
+      if (!mounted) return;
+      final msg = e.toString();
+      // TOO_MANY_ACTIVE_GAMES (P0006) → auto-abandon des anciennes parties + retry
+      if (msg.contains('TOO_MANY_ACTIVE_GAMES') || msg.contains('P0006')) {
+        try {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text('Annulation de la partie précédente...'),
+              backgroundColor: AppColors.neonYellow,
+              duration: const Duration(seconds: 2),
+            ),
+          );
+          await _service.abandonAll();
+          if (!mounted) return;
+          // Retry une seule fois
+          final result = await _service.createRoom(
+            playerCount: _playerCount,
+            isPrivate: _isPrivate,
+            betAmount: _betAmount.toInt(),
+          );
+          if (result != null && mounted) {
+            HapticFeedback.heavyImpact();
+            Navigator.pop(context, result['room_id']);
+            return;
+          }
+        } catch (e2) {
+          if (!mounted) return;
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Échec de l\'annulation : $e2'),
+              backgroundColor: AppColors.neonRed,
+            ),
+          );
+        }
+      } else {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('Erreur : ${e.toString()}'),
+            content: Text('Erreur : $msg'),
             backgroundColor: AppColors.neonRed,
           ),
         );
@@ -680,4 +749,5 @@ class _CreateCoraRoomScreenState extends State<CreateCoraRoomScreen> {
       }
     }
   }
+
 }

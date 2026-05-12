@@ -35,6 +35,9 @@ import 'l10n/generated/app_localizations.dart';
 import 'utils/logger.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'fantasy/providers/fpl_provider.dart';
+import 'games/cora_dice/services/cora_service.dart';
+import 'games/cora_dice/screens/lobby_screen.dart';
+import 'games/cora_dice/screens/game_screen.dart';
 
 const _kSentryDsn =
     'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
@@ -123,8 +126,15 @@ void main() async {
     AudioService.instance.init();
     NotificationService.instance.init();
     NotificationService.instance.requestPermission();
+    NotificationService.instance.subscribeToAnnouncements();
+    // Abonnement global aux nouveaux messages prives (foreground/background
+    // tant que l'app tourne). Indep. de l'onglet Chat ouvert ou non.
+    NotificationService.instance.subscribeToChatMessages();
     PushService.instance.init();
-    ShorebirdService.instance.checkForUpdate();
+    // Auto-apply : si un patch a ete telecharge au dernier run, on close
+    // l'app immediatement pour qu'au prochain open, la version a jour
+    // soit chargee. Sinon, telecharge en background.
+    ShorebirdService.instance.autoApplyOnColdStart();
   });
 
   // --- 3. Services API Football ---
@@ -346,6 +356,10 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   int _currentIndex = 0;
   final _scaffoldKey = GlobalKey<ScaffoldState>();
   late final MatchesProvider _matchesProvider;
+  // Anti re-entrance pour la reprise de session Cora :
+  // évite de naviguer plusieurs fois si l'app est ré-amenée au foreground
+  // pendant qu'on est déjà en train de naviguer.
+  bool _coraResumeInFlight = false;
 
   // Lazy loading des écrans
   final Map<int, Widget> _cachedScreens = {};
@@ -442,6 +456,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         provider.setAppForeground(true);
         // Marquer en ligne
         try { context.read<MessagingProvider>().goOnline(); } catch (_) {}
+        // Reprise de session Cora Dice (game ou room en cours côté serveur)
+        _checkActiveCoraSession();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -455,6 +471,36 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
 
     // Informer le LiveScoreManager des changements de cycle de vie
     widget.liveScoreManager.onAppLifecycleChange(state);
+  }
+
+  /// Au retour foreground, demande au serveur si l'utilisateur a une
+  /// partie ou room Cora encore active. Si oui, navigue dessus.
+  /// Tolère silencieusement toute erreur (réseau, déconnexion…).
+  Future<void> _checkActiveCoraSession() async {
+    if (_coraResumeInFlight) return;
+    _coraResumeInFlight = true;
+    try {
+      final session = await CoraService().getActiveSession();
+      if (!mounted || session == null) return;
+      final type = session['type'];
+      if (type == 'game' && session['game_id'] != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CoraGameScreen(gameId: session['game_id'] as String),
+          ),
+        );
+      } else if (type == 'room' && session['room_id'] != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CoraLobbyScreen(roomId: session['room_id'] as String),
+          ),
+        );
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      _coraResumeInFlight = false;
+    }
   }
 
   @override

@@ -9,7 +9,6 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../theme/app_theme.dart';
 import '../services/freemopay_service.dart';
-import '../services/wallet_service.dart';
 import '../providers/wallet_provider.dart';
 import '../utils/logger.dart';
 
@@ -38,7 +37,6 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
     with SingleTickerProviderStateMixin {
   static const _log = Logger('FREEMOPAY_AWAIT');
   final _freemopayService = FreemopayService();
-  final _walletService = WalletService();
 
   Timer? _pollingTimer;
   int _secondsElapsed = 0;
@@ -206,12 +204,25 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
     // ============================================================
     bool creditOk = true;
     if (widget.transactionType == 'DEPOSIT' && !alreadyCredited) {
-      creditOk = await _walletService.addCoins(
-        widget.amount,
-        source: 'freemopay_deposit',
-        referenceId: widget.reference,
-        note: 'Dépôt Mobile Money - ${widget.phoneNumber}',
-      );
+      // V2 LEDGER : passe par freemopay_credit_deposit (atomique + idempotent)
+      // au lieu de _walletService.addCoins (legacy my_wallet_apply_delta -> wallet_transactions)
+      try {
+        final r = await Supabase.instance.client.rpc(
+          'freemopay_credit_deposit',
+          params: {
+            'p_amount': widget.amount,
+            'p_reference': widget.reference,
+            'p_external_id': widget.externalId,
+          },
+        );
+        creditOk = r is Map && r['success'] == true;
+        if (!creditOk) {
+          _log.warn('freemopay_credit_deposit refused: ${r is Map ? r['error'] : r}');
+        }
+      } catch (e, s) {
+        _log.error('freemopay_credit_deposit RPC failed', e, s);
+        creditOk = false;
+      }
       if (!creditOk) {
         _log.error('addCoins failed for reference=${widget.reference}, transaction stays PENDING', null, null);
         // On ne marque PAS SUCCESS dans la DB. Le cron reconcile prendra
@@ -273,14 +284,22 @@ class _FreemopayAwaitingScreenState extends State<FreemopayAwaitingScreen>
       message: reason,
     );
 
-    // Si c'est un retrait échoué et pas déjà refundé, re-créditer le wallet
+    // Si c'est un retrait échoué et pas déjà refundé, re-créditer via ledger V2
     if (widget.transactionType == 'WITHDRAW' && !alreadyRefunded) {
-      final success = await _walletService.addCoins(
-        widget.amount,
-        source: 'freemopay_withdrawal_refund',
-        referenceId: widget.reference,
-        note: 'Retrait échoué - Remboursement: $reason',
-      );
+      bool success = false;
+      try {
+        final r = await Supabase.instance.client.rpc(
+          'freemopay_refund_withdrawal',
+          params: {
+            'p_amount': widget.amount,
+            'p_external_id': widget.externalId,
+            'p_reason': 'polling_detected_failed: $reason',
+          },
+        );
+        success = r is Map && r['success'] == true;
+      } catch (e, s) {
+        _log.error('freemopay_refund_withdrawal RPC failed', e, s);
+      }
 
       if (success && mounted) {
         context.read<WalletProvider>().refresh();

@@ -1,12 +1,15 @@
 // ============================================================
-// CORA DICE - Service Supabase
-// Gère rooms, parties, logique de jeu et realtime
+// CORA DICE V3 — Service Supabase
+// RPCs unifiées : cora_create_room, cora_join_room, cora_toggle_ready,
+// cora_submit_roll, cora_forfeit, cora_leave_room, cora_get_active.
+// + Idempotence anti double-tap (déduplication par clé d'action).
 // ============================================================
 
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/cora_models.dart';
+import '../../../services/game_audit_service.dart';
 
 class CoraService {
   late final SupabaseClient _client;
@@ -18,66 +21,110 @@ class CoraService {
   String? get currentUserId => _client.auth.currentUser?.id;
 
   // ============================================================
+  // IDEMPOTENCE : déduplication des actions concurrentes
+  // ============================================================
+  // Si l'utilisateur tape 2× un bouton ou si un retry réseau déclenche
+  // 2 appels simultanés sur la même action, on retourne le même Future
+  // au lieu d'envoyer 2 RPCs.
+  final Map<String, Future<dynamic>> _inFlight = {};
+
+  Future<T> _dedup<T>(String key, Future<T> Function() fn) async {
+    if (_inFlight.containsKey(key)) {
+      return await _inFlight[key]! as T;
+    }
+    final fut = fn();
+    _inFlight[key] = fut;
+    try {
+      return await fut;
+    } finally {
+      _inFlight.remove(key);
+    }
+  }
+
+  // ============================================================
   // ROOMS
   // ============================================================
 
-  /// Créer une room
+  /// Créer une room. Débite la mise du créateur via le ledger.
   Future<Map<String, dynamic>?> createRoom({
     required int playerCount,
     required bool isPrivate,
     int betAmount = 200,
-  }) async {
-    try {
-      final result = await _client.rpc('create_cora_room', params: {
-        'p_player_count': playerCount,
-        'p_bet_amount': betAmount,
-        'p_is_private': isPrivate,
-      });
-      if (result is Map) return Map<String, dynamic>.from(result);
-      return null;
-    } catch (e) {
-      debugPrint('Erreur createRoom: $e');
-      rethrow;
-    }
+  }) {
+    final uid = currentUserId ?? 'anon';
+    return _dedup('create:$uid:$betAmount:$playerCount', () async {
+      try {
+        final result = await _client.rpc('cora_create_room', params: {
+          'p_player_count': playerCount,
+          'p_bet_amount': betAmount,
+          'p_is_private': isPrivate,
+        });
+        if (result is Map) {
+          final map = Map<String, dynamic>.from(result);
+          final roomId = map['room_id']?.toString();
+          if (roomId != null) {
+            unawaited(GameAuditService.instance.logGameStart(
+              gameId: roomId, gameType: 'cora_dice',
+              payload: {'bet': betAmount, 'player_count': playerCount, 'is_private': isPrivate},
+            ));
+            unawaited(GameAuditService.instance.logBetPlaced(
+              gameId: roomId, gameType: 'cora_dice', amount: betAmount,
+            ));
+          }
+          return map;
+        }
+        return null;
+      } catch (e) {
+        debugPrint('[CORA] createRoom: $e');
+        rethrow;
+      }
+    });
   }
 
-  /// Pre-check : recupere une room par son code pour valider le solde avant join.
-  Future<CoraRoom?> getRoomByCode(String code) async {
-    try {
-      final d = await _client.from('cora_rooms')
-          .select().eq('code', code.toUpperCase())
-          .eq('status', 'waiting').maybeSingle();
-      return d != null ? CoraRoom.fromJson(d) : null;
-    } catch (_) { return null; }
+  /// Rejoindre une room par code. Débite la mise du joueur.
+  Future<Map<String, dynamic>?> joinRoom(String code) {
+    return _dedup('join:${code.toUpperCase()}', () async {
+      try {
+        final result = await _client.rpc('cora_join_room', params: {
+          'p_code': code.toUpperCase(),
+        });
+        if (result is Map) {
+          final map = Map<String, dynamic>.from(result);
+          final roomId = map['room_id']?.toString();
+          if (roomId != null) {
+            unawaited(GameAuditService.instance.logEvent(
+              gameId: roomId, gameType: 'cora_dice',
+              eventType: 'player_joined',
+              payload: {'code': code.toUpperCase()},
+            ));
+          }
+          return map;
+        }
+        return null;
+      } catch (e) {
+        debugPrint('[CORA] joinRoom: $e');
+        rethrow;
+      }
+    });
   }
 
-  /// Rejoindre une room par code
-  Future<String?> joinRoom(String code) async {
-    try {
-      final result = await _client.rpc('join_cora_room', params: {
-        'p_code': code.toUpperCase(),
-      });
-      debugPrint('[CORA] joinRoom raw: $result (${result.runtimeType})');
-      if (result is Map) return result['room_id']?.toString();
-      if (result is String) return result;
-      return result?.toString();
-    } catch (e) {
-      debugPrint('Erreur joinRoom: $e');
-      rethrow;
-    }
+  /// Quitter une room avant le démarrage. Refund automatique.
+  Future<Map<String, dynamic>?> leaveRoom(String roomId) {
+    return _dedup('leave:$roomId', () async {
+      try {
+        final result = await _client.rpc('cora_leave_room', params: {
+          'p_room_id': roomId,
+        });
+        if (result is Map) return Map<String, dynamic>.from(result);
+        return null;
+      } catch (e) {
+        debugPrint('[CORA] leaveRoom: $e');
+        return null;
+      }
+    });
   }
 
-  /// Supprimer les salles en attente > 1h
-  Future<void> cleanupStaleRooms() async {
-    try {
-      await _client.from('cora_rooms')
-          .delete()
-          .eq('status', 'waiting')
-          .lt('created_at', DateTime.now().subtract(const Duration(hours: 1)).toIso8601String());
-    } catch (_) {}
-  }
-
-  /// Lister les rooms publiques
+  /// Lister les rooms publiques en attente.
   Future<List<CoraRoom>> getPublicRooms() async {
     try {
       final data = await _client
@@ -89,50 +136,63 @@ class CoraService {
           .limit(20);
       return (data as List).map((r) => CoraRoom.fromJson(r)).toList();
     } catch (e) {
-      debugPrint('Erreur getPublicRooms: $e');
+      debugPrint('[CORA] getPublicRooms: $e');
       return [];
     }
   }
 
-  /// Récupérer une room par ID
+  /// Lire une room (pré-check côté client, ex. solde).
+  /// Lance les exceptions au lieu de les avaler : le caller (lobby) doit
+  /// pouvoir distinguer "row absente" (return null) de "erreur réseau/RLS"
+  /// (throws).
   Future<CoraRoom?> getRoom(String roomId) async {
+    final data = await _client
+        .from('cora_rooms')
+        .select()
+        .eq('id', roomId)
+        .maybeSingle();
+    if (data == null) return null;
+    return CoraRoom.fromJson(data);
+  }
+
+  /// Pre-check par code pour valider le solde avant join.
+  Future<CoraRoom?> getRoomByCode(String code) async {
     try {
-      final data = await _client
+      final d = await _client
           .from('cora_rooms')
           .select()
-          .eq('id', roomId)
+          .eq('code', code.toUpperCase())
+          .eq('status', 'waiting')
           .maybeSingle();
-      if (data == null) return null;
-      return CoraRoom.fromJson(data);
-    } catch (e) {
-      debugPrint('Erreur getRoom: $e');
+      return d != null ? CoraRoom.fromJson(d) : null;
+    } catch (_) {
       return null;
     }
   }
 
-  /// Marquer joueur comme prêt (update direct sans RPC problématique)
+  /// Marquer prêt / annuler. Le serveur démarre la partie auto si tous prêts.
+  Future<Map<String, dynamic>?> toggleReady(String roomId, bool ready) {
+    return _dedup('ready:$roomId:$ready', () async {
+      try {
+        final result = await _client.rpc('cora_toggle_ready', params: {
+          'p_room_id': roomId,
+          'p_ready': ready,
+        });
+        if (result is Map) return Map<String, dynamic>.from(result);
+        return null;
+      } catch (e) {
+        debugPrint('[CORA] toggleReady: $e');
+        rethrow;
+      }
+    });
+  }
+
+  /// Compat : ancienne API. Délègue vers toggleReady.
   Future<void> markReady(String roomId, bool isReady) async {
-    try {
-      final uid = currentUserId;
-      if (uid == null) return;
-      await _client.from('cora_room_players').update({
-        'is_ready': isReady,
-      }).eq('room_id', roomId).eq('user_id', uid);
-    } catch (e) {
-      debugPrint('Erreur markReady: $e');
-    }
+    await toggleReady(roomId, isReady);
   }
 
-  /// Quitter/supprimer une room
-  Future<void> deleteRoom(String roomId) async {
-    try {
-      await _client.from('cora_rooms').delete().eq('id', roomId);
-    } catch (e) {
-      debugPrint('Erreur deleteRoom: $e');
-    }
-  }
-
-  /// Écouter les mises à jour d'une room
+  /// Écouter les mises à jour d'une room.
   RealtimeChannel subscribeRoom(String roomId, void Function(CoraRoom) onUpdate) {
     return _client
         .channel('cora-room-$roomId')
@@ -150,40 +210,41 @@ class CoraService {
               final room = CoraRoom.fromJson(payload.newRecord);
               onUpdate(room);
             } catch (e) {
-              debugPrint('Erreur parsing room update: $e');
+              debugPrint('[CORA] parse room update: $e');
             }
           },
         )
         .subscribe();
   }
 
-  /// Démarrer la partie quand tous les joueurs sont prêts
-  Future<String?> startGame(String roomId) async {
+  // ============================================================
+  // SESSION RESUME
+  // ============================================================
+
+  /// Récupère la session active (room en attente ou game en cours).
+  /// Retourne null si rien d'actif.
+  Future<Map<String, dynamic>?> getActiveSession() async {
     try {
-      final result = await _client.rpc('start_cora_game', params: {
-        'p_room_id': roomId,
-      });
-      debugPrint('[CORA] startGame raw: $result (${result.runtimeType})');
-      final gameId = result?.toString();
-      debugPrint('[CORA] startGame: $gameId');
-      return gameId;
+      final result = await _client.rpc('cora_get_active');
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return null;
     } catch (e) {
-      debugPrint('[CORA] Erreur startGame: $e');
+      debugPrint('[CORA] getActiveSession: $e');
       return null;
     }
   }
 
-  /// Auto-continue : vérifie les soldes et reset la manche
-  Future<String> autoContinue(String gameId) async {
+  /// Kill switch : abandonne TOUTES les rooms/games actives de l'utilisateur.
+  /// Refund pour les rooms `waiting`, forfait pour les games `playing`.
+  /// Utilisé pour débloquer TOO_MANY_ACTIVE_GAMES.
+  Future<Map<String, dynamic>?> abandonAll() async {
     try {
-      final result = await _client.rpc('cora_auto_continue', params: {
-        'p_game_id': gameId,
-      });
-      debugPrint('[CORA] autoContinue: $result');
-      return result?.toString() ?? 'ended';
+      final result = await _client.rpc('cora_abandon_my_rooms');
+      if (result is Map) return Map<String, dynamic>.from(result);
+      return null;
     } catch (e) {
-      debugPrint('[CORA] Erreur autoContinue: $e');
-      return 'ended';
+      debugPrint('[CORA] abandonAll: $e');
+      return null;
     }
   }
 
@@ -191,140 +252,108 @@ class CoraService {
   // GAME
   // ============================================================
 
-  /// Récupérer une partie
+  /// Récupérer une partie. Laisse remonter les exceptions pour que l'UI
+  /// puisse distinguer "row absente" (return null) de "erreur réseau/RLS"
+  /// (throws) — sinon le GameScreen reste sur spinner indéfiniment.
   Future<CoraGame?> getGame(String gameId) async {
-    try {
-      final data = await _client
-          .from('cora_games')
-          .select()
-          .eq('id', gameId)
-          .maybeSingle();
-      if (data == null) return null;
-      return CoraGame.fromJson(data);
-    } catch (e) {
-      debugPrint('Erreur getGame: $e');
-      return null;
-    }
+    final data = await _client
+        .from('cora_games')
+        .select()
+        .eq('id', gameId)
+        .maybeSingle();
+    if (data == null) return null;
+    return CoraGame.fromJson(data);
   }
 
-  /// Lancer les dés (anti-cheat : la generation se fait SERVEUR via submitRoll).
-  /// Cette methode est conservee pour l'animation locale (placeholder), mais
-  /// les valeurs reelles viennent de la RPC submit_cora_roll.
-  Future<DiceRoll> rollDice() async {
-    return DiceRoll(
-      dice1: 1,
-      dice2: 1,
-      timestamp: DateTime.now(),
-    );
-  }
-
-  /// Soumettre un lancer : le SERVEUR genere les des et retourne le resultat.
-  /// Anti-cheat : le client n'envoie aucune valeur de des, seul le game_id.
-  /// Retourne le DiceRoll reel calcule cote serveur.
-  Future<DiceRoll?> submitRollAndGetServerDice({
-    required String gameId,
-  }) async {
-    try {
-      final res = await _client.rpc('submit_cora_roll', params: {
-        'p_game_id': gameId,
-      });
-      if (res is Map) {
-        return DiceRoll(
-          dice1: (res['dice1'] as num).toInt(),
-          dice2: (res['dice2'] as num).toInt(),
-          timestamp: DateTime.now(),
-        );
+  /// Lancer les dés. Le SERVEUR génère les valeurs (anti-cheat).
+  /// Retourne le DiceRoll réel calculé côté serveur.
+  Future<DiceRoll?> submitRoll(String gameId) {
+    return _dedup('roll:$gameId:${currentUserId ?? ""}', () async {
+      try {
+        final res = await _client.rpc('cora_submit_roll', params: {
+          'p_game_id': gameId,
+        });
+        if (res is Map) {
+          final d1 = (res['dice1'] as num).toInt();
+          final d2 = (res['dice2'] as num).toInt();
+          unawaited(GameAuditService.instance.logEvent(
+            gameId: gameId, gameType: 'cora_dice',
+            eventType: 'dice_roll',
+            payload: {'dice1': d1, 'dice2': d2, 'sum': d1 + d2},
+          ));
+          return DiceRoll(
+            dice1: d1, dice2: d2,
+            timestamp: DateTime.now(),
+          );
+        }
+        return null;
+      } catch (e) {
+        debugPrint('[CORA] submitRoll: $e');
+        rethrow;
       }
+    });
+  }
+
+  /// Compat : ancienne signature. Le `roll` côté client est ignoré.
+  Future<DiceRoll?> submitRollAndGetServerDice({required String gameId}) {
+    return submitRoll(gameId);
+  }
+
+  /// Compat : ancienne API legacy.
+  @Deprecated('Use submitRoll(gameId) instead')
+  Future<void> submitRollLegacy({
+    required String gameId,
+    required DiceRoll roll,
+  }) async {
+    await submitRoll(gameId);
+  }
+
+  /// Demande de revanche après une partie finie.
+  /// Le 1er appel initialise un vote (30s timeout). Les autres participants
+  /// votent en appelant cette même fonction. Quand tous acceptent, une
+  /// nouvelle room/game est créée atomiquement et l'id est retourné.
+  ///
+  /// Retour : { status, new_game_id?, new_room_id?, accepted_count, total_needed,
+  ///            proposer_id, expires_at, ... }
+  Future<Map<String, dynamic>?> requestRematch(String gameId,
+      {bool accept = true}) async {
+    try {
+      final result = await _client.rpc('cora_request_rematch', params: {
+        'p_game_id': gameId,
+        'p_accept': accept,
+      });
+      if (result is Map) return Map<String, dynamic>.from(result);
       return null;
     } catch (e) {
-      debugPrint('[CORA] submitRoll error: $e');
+      debugPrint('[CORA] requestRematch: $e');
       rethrow;
     }
   }
 
-  /// LEGACY : conservee pour compat. La RPC ne prend plus les valeurs de des
-  /// en parametre (elles sont generees serveur). On ignore donc `roll` et on
-  /// delegue a submitRollAndGetServerDice. Les anciens callers ne verront pas
-  /// les vraies valeurs ; preferer submitRollAndGetServerDice.
-  Future<void> submitRoll({
-    required String gameId,
-    required DiceRoll roll,
-  }) async {
-    await submitRollAndGetServerDice(gameId: gameId);
-  }
-
-  /// Calculer le résultat final (appelé côté serveur normalement)
-  Map<String, dynamic> calculateResult(CoraGameState state) {
-    final players = state.players.values.toList();
-
-    // 1. Vérifier Cora multiple → annulation
-    final coraPlayers = players.where((p) => p.hasCora).toList();
-    if (coraPlayers.length > 1) {
-      return {
-        'status': 'cancelled',
-        'result': 'Plusieurs Cora ! Partie annulée, remboursement total.',
-        'winners': <String>[],
-        'payouts': {for (final p in players) p.userId: 0}, // Remboursement géré ailleurs
-      };
-    }
-
-    // 2. Vérifier Cora unique → double pot
-    if (coraPlayers.length == 1) {
-      final winner = coraPlayers.first;
-      return {
-        'status': 'finished',
-        'result': '${winner.username} a fait CORA ! Double pot !',
-        'winners': [winner.userId],
-        'is_cora_win': true,
-      };
-    }
-
-    // 3. Calculer scores (7 = -1 effectif)
-    final scores = <String, int>{};
-    for (final player in players) {
-      if (player.hasSeven) {
-        scores[player.userId] = -1; // 7 perd auto
-      } else {
-        scores[player.userId] = player.roll?.total ?? 0;
+  /// Forfait propre : marque le joueur comme abandonnant côté serveur.
+  /// Sa mise est perdue. La partie continue ou se termine selon les autres.
+  Future<Map<String, dynamic>?> forfeit(String gameId) {
+    return _dedup('forfeit:$gameId', () async {
+      try {
+        final result = await _client.rpc('cora_forfeit', params: {
+          'p_game_id': gameId,
+        });
+        if (result is Map) {
+          unawaited(GameAuditService.instance.logGameEnd(
+            gameId: gameId, gameType: 'cora_dice', won: false,
+            extra: {'reason': 'forfeit'},
+          ));
+          return Map<String, dynamic>.from(result);
+        }
+        return null;
+      } catch (e) {
+        debugPrint('[CORA] forfeit: $e');
+        return null;
       }
-    }
-
-    // 4. Trouver le max score
-    final maxScore = scores.values.reduce((a, b) => a > b ? a : b);
-    if (maxScore <= 0) {
-      // Tous ont 7 → annulation
-      return {
-        'status': 'cancelled',
-        'result': 'Tous les joueurs ont fait 7 ! Partie annulée.',
-        'winners': <String>[],
-      };
-    }
-
-    // 5. Trouver les gagnants
-    final winners =
-        scores.entries.where((e) => e.value == maxScore).map((e) => e.key).toList();
-
-    // 6. Égalité → annulation
-    if (winners.length > 1) {
-      return {
-        'status': 'cancelled',
-        'result': 'Égalité parfaite ! Partie annulée, remboursement.',
-        'winners': <String>[],
-      };
-    }
-
-    // 7. Un seul gagnant → pot normal
-    final winnerId = winners.first;
-    final winnerPlayer = players.firstWhere((p) => p.userId == winnerId);
-    return {
-      'status': 'finished',
-      'result': '${winnerPlayer.username} gagne avec $maxScore !',
-      'winners': [winnerId],
-      'is_cora_win': false,
-    };
+    });
   }
 
-  /// Écouter les mises à jour d'une partie
+  /// Écouter les mises à jour d'une partie.
   RealtimeChannel subscribeGame(
     String gameId,
     void Function(CoraGame) onUpdate,
@@ -345,7 +374,7 @@ class CoraService {
               final game = CoraGame.fromJson(payload.newRecord);
               onUpdate(game);
             } catch (e) {
-              debugPrint('Erreur parsing game update: $e');
+              debugPrint('[CORA] parse game update: $e');
             }
           },
         )
@@ -356,37 +385,24 @@ class CoraService {
   // CHAT
   // ============================================================
 
-  /// Envoyer un message
+  /// Envoyer un message via la RPC sécurisée (rate-limited).
   Future<void> sendMessage(String roomId, String message) async {
-    final userId = currentUserId;
-    if (userId == null) return;
-
-    try {
-      // Récupérer le username du joueur
-      String username = 'Joueur';
+    final text = message.trim();
+    if (text.isEmpty) return;
+    final uid = currentUserId ?? 'anon';
+    return _dedup('msg:$roomId:$uid:${DateTime.now().millisecondsSinceEpoch ~/ 500}', () async {
       try {
-        final profile = await _client
-            .from('user_profiles')
-            .select('username')
-            .eq('id', userId)
-            .maybeSingle();
-        if (profile != null && (profile['username'] as String?)?.isNotEmpty == true) {
-          username = profile['username'] as String;
-        }
-      } catch (_) {}
-
-      await _client.from('cora_messages').insert({
-        'room_id': roomId,
-        'user_id': userId,
-        'username': username,
-        'message': message,
-      });
-    } catch (e) {
-      debugPrint('Erreur sendMessage: $e');
-    }
+        await _client.rpc('cora_send_message', params: {
+          'p_room_id': roomId,
+          'p_message': text,
+        });
+      } catch (e) {
+        debugPrint('[CORA] sendMessage: $e');
+      }
+    });
   }
 
-  /// Charger les messages
+  /// Charger les messages.
   Future<List<CoraMessage>> getMessages(String roomId) async {
     try {
       final data = await _client
@@ -397,12 +413,12 @@ class CoraService {
           .limit(50);
       return (data as List).map((r) => CoraMessage.fromJson(r)).toList();
     } catch (e) {
-      debugPrint('Erreur getMessages: $e');
+      debugPrint('[CORA] getMessages: $e');
       return [];
     }
   }
 
-  /// Écouter les nouveaux messages
+  /// Écouter les nouveaux messages.
   RealtimeChannel subscribeMessages(
     String roomId,
     void Function(CoraMessage) onMessage,
@@ -423,15 +439,50 @@ class CoraService {
               final msg = CoraMessage.fromJson(payload.newRecord);
               onMessage(msg);
             } catch (e) {
-              debugPrint('Erreur parsing message: $e');
+              debugPrint('[CORA] parse message: $e');
             }
           },
         )
         .subscribe();
   }
 
-  /// Se désabonner d'un channel
+  /// Se désabonner d'un channel.
   void unsubscribe(RealtimeChannel channel) {
     _client.removeChannel(channel);
+  }
+
+  // ============================================================
+  // DEPRECATED — anciennes APIs supprimées
+  // ============================================================
+
+  @Deprecated('Use leaveRoom() — le serveur gère le refund.')
+  Future<void> deleteRoom(String roomId) async {
+    await leaveRoom(roomId);
+  }
+
+  @Deprecated('Géré côté serveur via cron pg_cron.')
+  Future<void> cleanupStaleRooms() async {
+    // No-op : le cron cora-cleanup-rooms s'en charge.
+  }
+
+  @Deprecated('Renommée en createRoom.')
+  Future<String?> startGame(String roomId) async {
+    debugPrint('[CORA] startGame déprécié : la partie démarre auto via cora_toggle_ready');
+    return null;
+  }
+
+  @Deprecated('Géré côté serveur.')
+  Future<String> autoContinue(String gameId) async {
+    return 'ended';
+  }
+
+  @Deprecated('Le résultat est calculé côté serveur dans game_state.')
+  Map<String, dynamic> calculateResult(CoraGameState state) {
+    return {'status': 'finished', 'winners': <String>[]};
+  }
+
+  @Deprecated('Anciennement utilisé pour l\'animation locale (placeholder).')
+  Future<DiceRoll> rollDice() async {
+    return DiceRoll(dice1: 1, dice2: 1, timestamp: DateTime.now());
   }
 }

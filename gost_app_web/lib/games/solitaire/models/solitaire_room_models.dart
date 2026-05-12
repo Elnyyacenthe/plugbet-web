@@ -6,23 +6,36 @@ class SolitaireRoomPlayer {
   final String id;
   final String username;
   final int score; // nombre de cartes envoyées en fondation
+  final bool forfeited; // V2 : vrai si le joueur a quitté pendant 'playing'
 
   const SolitaireRoomPlayer({
     required this.id,
     required this.username,
     this.score = 0,
+    this.forfeited = false,
   });
 
-  SolitaireRoomPlayer copyWith({int? score}) =>
-      SolitaireRoomPlayer(id: id, username: username, score: score ?? this.score);
+  SolitaireRoomPlayer copyWith({int? score, bool? forfeited}) =>
+      SolitaireRoomPlayer(
+        id: id,
+        username: username,
+        score: score ?? this.score,
+        forfeited: forfeited ?? this.forfeited,
+      );
 
-  Map<String, dynamic> toJson() => {'id': id, 'username': username, 'score': score};
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'username': username,
+        'score': score,
+        if (forfeited) 'forfeited': true,
+      };
 
   factory SolitaireRoomPlayer.fromJson(Map<String, dynamic> json) =>
       SolitaireRoomPlayer(
         id: json['id'] as String,
         username: json['username'] as String? ?? 'Joueur',
         score: json['score'] as int? ?? 0,
+        forfeited: json['forfeited'] as bool? ?? false,
       );
 }
 

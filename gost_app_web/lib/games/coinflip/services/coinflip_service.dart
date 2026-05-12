@@ -2,9 +2,11 @@
 // PILE OU FACE — Service Supabase
 // ============================================================
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/coinflip_models.dart';
+import '../../../services/game_audit_service.dart';
 
 class CoinflipService {
   CoinflipService._();
@@ -23,7 +25,20 @@ class CoinflipService {
   Future<Map<String, dynamic>?> createRoom({int betAmount = 100}) async {
     try {
       final r = await _client.rpc('cf_create_room', params: {'p_bet_amount': betAmount});
-      if (r is Map) return Map<String, dynamic>.from(r);
+      if (r is Map) {
+        final map = Map<String, dynamic>.from(r);
+        final roomId = map['room_id']?.toString();
+        if (roomId != null) {
+          unawaited(GameAuditService.instance.logGameStart(
+            gameId: roomId, gameType: 'coinflip',
+            payload: {'bet': betAmount, 'action': 'create_room'},
+          ));
+          unawaited(GameAuditService.instance.logBetPlaced(
+            gameId: roomId, gameType: 'coinflip', amount: betAmount,
+          ));
+        }
+        return map;
+      }
       return null;
     } catch (e) { debugPrint('[CF] createRoom: $e'); rethrow; }
   }
@@ -31,14 +46,30 @@ class CoinflipService {
   Future<String?> joinRoom(String code) async {
     try {
       final r = await _client.rpc('cf_join_room', params: {'p_code': code.toUpperCase()});
-      if (r is Map) return r['room_id']?.toString();
-      return r?.toString();
+      String? roomId;
+      if (r is Map) {
+        roomId = r['room_id']?.toString();
+      } else {
+        roomId = r?.toString();
+      }
+      if (roomId != null) {
+        unawaited(GameAuditService.instance.logEvent(
+          gameId: roomId, gameType: 'coinflip',
+          eventType: 'player_joined',
+          payload: {'code': code.toUpperCase()},
+        ));
+      }
+      return roomId;
     } catch (e) { debugPrint('[CF] joinRoom: $e'); rethrow; }
   }
 
   Future<void> chooseSide(String gameId, String choice) async {
     try {
       await _client.rpc('cf_choose_side', params: {'p_game_id': gameId, 'p_choice': choice});
+      unawaited(GameAuditService.instance.logMove(
+        gameId: gameId, gameType: 'coinflip',
+        moveData: {'choice': choice},
+      ));
     } catch (e) { debugPrint('[CF] chooseSide: $e'); rethrow; }
   }
 

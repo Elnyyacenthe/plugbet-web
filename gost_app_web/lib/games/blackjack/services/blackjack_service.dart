@@ -2,9 +2,11 @@
 // BLACKJACK — Service Supabase (RPC + Realtime)
 // ============================================================
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/blackjack_models.dart';
+import '../../../services/game_audit_service.dart';
 
 class BlackjackService {
   BlackjackService._();
@@ -70,7 +72,14 @@ class BlackjackService {
         'p_room_id': roomId,
       });
       debugPrint('[BJ] startGame: $result');
-      return result?.toString();
+      final gameId = result?.toString();
+      if (gameId != null) {
+        unawaited(GameAuditService.instance.logGameStart(
+          gameId: gameId, gameType: 'blackjack',
+          payload: {'room_id': roomId},
+        ));
+      }
+      return gameId;
     } catch (e) {
       debugPrint('[BJ] Erreur startGame: $e');
       return null;
@@ -106,6 +115,10 @@ class BlackjackService {
     try {
       await _client.rpc('bj_hit', params: {'p_game_id': gameId});
       debugPrint('[BJ] hit OK');
+      unawaited(GameAuditService.instance.logMove(
+        gameId: gameId, gameType: 'blackjack',
+        moveData: {'action': 'hit'},
+      ));
     } catch (e) {
       debugPrint('[BJ] Erreur hit: $e');
       rethrow;
@@ -116,6 +129,10 @@ class BlackjackService {
     try {
       await _client.rpc('bj_stand', params: {'p_game_id': gameId});
       debugPrint('[BJ] stand OK');
+      unawaited(GameAuditService.instance.logMove(
+        gameId: gameId, gameType: 'blackjack',
+        moveData: {'action': 'stand'},
+      ));
     } catch (e) {
       debugPrint('[BJ] Erreur stand: $e');
       rethrow;

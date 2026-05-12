@@ -1,8 +1,10 @@
 // ============================================================
 // Mines — Service (Supabase RPC + wallet)
 // ============================================================
+import 'dart:async';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/wallet_service.dart';
+import '../../../services/game_audit_service.dart';
 import '../../../utils/logger.dart';
 import '../models/mines_models.dart';
 
@@ -36,7 +38,18 @@ class MinesService {
         _log.warn('createSession error: ${res['error']}');
         return null;
       }
-      return MinesSession.fromJson(Map<String, dynamic>.from(res as Map));
+      final session = MinesSession.fromJson(Map<String, dynamic>.from(res as Map));
+      unawaited(GameAuditService.instance.logGameStart(
+        gameId: session.id,
+        gameType: 'mines',
+        payload: {'bet': betAmount, 'mines_count': minesCount},
+      ));
+      unawaited(GameAuditService.instance.logBetPlaced(
+        gameId: session.id,
+        gameType: 'mines',
+        amount: betAmount,
+      ));
+      return session;
     } catch (e, s) {
       _log.error('createSession', e, s);
       return null;
@@ -59,7 +72,20 @@ class MinesService {
       });
 
       if (res == null) return null;
-      return Map<String, dynamic>.from(res as Map);
+      final map = Map<String, dynamic>.from(res as Map);
+      final hitMine = map['hit_mine'] == true;
+      unawaited(GameAuditService.instance.logEvent(
+        gameId: sessionId, gameType: 'mines',
+        eventType: hitMine ? 'mine_hit' : 'tile_revealed',
+        payload: {'position': position, 'multiplier': map['multiplier']},
+      ));
+      if (hitMine) {
+        unawaited(GameAuditService.instance.logGameEnd(
+          gameId: sessionId, gameType: 'mines', won: false,
+          extra: {'reason': 'mine_hit', 'position': position},
+        ));
+      }
+      return map;
     } catch (e, s) {
       _log.error('revealTile', e, s);
       return null;
@@ -78,7 +104,14 @@ class MinesService {
       });
 
       if (res == null) return null;
-      return Map<String, dynamic>.from(res as Map);
+      final map = Map<String, dynamic>.from(res as Map);
+      final payout = (map['payout'] as num?)?.toInt() ?? 0;
+      unawaited(GameAuditService.instance.logGameEnd(
+        gameId: sessionId, gameType: 'mines', won: true,
+        payout: payout,
+        extra: {'multiplier': map['multiplier'], 'reason': 'cashout'},
+      ));
+      return map;
     } catch (e, s) {
       _log.error('cashOut', e, s);
       return null;

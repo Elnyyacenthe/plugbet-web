@@ -1,7 +1,9 @@
 // ============================================================
 // Solitaire – Rejoindre / créer une salle multijoueur
 // ============================================================
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
 import '../models/solitaire_room_models.dart';
 import '../services/solitaire_multiplayer_service.dart';
@@ -20,21 +22,44 @@ class _SolitaireJoinScreenState extends State<SolitaireJoinScreen> {
   List<SolitaireRoom> _rooms = [];
   bool _loading = true;
   bool _joining = false;
+  Timer? _autoRefresh;
+  RealtimeChannel? _publicRoomsChannel;
 
   @override
   void initState() {
     super.initState();
     _loadRooms();
+    // Refresh auto toutes les 5s (filet si realtime rate)
+    _autoRefresh = Timer.periodic(const Duration(seconds: 5), (_) {
+      if (mounted) _loadRooms();
+    });
+    // Realtime : on écoute les changements de status sur toutes les rooms
+    // pour cacher les rooms qui passent finished/cancelled/playing
+    _publicRoomsChannel = Supabase.instance.client
+        .channel('solitaire-rooms-public')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'solitaire_rooms',
+          callback: (_) {
+            if (mounted) _loadRooms();
+          },
+        )
+        .subscribe();
   }
 
   @override
   void dispose() {
+    _autoRefresh?.cancel();
+    if (_publicRoomsChannel != null) {
+      Supabase.instance.client.removeChannel(_publicRoomsChannel!);
+    }
     _codeController.dispose();
     super.dispose();
   }
 
   Future<void> _loadRooms() async {
-    setState(() => _loading = true);
+    if (!mounted) return;
     final rooms = await _service.getPublicRooms();
     if (mounted) setState(() { _rooms = rooms; _loading = false; });
   }

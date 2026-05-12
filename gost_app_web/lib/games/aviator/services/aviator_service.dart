@@ -2,10 +2,12 @@
 // AVIATOR – Service : RNG provably fair + Supabase + Wallet
 // ============================================================
 
+import 'dart:async';
 import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/aviator_models.dart';
 import '../../../services/wallet_service.dart';
+import '../../../services/game_audit_service.dart';
 
 class AviatorService {
   static final AviatorService instance = AviatorService._();
@@ -206,6 +208,13 @@ class AviatorService {
         'p_amount': amount,
         'p_username': username,
       });
+      // Audit (game_id = round_num pour aviator vu qu'il n'y a pas d'UUID)
+      unawaited(GameAuditService.instance.logBetPlaced(
+        gameId: 'aviator-r$roundNum-s$slot',
+        gameType: 'aviator',
+        amount: amount,
+        extra: {'round_num': roundNum, 'slot': slot, 'username': username},
+      ));
       return null;
     } on PostgrestException catch (e) {
       return e.message;
@@ -226,9 +235,20 @@ class AviatorService {
         'p_slot': slot,
         'p_mult': mult,
       });
-      if (res is int) return res;
-      if (res is num) return res.toInt();
-      return null;
+      int? winAmount;
+      if (res is int) {
+        winAmount = res;
+      } else if (res is num) {
+        winAmount = res.toInt();
+      }
+      if (winAmount != null && winAmount > 0) {
+        unawaited(GameAuditService.instance.logGameEnd(
+          gameId: 'aviator-r$roundNum-s$slot',
+          gameType: 'aviator', won: true, payout: winAmount,
+          extra: {'multiplier': mult, 'round_num': roundNum},
+        ));
+      }
+      return winAmount;
     } catch (_) {
       return null;
     }
@@ -241,6 +261,11 @@ class AviatorService {
         'p_round_num': roundNum,
         'p_slot': slot,
       });
+      unawaited(GameAuditService.instance.logGameEnd(
+        gameId: 'aviator-r$roundNum-s$slot',
+        gameType: 'aviator', won: false,
+        extra: {'reason': 'crashed', 'round_num': roundNum},
+      ));
     } catch (_) {}
   }
 

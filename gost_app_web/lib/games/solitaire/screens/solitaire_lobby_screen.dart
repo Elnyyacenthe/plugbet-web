@@ -1,8 +1,10 @@
 // ============================================================
 // Solitaire – Lobby d'attente multijoueur
 // ============================================================
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
 import '../models/solitaire_room_models.dart';
 import '../services/solitaire_multiplayer_service.dart';
@@ -15,18 +17,52 @@ class SolitaireLobbyScreen extends StatefulWidget {
   State<SolitaireLobbyScreen> createState() => _SolitaireLobbyScreenState();
 }
 
-class _SolitaireLobbyScreenState extends State<SolitaireLobbyScreen> {
+class _SolitaireLobbyScreenState extends State<SolitaireLobbyScreen>
+    with WidgetsBindingObserver {
   final SolitaireMultiplayerService _service = SolitaireMultiplayerService();
   late SolitaireRoom _room;
   bool _navigated = false;
+  Timer? _pollFallback;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _room = widget.room;
     _service.subscribeToRoom(_room.id, _onRoomUpdate);
+    // Polling fallback : compense la latence realtime côté host
+    // (~1s vs joiner qui a la réponse synchrone). Toutes les 1.5s,
+    // on refetch l'état pour ne pas être bloqué si realtime traîne.
+    _pollFallback = Timer.periodic(const Duration(milliseconds: 1500), (_) {
+      _refetchRoom();
+    });
     if (_room.status == SolitaireRoomStatus.playing) {
       WidgetsBinding.instance.addPostFrameCallback((_) => _goToGame());
+    }
+  }
+
+  /// Refetch direct (filet pour latence realtime)
+  Future<void> _refetchRoom() async {
+    if (_navigated || !mounted) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('solitaire_rooms')
+          .select()
+          .eq('id', _room.id)
+          .maybeSingle();
+      if (row != null && mounted && !_navigated) {
+        final fresh = SolitaireRoom.fromJson(row);
+        _onRoomUpdate(fresh);
+      }
+    } catch (_) {/* best-effort */}
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Au retour foreground : re-fetch immédiat (la subscription realtime
+    // peut avoir manqué des events pendant le background)
+    if (state == AppLifecycleState.resumed) {
+      _refetchRoom();
     }
   }
 
@@ -35,6 +71,11 @@ class _SolitaireLobbyScreenState extends State<SolitaireLobbyScreen> {
     setState(() => _room = updated);
     if (updated.status == SolitaireRoomStatus.playing && !_navigated) {
       _goToGame();
+    } else if (updated.status == SolitaireRoomStatus.finished && !_navigated) {
+      // Edge case : la room est passée directement à finished
+      // (ex. reprise après crash sur partie déjà terminée)
+      _navigated = true;
+      Navigator.pop(context);
     }
   }
 
@@ -47,7 +88,11 @@ class _SolitaireLobbyScreenState extends State<SolitaireLobbyScreen> {
   Future<void> _leave() async {
     final isHost = _room.hostId == _service.currentUserId;
     if (isHost) {
+      // Host : annule la room → refund tous les players
       await _service.cancelRoom(_room.id);
+    } else {
+      // Non-host : forfait propre (status=waiting → refund + retire le user)
+      await _service.forfeit(_room.id);
     }
     _service.unsubscribe();
     if (mounted) Navigator.pop(context);
@@ -55,6 +100,8 @@ class _SolitaireLobbyScreenState extends State<SolitaireLobbyScreen> {
 
   @override
   void dispose() {
+    _pollFallback?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
     _service.unsubscribe();
     super.dispose();
   }

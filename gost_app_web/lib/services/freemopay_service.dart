@@ -420,7 +420,11 @@ class FreemopayService {
     if (digits.startsWith('00')) digits = digits.substring(2);
     // 3. Si commence deja par 237 -> garder
     if (digits.startsWith('237')) return digits;
-    // 4. Sinon prepend 237 (cas du user qui tape juste son numero local)
+    // 4. Si commence par 0 (format local francais 0691... -> 691...) retire le 0
+    if (digits.startsWith('0') && digits.length >= 10) {
+      digits = digits.substring(1);
+    }
+    // 5. Prepend 237
     return '237$digits';
   }
 

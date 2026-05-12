@@ -37,13 +37,9 @@ class SolitaireMultiplayerService {
     final uid = currentUserId;
     if (uid == null) return null;
 
-    final ok = await _wallet.deductCoins(betAmount);
-    if (!ok) return null;
-
     final username = await _getUsername();
     final code = isPrivate ? _generateCode() : null;
 
-    // État initial du jeu avec les joueurs
     final initialState = SolitaireState.initial();
     final gameState = {
       ...initialState.toJson(),
@@ -54,6 +50,7 @@ class SolitaireMultiplayerService {
     };
 
     try {
+      // 1. Crée la row room avec un id généré côté DB
       final row = await _client.from('solitaire_rooms').insert({
         'host_id': uid,
         'host_username': username,
@@ -67,11 +64,25 @@ class SolitaireMultiplayerService {
         'game_state': gameState,
       }).select().single();
 
-      return SolitaireRoom.fromJson(row);
+      final room = SolitaireRoom.fromJson(row);
+
+      // 2. Débit via la RPC V2 (passe par _ledger_post, dual-source wallet_balance)
+      try {
+        await _client.rpc('solitaire_multi_place_bet', params: {
+          'p_room_id': room.id,
+          'p_amount': betAmount,
+        });
+        return room;
+      } catch (e) {
+        debugPrint('[SOL-MULTI] place_bet failed, rolling back room: $e');
+        // Rollback : supprime la room créée si le débit échoue
+        try {
+          await _client.from('solitaire_rooms').delete().eq('id', room.id);
+        } catch (_) {}
+        return null;
+      }
     } catch (e) {
       debugPrint('[SOL-MULTI] createRoom: $e');
-      // Rembourser si échec
-      await _wallet.addCoins(betAmount);
       return null;
     }
   }
@@ -95,8 +106,16 @@ class SolitaireMultiplayerService {
 
       if (room.currentPlayers >= room.maxPlayers) return null;
 
-      final ok = await _wallet.deductCoins(room.betAmount);
-      if (!ok) return null;
+      // Débit via la nouvelle RPC V2 (passe par _ledger_post + wallet_balance dual-source)
+      try {
+        await _client.rpc('solitaire_multi_place_bet', params: {
+          'p_room_id': room.id,
+          'p_amount': room.betAmount,
+        });
+      } catch (e) {
+        debugPrint('[SOL-MULTI] joinRoom place_bet failed: $e');
+        return null;
+      }
 
       final username = await _getUsername();
       final newPlayers = [
@@ -210,36 +229,53 @@ class SolitaireMultiplayerService {
   // FIN DE PARTIE ET GAINS
   // ============================================================
 
-  Future<void> distributeWinnings(
+  /// Finalise la partie via la RPC V2.
+  /// Le serveur calcule pot - 10% commission + split si égalité.
+  /// Retourne les détails du payout.
+  Future<Map<String, dynamic>?> distributeWinnings(
     String roomId,
     List<SolitaireRoomPlayer> players,
   ) async {
-    if (players.isEmpty) return;
+    if (players.isEmpty) return null;
     try {
-      // Trouver le(s) gagnant(s) – le plus haut score
-      final maxScore = players.map((p) => p.score).reduce(max);
-      final winners = players.where((p) => p.score == maxScore).toList();
-
-      final row = await _client
-          .from('solitaire_rooms')
-          .select('pot')
-          .eq('id', roomId)
-          .single();
-      final pot = row['pot'] as int? ?? 0;
-
-      if (pot > 0 && winners.isNotEmpty) {
-        final share = pot ~/ winners.length;
-        for (final w in winners) {
-          await _wallet.addCoinsToUser(w.id, share);
-        }
+      // Trouver les gagnants côté CLIENT (highest score)
+      final eligible = players.where((p) => !p.forfeited).toList();
+      if (eligible.isEmpty) {
+        // Tous forfeited → cancel sans winner
+        final res = await _client.rpc('solitaire_multi_finalize', params: {
+          'p_room_id': roomId,
+          'p_winner_ids': <String>[],
+        });
+        return res is Map ? Map<String, dynamic>.from(res) : null;
       }
+      final maxScore = eligible.map((p) => p.score).reduce(max);
+      final winnerIds =
+          eligible.where((p) => p.score == maxScore).map((p) => p.id).toList();
 
-      await _client.from('solitaire_rooms').update({
-        'status': 'finished',
-        'winner_id': winners.length == 1 ? winners.first.id : null,
-      }).eq('id', roomId);
+      // Le serveur calcule pot, commission, split
+      final res = await _client.rpc('solitaire_multi_finalize', params: {
+        'p_room_id': roomId,
+        'p_winner_ids': winnerIds,
+      });
+      return res is Map ? Map<String, dynamic>.from(res) : null;
     } catch (e) {
       debugPrint('[SOL-MULTI] distributeWinnings: $e');
+      return null;
+    }
+  }
+
+  /// Forfait : un joueur quitte la partie.
+  /// Pendant 'waiting' → refund + retire du players. Pendant 'playing' →
+  /// FORFAIT (mise perdue, game continue). Si 1 seul restant → il gagne pot.
+  Future<Map<String, dynamic>?> forfeit(String roomId) async {
+    try {
+      final res = await _client.rpc('solitaire_multi_forfeit', params: {
+        'p_room_id': roomId,
+      });
+      return res is Map ? Map<String, dynamic>.from(res) : null;
+    } catch (e) {
+      debugPrint('[SOL-MULTI] forfeit: $e');
+      return null;
     }
   }
 
@@ -247,32 +283,18 @@ class SolitaireMultiplayerService {
   // ANNULER (HOST QUITTE EN LOBBY)
   // ============================================================
 
-  Future<void> cancelRoom(String roomId) async {
-    final uid = currentUserId;
-    if (uid == null) return;
+  /// Annule la room (host uniquement, status=waiting uniquement).
+  /// Refund TOUS les players via la RPC V2 atomique.
+  /// Returns true si annulé, false sinon (not-host, status mauvais, etc.)
+  Future<bool> cancelRoom(String roomId) async {
     try {
-      final row = await _client
-          .from('solitaire_rooms')
-          .select('bet_amount, pot, status, host_id, game_state')
-          .eq('id', roomId)
-          .single();
-
-      // Rembourser tous les joueurs si waiting
-      if (row['status'] == 'waiting') {
-        final gameState = row['game_state'] as Map<String, dynamic>?;
-        final playersJson = (gameState?['players'] as List?) ?? [];
-        final betAmount = row['bet_amount'] as int? ?? 0;
-        for (final p in playersJson) {
-          final playerId = (p as Map<String, dynamic>)['id'] as String?;
-          if (playerId != null) {
-            await _wallet.addCoinsToUser(playerId, betAmount);
-          }
-        }
-      }
-
-      await _client.from('solitaire_rooms').delete().eq('id', roomId);
+      final res = await _client.rpc('solitaire_multi_cancel_room', params: {
+        'p_room_id': roomId,
+      });
+      return res is Map && res['cancelled'] == true;
     } catch (e) {
       debugPrint('[SOL-MULTI] cancelRoom: $e');
+      return false;
     }
   }
 

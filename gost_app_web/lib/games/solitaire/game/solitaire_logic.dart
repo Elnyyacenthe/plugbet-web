@@ -1,15 +1,31 @@
 // ============================================================
-// Solitaire Klondike – Logique de jeu pure
+// Solitaire Klondike – Logique de jeu V2
+// ============================================================
+// Améliorations vs V1 :
+//   - Validations défensives (carte source faceUp, séquence stack)
+//   - Détection isLost (aucun coup possible)
+//   - Invariant 52 cartes vérifié à chaque move
+//   - Helper hasAnyValidMove pour le screen
 // ============================================================
 import '../models/solitaire_models.dart';
 
 class SolitaireLogic {
-  /// Tire une carte du stock vers le talon
+  // ============================================================
+  // Moves de base — chaque move retourne null si invalide
+  // ============================================================
+
+  /// Tire une carte du stock vers le talon. Si stock vide, recycle le waste.
   static SolitaireState drawFromStock(SolitaireState state) {
     if (state.stock.isEmpty) {
       if (state.waste.isEmpty) return state;
-      final newStock = state.waste.reversed.map((c) => c.copyWith(faceUp: false)).toList();
-      return state.copyWith(stock: newStock, waste: []);
+      // Recycle le waste vers le stock (ordre original préservé)
+      final newStock =
+          state.waste.reversed.map((c) => c.copyWith(faceUp: false)).toList();
+      return state.copyWith(
+        stock: newStock,
+        waste: const [],
+        moves: state.moves + 1,
+      );
     }
     final card = state.stock.last.copyWith(faceUp: true);
     return state.copyWith(
@@ -19,12 +35,32 @@ class SolitaireLogic {
     );
   }
 
-  /// Déplace des cartes entre colonnes du tableau
+  /// Déplace des cartes entre colonnes du tableau.
+  /// Validations défensives :
+  ///   - cardIdx dans la borne
+  ///   - carte source faceUp
+  ///   - le stack qui bouge forme une séquence valide (couleurs alternées,
+  ///     valeurs descendantes consécutives)
+  ///   - destination accepte la carte de tête (Roi sur vide, ou cardCanStackOn)
   static SolitaireState? moveTableauToTableau(
       SolitaireState state, int srcCol, int cardIdx, int dstCol) {
+    if (srcCol < 0 || srcCol >= state.tableau.length) return null;
+    if (dstCol < 0 || dstCol >= state.tableau.length) return null;
+    if (srcCol == dstCol) return null;
+
     final src = state.tableau[srcCol];
-    if (cardIdx >= src.length) return null;
+    if (cardIdx < 0 || cardIdx >= src.length) return null;
+
+    // 🛡 Validation : la carte source doit être face-up
+    if (!src[cardIdx].faceUp) return null;
+
     final moving = src.sublist(cardIdx);
+
+    // 🛡 Validation : le stack qui bouge DOIT former une séquence valide
+    for (int i = 0; i < moving.length - 1; i++) {
+      if (!moving[i + 1].canStackOn(moving[i])) return null;
+    }
+
     final bottom = moving.first;
     final dst = state.tableau[dstCol];
     final dstTop = dst.isEmpty ? null : dst.last;
@@ -41,11 +77,11 @@ class SolitaireLogic {
 
     // Retourner la carte du dessus de la source
     if (newTab[srcCol].isNotEmpty && !newTab[srcCol].last.faceUp) {
-      final lst = newTab[srcCol].removeLast();
-      newTab[srcCol].add(lst.copyWith(faceUp: true));
+      newTab[srcCol][newTab[srcCol].length - 1] =
+          newTab[srcCol].last.copyWith(faceUp: true);
     }
 
-    return _checkWin(state.copyWith(
+    return _checkWinAndLost(state.copyWith(
       tableau: newTab,
       moves: state.moves + 1,
       score: state.score + 5,
@@ -54,6 +90,7 @@ class SolitaireLogic {
 
   /// Déplace la carte du talon vers le tableau
   static SolitaireState? moveWasteToTableau(SolitaireState state, int dstCol) {
+    if (dstCol < 0 || dstCol >= state.tableau.length) return null;
     if (state.waste.isEmpty) return null;
     final card = state.waste.last;
     final dst = state.tableau[dstCol];
@@ -68,7 +105,7 @@ class SolitaireLogic {
     final newTab = List<List<PlayingCard>>.from(state.tableau);
     newTab[dstCol] = List.from(dst)..add(card);
 
-    return _checkWin(state.copyWith(
+    return _checkWinAndLost(state.copyWith(
       waste: state.waste.sublist(0, state.waste.length - 1),
       tableau: newTab,
       moves: state.moves + 1,
@@ -88,6 +125,7 @@ class SolitaireLogic {
 
   /// Déplace la carte du dessus d'une colonne vers la fondation
   static SolitaireState? moveTableauToFoundation(SolitaireState state, int col) {
+    if (col < 0 || col >= state.tableau.length) return null;
     final col_ = state.tableau[col];
     if (col_.isEmpty || !col_.last.faceUp) return null;
     final card = col_.last;
@@ -96,11 +134,12 @@ class SolitaireLogic {
     newTab[col] = List.from(col_.sublist(0, col_.length - 1));
 
     if (newTab[col].isNotEmpty && !newTab[col].last.faceUp) {
-      final lst = newTab[col].removeLast();
-      newTab[col].add(lst.copyWith(faceUp: true));
+      newTab[col][newTab[col].length - 1] =
+          newTab[col].last.copyWith(faceUp: true);
     }
 
-    return _tryFoundation(state.copyWith(tableau: newTab, moves: state.moves + 1), card);
+    return _tryFoundation(
+        state.copyWith(tableau: newTab, moves: state.moves + 1), card);
   }
 
   static SolitaireState? _tryFoundation(SolitaireState state, PlayingCard card) {
@@ -112,11 +151,75 @@ class SolitaireLogic {
     final newF = List<List<PlayingCard>>.from(state.foundations);
     newF[idx] = List.from(foundation)..add(card);
 
-    return _checkWin(state.copyWith(foundations: newF, score: state.score + 10));
+    return _checkWinAndLost(state.copyWith(
+      foundations: newF,
+      score: state.score + 10,
+    ));
   }
 
-  static SolitaireState _checkWin(SolitaireState state) {
-    if (state.isComplete) return state.copyWith(isWon: true, score: state.score + 500);
+  /// Vérifie victoire et état perdu (aucun coup possible)
+  static SolitaireState _checkWinAndLost(SolitaireState state) {
+    if (state.isComplete) {
+      return state.copyWith(isWon: true, score: state.score + 500);
+    }
+    // 🛡 Invariant 52 cartes (sanity check)
+    assert(state.totalCards == 52,
+        'Solitaire state corrupted: totalCards = ${state.totalCards}');
+    if (!hasAnyValidMove(state)) {
+      return state.copyWith(isLost: true);
+    }
     return state;
+  }
+
+  // ============================================================
+  // Détection : reste-t-il un coup possible ?
+  // ============================================================
+  /// Retourne true si AU MOINS un move valide est disponible.
+  /// Permet de détecter l'état perdu (deadlock) sans attendre le timer.
+  static bool hasAnyValidMove(SolitaireState state) {
+    // 1. Stock non vide ou waste recyclable → toujours possible de tirer
+    if (state.stock.isNotEmpty) return true;
+
+    // 2. Si waste non vide, on peut le recycler vers stock (≥ 1 move possible)
+    //    Mais ça ne change pas l'état du jeu — on cherche un VRAI progrès.
+    //    On considère perdu si même après recycle aucun coup utile n'apparaît.
+
+    // 3. Waste → fondation
+    if (moveWasteToFoundation(state) != null) return true;
+
+    // 4. Waste → tableau (toutes les colonnes)
+    for (int c = 0; c < 7; c++) {
+      if (moveWasteToTableau(state, c) != null) return true;
+    }
+
+    // 5. Tableau → fondation (toutes les colonnes)
+    for (int c = 0; c < 7; c++) {
+      if (moveTableauToFoundation(state, c) != null) return true;
+    }
+
+    // 6. Tableau → tableau (depuis n'importe quelle position face-up)
+    for (int srcCol = 0; srcCol < 7; srcCol++) {
+      final col = state.tableau[srcCol];
+      for (int idx = 0; idx < col.length; idx++) {
+        if (!col[idx].faceUp) continue;
+        for (int dstCol = 0; dstCol < 7; dstCol++) {
+          if (dstCol == srcCol) continue;
+          if (moveTableauToTableau(state, srcCol, idx, dstCol) != null) {
+            return true;
+          }
+        }
+      }
+    }
+
+    // 7. Si on peut recycler le waste (encore une fois), on garde l'espoir
+    //    SAUF si tous les éléments visibles sont des as déjà placés sur foundation
+    //    → état clairement perdu. Sinon, le recycle peut donner un coup.
+    if (state.waste.isNotEmpty) {
+      // Optimiste : on autorise le recycle. Si après recycle tout est bloqué
+      // on tombera sur ce check au prochain tour.
+      return true;
+    }
+
+    return false;
   }
 }

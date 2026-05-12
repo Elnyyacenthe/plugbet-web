@@ -3,7 +3,10 @@
 // ============================================================
 import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
+import '../../../providers/wallet_provider.dart';
 import '../models/solitaire_models.dart';
 import '../models/solitaire_room_models.dart';
 import '../game/solitaire_logic.dart';
@@ -18,7 +21,8 @@ class SolitaireMultiplayerGameScreen extends StatefulWidget {
 }
 
 class _SolitaireMultiplayerGameScreenState
-    extends State<SolitaireMultiplayerGameScreen> {
+    extends State<SolitaireMultiplayerGameScreen>
+    with WidgetsBindingObserver {
   final SolitaireMultiplayerService _service = SolitaireMultiplayerService();
 
   late SolitaireState _state;
@@ -29,12 +33,14 @@ class _SolitaireMultiplayerGameScreenState
   bool _pushing = false; // évite double-push
 
   Timer? _timer;
+  Timer? _pollFallback;
   int _elapsed = 0;
   static const int _maxSec = 600; // 10 minutes
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     final room = widget.room;
     final uid = _service.currentUserId ?? '';
 
@@ -63,13 +69,91 @@ class _SolitaireMultiplayerGameScreenState
 
     // Realtime : recevoir les moves des autres joueurs
     _service.subscribeToRoom(room.id, _onRoomUpdate);
+
+    // Polling fallback : si realtime traîne ou se déconnecte (background,
+    // wifi instable…), on refetch toutes les 2.5s pour rattraper. Crucial
+    // pour détecter status='finished' quand l'autre joueur forfait.
+    _pollFallback = Timer.periodic(const Duration(milliseconds: 2500), (_) {
+      _refetchRoom();
+    });
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && !_gameEnded) {
+      // Au retour foreground : re-fetch room state pour rattraper les events
+      // realtime perdus pendant le background
+      _refetchRoom();
+    }
+  }
+
+  /// Refetch direct la room depuis Supabase et applique l'état
+  Future<void> _refetchRoom() async {
+    if (!mounted || _gameEnded) return;
+    try {
+      final row = await Supabase.instance.client
+          .from('solitaire_rooms')
+          .select()
+          .eq('id', widget.room.id)
+          .maybeSingle();
+      if (row == null || !mounted) return;
+      final fresh = SolitaireRoom.fromJson(row);
+      _onRoomUpdate(fresh);
+    } catch (_) {/* best-effort */}
   }
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _timer?.cancel();
+    _pollFallback?.cancel();
+    // V2 : si la partie n'est pas finie et qu'on quitte → forfait propre
+    // (fire-and-forget, le serveur gère idempotence et 0/1/N restants)
+    if (!_gameEnded) {
+      // ignore: discarded_futures
+      _service.forfeit(widget.room.id);
+    }
     _service.unsubscribe();
     super.dispose();
+  }
+
+  /// Confirmer la sortie pendant la partie : forfait = mise perdue
+  Future<void> _confirmExit() async {
+    if (_gameEnded) {
+      Navigator.pop(context);
+      return;
+    }
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1E293B),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+        title: Text('Quitter la partie ?',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w700)),
+        content: Text(
+          'Tu vas FORFAIT et perdre ta mise de ${widget.room.betAmount} FCFA.\n'
+          'Si tu es le dernier à rester, l\'autre joueur récupère le pot.\n'
+          'Si vous quittez tous, tout le monde est refundé.',
+          style: TextStyle(color: Colors.white70, height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: Text('Continuer', style: TextStyle(color: Colors.white70)),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: Text('Forfait',
+                style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w700)),
+          ),
+        ],
+      ),
+    );
+    if (ok != true || !mounted) return;
+    // Marque _gameEnded AVANT le forfeit pour éviter le double-call dans dispose
+    _gameEnded = true;
+    await _service.forfeit(widget.room.id);
+    if (mounted) Navigator.pop(context);
   }
 
   // ── Mise à jour realtime ────────────────────────────────
@@ -156,17 +240,35 @@ class _SolitaireMultiplayerGameScreenState
       _service.distributeWinnings(widget.room.id, finalPlayers);
     }
 
-    // Trier par score décroissant
-    final sorted = List<SolitaireRoomPlayer>.from(finalPlayers)
-      ..sort((a, b) => b.score.compareTo(a.score));
+    // V2 : refresh wallet pour que l'UI montre le solde à jour
+    try { context.read<WalletProvider>().refresh(); } catch (_) {}
+
+    // Détecter les non-forfeited (= eligible pour la victoire)
+    final eligible = finalPlayers.where((p) => !p.forfeited).toList();
+    // Détecter winner(s) parmi les eligible (highest score)
+    List<SolitaireRoomPlayer> winners = [];
+    if (eligible.isNotEmpty) {
+      final maxScore = eligible.map((p) => p.score).reduce((a, b) => a > b ? a : b);
+      winners = eligible.where((p) => p.score == maxScore).toList();
+    }
+
+    // Trier l'affichage : winners d'abord, puis le reste par score
+    final sorted = [
+      ...winners,
+      ...finalPlayers.where((p) => !winners.any((w) => w.id == p.id))
+          .toList()
+        ..sort((a, b) => b.score.compareTo(a.score)),
+    ];
 
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => _ResultDialog(
         players: sorted,
+        winners: winners,
         myId: _service.currentUserId ?? '',
         pot: widget.room.pot,
+        betAmount: widget.room.betAmount,
         onClose: () {
           Navigator.pop(context); // ferme dialog
           Navigator.pop(context); // retour lobby
@@ -212,7 +314,7 @@ class _SolitaireMultiplayerGameScreenState
       child: Row(children: [
         IconButton(
           icon: Icon(Icons.arrow_back_ios_new, color: AppColors.textPrimary),
-          onPressed: () => Navigator.pop(context),
+          onPressed: _confirmExit,
         ),
         Expanded(
           child: Column(
@@ -539,24 +641,41 @@ class _SolitaireMultiplayerGameScreenState
 // Dialog résultats
 // ============================================================
 class _ResultDialog extends StatelessWidget {
-  final List<SolitaireRoomPlayer> players; // triés par score desc
+  final List<SolitaireRoomPlayer> players; // tous les players (winners + autres)
+  final List<SolitaireRoomPlayer> winners; // déterminés serveur (non-forfeited highest score)
   final String myId;
   final int pot;
+  final int betAmount;
   final VoidCallback onClose;
 
   const _ResultDialog({
     required this.players,
+    required this.winners,
     required this.myId,
     required this.pot,
+    required this.betAmount,
     required this.onClose,
   });
 
   @override
   Widget build(BuildContext context) {
-    final winner = players.isNotEmpty ? players.first : null;
-    final isWinner = winner?.id == myId;
-    final winnerCount = players.where((p) => p.score == (winner?.score ?? 0)).length;
-    final myPrize = isWinner ? (pot ~/ winnerCount) : 0;
+    final isWinner = winners.any((w) => w.id == myId);
+    final winnerCount = winners.length;
+    // Calcul réel du prize :
+    //   - 1 winner : pot - 10% commission
+    //   - 2+ winners (tie) : chacun récupère sa mise originale
+    //   - 0 winner : aucun (refund déjà fait côté serveur)
+    final int myPrize;
+    if (!isWinner) {
+      myPrize = 0;
+    } else if (winnerCount == 1) {
+      myPrize = pot - (pot ~/ 10); // pot - 10%
+    } else {
+      myPrize = betAmount; // tie : récupère sa mise
+    }
+    // Détecte si la victoire est par forfait (les autres ont forfeited)
+    final isForfeitWin = isWinner && winnerCount == 1 &&
+        players.where((p) => p.id != myId && p.forfeited).isNotEmpty;
 
     return AlertDialog(
       backgroundColor: AppColors.bgCard,
@@ -567,7 +686,11 @@ class _ResultDialog extends StatelessWidget {
           Text(isWinner ? '🏆' : '🎴', style: TextStyle(fontSize: 48)),
           SizedBox(height: 8),
           Text(
-            isWinner ? 'Victoire !' : 'Fin de partie',
+            isWinner
+                ? (isForfeitWin
+                    ? 'Victoire par forfait !'
+                    : (winnerCount > 1 ? 'Égalité — mise rendue' : 'Victoire !'))
+                : (winners.isEmpty ? 'Partie annulée' : 'Fin de partie'),
             style: TextStyle(
               fontSize: 20, fontWeight: FontWeight.w900,
               color: isWinner ? AppColors.neonGreen : AppColors.textSecondary,

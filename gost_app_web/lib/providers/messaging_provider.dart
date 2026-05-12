@@ -95,6 +95,10 @@ class MessagingProvider extends ChangeNotifier {
     _otherIsTyping = false;
     notifyListeners();
 
+    // Notifie le service global qu'on est en train de regarder cette conv
+    // -> evite que la notif locale se declenche pour des messages affiches.
+    NotificationService.instance.setActiveConversation(conversationId);
+
     _currentMessages = await _service.getMessages(conversationId);
     notifyListeners();
 
@@ -125,16 +129,8 @@ class MessagingProvider extends ChangeNotifier {
 
         if (msg.fromUserId != myUserId) {
           _service.markAsRead(conversationId);
-          // Notification push locale
-          final conv = _conversations.cast<Conversation?>().firstWhere(
-            (c) => c!.id == conversationId, orElse: () => null);
-          NotificationService.instance.showMessageNotification(
-            senderName: conv?.otherUsername ?? 'Nouveau message',
-            messagePreview: msg.content.length > 80
-                ? '${msg.content.substring(0, 80)}...'
-                : msg.content,
-            conversationId: conversationId,
-          );
+          // Pas de notif locale ici : la conversation est ouverte a l'ecran.
+          // Le NotificationService global filtre via setActiveConversation().
         }
       }
     });
@@ -337,6 +333,8 @@ class MessagingProvider extends ChangeNotifier {
     _currentMessages = [];
     _replyTo = null;
     _otherIsTyping = false;
+    // Plus aucune conv affichee -> les notifs reprennent en global
+    NotificationService.instance.setActiveConversation(null);
   }
 
   Future<String?> startConversation(String otherUserId) async {

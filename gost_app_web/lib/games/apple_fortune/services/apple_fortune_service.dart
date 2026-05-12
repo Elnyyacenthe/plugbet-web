@@ -1,9 +1,11 @@
 // ============================================================
 // Apple of Fortune – Service (Supabase RPC + Wallet)
 // ============================================================
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../services/wallet_service.dart';
+import '../../../services/game_audit_service.dart';
 import '../models/apple_fortune_models.dart';
 
 class AppleFortuneService {
@@ -41,7 +43,19 @@ class AppleFortuneService {
         return null;
       }
 
-      return AppleFortuneSession.fromJson(res as Map<String, dynamic>);
+      final session = AppleFortuneSession.fromJson(res as Map<String, dynamic>);
+      unawaited(GameAuditService.instance.logGameStart(
+        gameId: session.id, gameType: 'apple_fortune',
+        payload: {
+          'bet': betAmount,
+          'columns': difficulty.columns,
+          'safe_tiles': difficulty.safeTiles,
+        },
+      ));
+      unawaited(GameAuditService.instance.logBetPlaced(
+        gameId: session.id, gameType: 'apple_fortune', amount: betAmount,
+      ));
+      return session;
     } catch (e) {
       debugPrint('[APPLE] createSession: $e');
       return null;
@@ -68,7 +82,20 @@ class AppleFortuneService {
       });
 
       if (res == null) return null;
-      return res as Map<String, dynamic>;
+      final map = res as Map<String, dynamic>;
+      final hitBomb = map['hit_bomb'] == true || map['game_over'] == true;
+      unawaited(GameAuditService.instance.logEvent(
+        gameId: sessionId, gameType: 'apple_fortune',
+        eventType: hitBomb ? 'bomb_hit' : 'tile_revealed',
+        payload: {'tile_index': tileIndex, 'multiplier': map['multiplier']},
+      ));
+      if (hitBomb) {
+        unawaited(GameAuditService.instance.logGameEnd(
+          gameId: sessionId, gameType: 'apple_fortune', won: false,
+          extra: {'reason': 'bomb_hit'},
+        ));
+      }
+      return map;
     } catch (e) {
       debugPrint('[APPLE] revealTile: $e');
       return null;
@@ -92,7 +119,14 @@ class AppleFortuneService {
       });
 
       if (res == null) return null;
-      return res as Map<String, dynamic>;
+      final map = res as Map<String, dynamic>;
+      final payout = (map['payout'] as num?)?.toInt() ?? 0;
+      unawaited(GameAuditService.instance.logGameEnd(
+        gameId: sessionId, gameType: 'apple_fortune', won: true,
+        payout: payout,
+        extra: {'reason': 'cashout', 'multiplier': map['multiplier']},
+      ));
+      return map;
     } catch (e) {
       debugPrint('[APPLE] cashOut: $e');
       return null;

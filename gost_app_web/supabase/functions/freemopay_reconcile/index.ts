@@ -76,8 +76,9 @@ Deno.serve(async (req) => {
   }
   const basicAuth = 'Basic ' + btoa(`${cfg.appKey}:${cfg.secretKey}`)
 
-  // 2. Fetch PENDING > 5 min, max 50 par run
-  const cutoff = new Date(Date.now() - 5 * 60 * 1000).toISOString()
+  // 2. Fetch PENDING > 30s, max 50 par run
+  // Reduit de 5min a 30s pour que le user attende max ~1.5 min au lieu de 5 min
+  const cutoff = new Date(Date.now() - 30 * 1000).toISOString()
   const { data: pending, error: pendErr } = await supabase
     .from('freemopay_transactions')
     .select('*')

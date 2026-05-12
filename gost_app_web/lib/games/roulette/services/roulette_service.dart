@@ -2,9 +2,11 @@
 // ROULETTE — Service Supabase
 // ============================================================
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/roulette_models.dart';
+import '../../../services/game_audit_service.dart';
 
 class RouletteService {
   RouletteService._();
@@ -51,7 +53,14 @@ class RouletteService {
   Future<String?> startGame(String roomId) async {
     try {
       final result = await _client.rpc('rlt_start_game', params: {'p_room_id': roomId});
-      return result?.toString();
+      final gameId = result?.toString();
+      if (gameId != null) {
+        unawaited(GameAuditService.instance.logGameStart(
+          gameId: gameId, gameType: 'roulette',
+          payload: {'room_id': roomId},
+        ));
+      }
+      return gameId;
     } catch (e) { debugPrint('[RLT] startGame: $e'); return null; }
   }
 
@@ -60,12 +69,19 @@ class RouletteService {
       await _client.rpc('rlt_place_bet', params: {
         'p_game_id': gameId, 'p_type': type, 'p_amount': amount, 'p_number': number,
       });
+      unawaited(GameAuditService.instance.logBetPlaced(
+        gameId: gameId, gameType: 'roulette', amount: amount,
+        extra: {'type': type, if (number != null) 'number': number},
+      ));
     } catch (e) { debugPrint('[RLT] placeBet: $e'); rethrow; }
   }
 
   Future<void> spin(String gameId) async {
     try {
       await _client.rpc('rlt_spin', params: {'p_game_id': gameId});
+      unawaited(GameAuditService.instance.logEvent(
+        gameId: gameId, gameType: 'roulette', eventType: 'spin',
+      ));
     } catch (e) { debugPrint('[RLT] spin: $e'); rethrow; }
   }
 

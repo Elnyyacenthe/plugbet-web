@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../../theme/app_theme.dart';
 import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/player_provider.dart';
@@ -28,6 +29,15 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
   Timer? _timer;
   int _elapsed = 0;
   bool _gameEnded = false;
+  // V2 : session-based, server-validated
+  String? _sessionId;
+  int? _seed;
+  bool _bootstrapping = true;     // pendant placeBet
+  bool _finishingSession = false; // pendant payout (anti double-tap)
+  String? _bootstrapError;
+  // V2.1 : log des moves pour audit serveur
+  final List<MoveAction> _moveHistory = [];
+  late final DateTime _gameStart = DateTime.now();
   // Timer d'inactivité : 8s par coup
   static const int _inactivitySeconds = 8;
   int _inactivityCountdown = _inactivitySeconds;
@@ -45,20 +55,8 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
   @override
   void initState() {
     super.initState();
-    _state = SolitaireState.initial();
-    if (!_isPractice) _deductBet();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) {
-        context.read<MatchesProvider>().pausePolling();
-        context.read<LiveScoreManager>().pauseTracking();
-      }
-    });
-    _timer = Timer.periodic(const Duration(seconds: 1), (_) {
-      if (!mounted) return;
-      setState(() => _elapsed++);
-      if (_elapsed >= _maxSec && !_gameEnded) _end(won: false);
-    });
-
+    // _state sera initialisé après bootstrap (avec le seed serveur)
+    _state = SolitaireState.initial(); // placeholder, écrasé après bootstrap
     _scoreAnimCtrl = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 300),
@@ -66,16 +64,87 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     _scoreScale = Tween<double>(begin: 1.0, end: 1.4).animate(
       CurvedAnimation(parent: _scoreAnimCtrl, curve: Curves.elasticOut),
     );
-    _startInactivityTimer();
+    // Bootstrap : vérifier session active (reprise crash) puis placeBet
+    _bootstrap();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
+        try { context.read<LiveScoreManager>().pauseTracking(); } catch (_) {}
+      }
+    });
   }
 
-  Future<void> _deductBet() async {
-    final ok = await _service.deductCoins(_bet);
-    if (!ok && mounted) {
-      Navigator.pop(context);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(AppLocalizations.of(context)!.gameInsufficientFunds)));
+  /// Bootstrap V2 : reprise session active OU création nouvelle.
+  /// Le jeu ne démarre qu'après confirmation serveur du débit.
+  Future<void> _bootstrap() async {
+    try {
+      // 1. Vérifier si une session active existe (reprise après crash)
+      final active = await _service.getActiveSession();
+      if (!mounted) return;
+      if (active != null && active['id'] != null) {
+        // Reprise : on récupère la session existante (et son seed)
+        _sessionId = active['id'] as String;
+        _seed = (active['seed'] as num?)?.toInt();
+      } else {
+        // Nouvelle session : place bet (ou practice)
+        final res = await _service.placeBet(
+          amount: _bet,
+          isPractice: _isPractice,
+        );
+        if (!mounted) return;
+        if (res == null || res['session_id'] == null) {
+          setState(() {
+            _bootstrapping = false;
+            _bootstrapError = 'Impossible de créer la session';
+          });
+          return;
+        }
+        _sessionId = res['session_id'] as String;
+        _seed = (res['seed'] as num?)?.toInt();
+      }
+      // Initialiser le state avec le seed SERVEUR (reproductible côté audit)
+      _state = SolitaireState.initial(seed: _seed);
+
+      // Démarre les timers SEULEMENT après confirmation serveur
+      setState(() => _bootstrapping = false);
+      _timer = Timer.periodic(const Duration(seconds: 1), (_) {
+        if (!mounted) return;
+        setState(() => _elapsed++);
+        if (_elapsed >= _maxSec && !_gameEnded) _end(won: false);
+      });
+      _startInactivityTimer();
+    } on PostgrestException catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _bootstrapping = false;
+        _bootstrapError = _humanizeError(e);
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _bootstrapping = false;
+        _bootstrapError = 'Erreur réseau : $e';
+      });
     }
+  }
+
+  String _humanizeError(PostgrestException e) {
+    if (e.message.contains('INSUFFICIENT_FUNDS')) {
+      return 'Solde insuffisant pour cette mise.';
+    }
+    if (e.message.contains('SESSION_ALREADY_OPEN')) {
+      return 'Tu as déjà une partie en cours. Termine-la d\'abord.';
+    }
+    if (e.message.contains('INVALID_BET_RANGE')) {
+      return 'Mise hors limites (50–10 000 FCFA).';
+    }
+    if (e.message.contains('ACCOUNT_BLOCKED')) {
+      return 'Compte bloqué. Contacte le support.';
+    }
+    if (e.message.contains('DAILY_PAYOUT_CAP')) {
+      return 'Plafond de gains journalier atteint (100 000 FCFA).';
+    }
+    return e.message;
   }
 
   void _confirmExit() {
@@ -179,30 +248,64 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     }
   }
 
-  void _end({required bool won}) {
-    if (_gameEnded) return;
+  /// V2 : finit la session côté serveur (server-validated payout).
+  /// Reentrant via _gameEnded + _finishingSession guards.
+  Future<void> _end({required bool won}) async {
+    if (_gameEnded || _finishingSession) return;
     _gameEnded = true;
+    _finishingSession = true;
     _timer?.cancel();
-    if (won && !_isPractice) {
-      _service.addCoins(_bet * 2);
-      _service.saveBestScore(_state.score);
+    _inactivityTimer?.cancel();
+
+    final sessionId = _sessionId;
+    int payoutNet = 0;
+    String? errorMsg;
+
+    if (sessionId != null) {
+      try {
+        final res = await _service.finishSession(
+          sessionId: sessionId,
+          score: _state.score,
+          won: won,
+          moves: _moveHistory.map((m) => m.toJson()).toList(),
+        );
+        if (res != null) {
+          payoutNet = (res['paid'] as num?)?.toInt() ?? 0;
+        }
+      } on PostgrestException catch (e) {
+        errorMsg = _humanizeError(e);
+      } catch (e) {
+        errorMsg = 'Réseau : $e';
+      }
     }
-    context.read<PlayerProvider>().recordGameResult(
-      gameType: 'solitaire',
-      result: won ? 'win' : 'loss',
-      coinsChange:
-          won && !_isPractice ? _bet * 2 : (_isPractice ? 0 : -_bet),
-      score: _state.score,
-      isPractice: _isPractice,
-    );
+
+    if (won && !_isPractice && payoutNet > 0) {
+      // Best score via RPC sécurisée (plus de UPDATE direct)
+      unawaited(_service.saveBestScore(_state.score));
+    }
+
+    if (mounted) {
+      try {
+        context.read<PlayerProvider>().recordGameResult(
+          gameType: 'solitaire',
+          result: won ? 'win' : 'loss',
+          coinsChange: won && !_isPractice ? payoutNet : (_isPractice ? 0 : -_bet),
+          score: _state.score,
+          isPractice: _isPractice,
+        );
+      } catch (_) {}
+    }
+
+    if (!mounted) return;
     showDialog(
       context: context,
       barrierDismissible: false,
       builder: (_) => _EndDialog(
         won: won,
         score: _state.score,
-        prize: won && !_isPractice ? _bet * 2 : 0,
+        prize: payoutNet,
         isPractice: _isPractice,
+        errorMsg: errorMsg,
         onClose: () {
           Navigator.pop(context);
           Navigator.pop(context);
@@ -211,17 +314,33 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     );
   }
 
-  void _act(SolitaireState? s) {
-    if (s == null || _gameEnded) return;
-    _consecutiveAutoMoves = 0; // reset on any move
+  void _act(SolitaireState? s, {MoveAction? logged}) {
+    // V2 : bloqué tant que la session n'est pas confirmée serveur
+    if (s == null || _gameEnded || _bootstrapping || _finishingSession) return;
+    _consecutiveAutoMoves = 0;
     final prevScore = _state.score;
     setState(() => _state = s);
-    _startInactivityTimer(); // restart 8s timer after each move
+    if (logged != null) _moveHistory.add(logged);
+    _startInactivityTimer();
     if (s.score > prevScore) {
       _scoreAnimCtrl.forward(from: 0);
     }
-    if (s.isWon) _end(won: true);
+    if (s.isWon) {
+      _end(won: true);
+    } else if (s.isLost) {
+      // V2.1 : aucun coup possible → fin auto avec message clair
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text('Aucun coup possible. Partie terminée.'),
+          backgroundColor: const Color(0xFFEF4444),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      _end(won: false);
+    }
   }
+
+  int get _ms => DateTime.now().difference(_gameStart).inMilliseconds;
 
   String get _timeStr {
     final rem = _maxSec - _elapsed;
@@ -247,9 +366,61 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     return Scaffold(
       backgroundColor: const Color(0xFF0F172A),
       body: SafeArea(
-        child: Column(children: [
-          _topBar(),
-          Expanded(child: _board()),
+        child: Stack(children: [
+          Column(children: [
+            _topBar(),
+            Expanded(child: _board()),
+          ]),
+          // Overlay bootstrap : loader pendant placeBet
+          if (_bootstrapping || _finishingSession)
+            Container(
+              color: Colors.black.withValues(alpha: 0.55),
+              child: Center(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    CircularProgressIndicator(color: Color(0xFF22C55E)),
+                    const SizedBox(height: 16),
+                    Text(
+                      _bootstrapping
+                          ? 'Préparation de la partie...'
+                          : 'Validation du résultat...',
+                      style: TextStyle(color: Colors.white70, fontSize: 14),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          // État d'erreur bootstrap : la partie n'a pas démarré → bouton retour
+          if (_bootstrapError != null)
+            Container(
+              color: Colors.black.withValues(alpha: 0.85),
+              child: SafeArea(
+                child: Padding(
+                  padding: EdgeInsets.all(24),
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.error_outline,
+                          color: Color(0xFFEF4444), size: 64),
+                      SizedBox(height: 16),
+                      Text(_bootstrapError!,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(color: Colors.white, fontSize: 16)),
+                      SizedBox(height: 24),
+                      ElevatedButton(
+                        onPressed: () => Navigator.pop(context),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Color(0xFF22C55E),
+                          foregroundColor: Colors.white,
+                        ),
+                        child: Text('Retour'),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
         ]),
       ),
     );
@@ -401,7 +572,15 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
 
   // ── Stock ──────────────────────────────────────────────────
   Widget _stock(double w, double h) => GestureDetector(
-        onTap: () => _act(SolitaireLogic.drawFromStock(_state)),
+        onTap: () => _act(
+          SolitaireLogic.drawFromStock(_state),
+          logged: MoveAction(
+            type: _state.stock.isEmpty
+                ? MoveType.recycleStock
+                : MoveType.drawFromStock,
+            timestampMs: _ms,
+          ),
+        ),
         child: _slot(
           w, h,
           child: _state.stock.isNotEmpty
@@ -426,8 +605,13 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
         w, h,
         child: _state.waste.isNotEmpty
             ? _face(_state.waste.last, w, h,
-                onTap: () =>
-                    _act(SolitaireLogic.moveWasteToFoundation(_state)))
+                onTap: () => _act(
+                      SolitaireLogic.moveWasteToFoundation(_state),
+                      logged: MoveAction(
+                        type: MoveType.wasteToFoundation,
+                        timestampMs: _ms,
+                      ),
+                    ))
             : null,
       );
 
@@ -436,7 +620,10 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     final f = _state.foundations[idx];
     final suit = CardSuit.values[idx];
     return GestureDetector(
-      onTap: () => _act(SolitaireLogic.moveWasteToFoundation(_state)),
+      onTap: () => _act(
+        SolitaireLogic.moveWasteToFoundation(_state),
+        logged: MoveAction(type: MoveType.wasteToFoundation, timestampMs: _ms),
+      ),
       child: _slot(
         w, h,
         border: const Color(0xFF22C55E).withValues(alpha: 0.4),
@@ -462,7 +649,11 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     final cards = _state.tableau[col];
     if (cards.isEmpty) {
       return GestureDetector(
-        onTap: () => _act(SolitaireLogic.moveWasteToTableau(_state, col)),
+        onTap: () => _act(
+          SolitaireLogic.moveWasteToTableau(_state, col),
+          logged: MoveAction(
+              type: MoveType.wasteToTableau, dstCol: col, timestampMs: _ms),
+        ),
         child: _slot(w, h),
       );
     }
@@ -482,7 +673,12 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
                       final r = SolitaireLogic.moveTableauToFoundation(
                           _state, col);
                       if (r != null) {
-                        _act(r);
+                        _act(r,
+                            logged: MoveAction(
+                              type: MoveType.tableauToFoundation,
+                              srcCol: col,
+                              timestampMs: _ms,
+                            ));
                         return;
                       }
                     }
@@ -491,7 +687,14 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
                       final r = SolitaireLogic.moveTableauToTableau(
                           _state, col, i, d);
                       if (r != null) {
-                        _act(r);
+                        _act(r,
+                            logged: MoveAction(
+                              type: MoveType.tableauToTableau,
+                              srcCol: col,
+                              cardIdx: i,
+                              dstCol: d,
+                              timestampMs: _ms,
+                            ));
                         return;
                       }
                     }
@@ -749,6 +952,7 @@ class _EndDialog extends StatelessWidget {
   final bool won;
   final int score, prize;
   final bool isPractice;
+  final String? errorMsg;
   final VoidCallback onClose;
 
   const _EndDialog({
@@ -756,6 +960,7 @@ class _EndDialog extends StatelessWidget {
     required this.score,
     required this.prize,
     this.isPractice = false,
+    this.errorMsg,
     required this.onClose,
   });
 
@@ -804,6 +1009,28 @@ class _EndDialog extends StatelessWidget {
               ),
             ),
           ]),
+          // V2 : info commission sous le prize
+          SizedBox(height: 4),
+          Text(
+            'Commission 10% retenue',
+            style: TextStyle(color: Colors.white38, fontSize: 11),
+          ),
+        ],
+        if (errorMsg != null) ...[
+          SizedBox(height: 12),
+          Container(
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Color(0xFFEF4444).withValues(alpha: 0.15),
+              borderRadius: BorderRadius.circular(8),
+              border: Border.all(color: Color(0xFFEF4444).withValues(alpha: 0.4)),
+            ),
+            child: Text(
+              'Erreur paiement : $errorMsg\nContacte le support si non reçu.',
+              textAlign: TextAlign.center,
+              style: TextStyle(color: Color(0xFFEF4444), fontSize: 12),
+            ),
+          ),
         ],
         SizedBox(height: 22),
         SizedBox(

@@ -33,6 +33,11 @@ class ShorebirdService {
     }
   }
 
+  /// Alias web : pas de "cold start auto-apply" possible sur web
+  /// (Shorebird OTA n'existe pas, le rechargement passe par le navigateur).
+  /// On expose la meme API que mobile pour eviter de diverger main.dart.
+  Future<void> autoApplyOnColdStart() => checkForUpdate();
+
   /// Verifie et telecharge silencieusement un nouveau patch.
   /// Le patch sera applique au prochain redemarrage de l'app.
   Future<void> checkForUpdate() async {

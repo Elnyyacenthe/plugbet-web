@@ -2,10 +2,12 @@
 // LUDO V2 — Supabase Service (RPC + Realtime) - PRODUCTION
 // ============================================================
 
+import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../models/ludo_models.dart';
+import '../../services/game_audit_service.dart';
 
 class LudoV2Service {
   static final LudoV2Service instance = LudoV2Service._();
@@ -44,7 +46,22 @@ class LudoV2Service {
       'p_private': isPrivate,
     });
     debugPrint('[LUDO-V2] createRoom: $result');
-    return Map<String, dynamic>.from(result as Map);
+    final map = Map<String, dynamic>.from(result as Map);
+    // Audit
+    final roomId = map['room_id']?.toString();
+    if (roomId != null) {
+      unawaited(GameAuditService.instance.logGameStart(
+        gameId: roomId,
+        gameType: 'ludo_v2',
+        payload: {
+          'action': 'create_room',
+          'player_count': playerCount,
+          'bet': bet,
+          'is_private': isPrivate,
+        },
+      ));
+    }
+    return map;
   }
 
   Future<LudoV2Room?> getRoomByCode(String code) async {
@@ -61,7 +78,17 @@ class LudoV2Service {
       'p_code': code.toUpperCase(),
     });
     debugPrint('[LUDO-V2] joinRoom: $result');
-    return Map<String, dynamic>.from(result as Map);
+    final map = Map<String, dynamic>.from(result as Map);
+    final roomId = map['room_id']?.toString();
+    if (roomId != null) {
+      unawaited(GameAuditService.instance.logEvent(
+        gameId: roomId,
+        gameType: 'ludo_v2',
+        eventType: 'player_joined',
+        payload: {'code': code.toUpperCase()},
+      ));
+    }
+    return map;
   }
 
   Future<List<LudoV2Room>> getPublicRooms() async {
@@ -103,37 +130,64 @@ class LudoV2Service {
 
   /// Lance le dé. request_id pour idempotence sur retry.
   Future<int> rollDice(String gameId, {String? requestId}) async {
+    final reqId = requestId ?? _newRequestId();
     final result = await _client.rpc('ludo_v2_roll_dice', params: {
       'p_game_id': gameId,
-      'p_request_id': requestId ?? _newRequestId(),
+      'p_request_id': reqId,
     });
     debugPrint('[LUDO-V2] rollDice: $result');
-    return (result as num).toInt();
+    final value = (result as num).toInt();
+    unawaited(GameAuditService.instance.logDiceRoll(
+      gameId: gameId, gameType: 'ludo_v2', value: value,
+      extra: {'request_id': reqId},
+    ));
+    return value;
   }
 
   /// Joue un mouvement (idempotent via request_id).
   Future<LudoV2MoveResult> playMove(String gameId, int pawnIndex, {String? requestId}) async {
+    final reqId = requestId ?? _newRequestId();
     final result = await _client.rpc('ludo_v2_play_move', params: {
       'p_game_id': gameId,
       'p_pawn_index': pawnIndex,
-      'p_request_id': requestId ?? _newRequestId(),
+      'p_request_id': reqId,
     });
     debugPrint('[LUDO-V2] playMove: $result');
-    return LudoV2MoveResult.fromJson(Map<String, dynamic>.from(result as Map));
+    final moveResult = LudoV2MoveResult.fromJson(Map<String, dynamic>.from(result as Map));
+    unawaited(GameAuditService.instance.logMove(
+      gameId: gameId, gameType: 'ludo_v2',
+      moveData: {
+        'pawn_index': pawnIndex,
+        'request_id': reqId,
+        'result': Map<String, dynamic>.from(result),
+      },
+    ));
+    return moveResult;
   }
 
   Future<void> skipTurn(String gameId, {String? requestId}) async {
+    final reqId = requestId ?? _newRequestId();
     await _client.rpc('ludo_v2_skip_turn', params: {
       'p_game_id': gameId,
-      'p_request_id': requestId ?? _newRequestId(),
+      'p_request_id': reqId,
     });
+    unawaited(GameAuditService.instance.logEvent(
+      gameId: gameId, gameType: 'ludo_v2',
+      eventType: 'turn_skipped',
+      payload: {'request_id': reqId},
+    ));
   }
 
   Future<void> forfeit(String gameId, {String? requestId}) async {
+    final reqId = requestId ?? _newRequestId();
     await _client.rpc('ludo_v2_forfeit', params: {
       'p_game_id': gameId,
-      'p_request_id': requestId ?? _newRequestId(),
+      'p_request_id': reqId,
     });
+    unawaited(GameAuditService.instance.logGameEnd(
+      gameId: gameId, gameType: 'ludo_v2', won: false,
+      extra: {'reason': 'forfeit', 'request_id': reqId},
+    ));
   }
 
   /// Compte un timeout cote serveur. Retourne {forfeited, timeouts, max}.
@@ -149,7 +203,14 @@ class LudoV2Service {
     final r = await _client.rpc('ludo_v2_claim_idle_win', params: {
       'p_game_id': gameId,
     });
-    return Map<String, dynamic>.from(r as Map);
+    final map = Map<String, dynamic>.from(r as Map);
+    if (map['success'] == true) {
+      unawaited(GameAuditService.instance.logGameEnd(
+        gameId: gameId, gameType: 'ludo_v2', won: true,
+        extra: {'reason': 'opponent_idle_timeout'},
+      ));
+    }
+    return map;
   }
 
   // ── REALTIME ───────────────────────────────────────────
