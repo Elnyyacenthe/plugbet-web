@@ -95,8 +95,35 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
         MaterialPageRoute(builder: (_) => CheckersGameScreen(room: _room, myColor: myColor)));
   }
 
+  /// Le host quitte avant qu'un guest n'ait joint -> refund + cancel.
+  /// Idempotent cote serveur, donc safe a appeler plusieurs fois.
+  Future<bool> _cancelIfHostWaiting() async {
+    final uid = _service.currentUserId;
+    if (uid == null || uid != _room.hostId) return false;
+    if (_room.status != CheckersRoomStatus.waiting) return false;
+    if (_room.guestId != null) return false;
+    return await _service.cancelWaitingRoom(_room.id);
+  }
+
+  Future<void> _handleBack() async {
+    final cancelled = await _cancelIfHostWaiting();
+    if (!mounted) return;
+    if (cancelled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Partie annulee, mise remboursee')),
+      );
+    }
+    Navigator.pop(context);
+  }
+
   @override
   void dispose() {
+    if (!_navigated &&
+        _service.currentUserId == _room.hostId &&
+        _room.status == CheckersRoomStatus.waiting &&
+        _room.guestId == null) {
+      _service.cancelWaitingRoom(_room.id);
+    }
     _messageController.dispose();
     _scrollController.dispose();
     _messagesChannel?.unsubscribe();
@@ -107,7 +134,13 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
   @override
   Widget build(BuildContext context) {
     final myId = _service.currentUserId;
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: Scaffold(
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
         child: SafeArea(
@@ -121,7 +154,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                     IconButton(
                       icon: Icon(Icons.arrow_back_ios_new,
                           color: AppColors.textPrimary),
-                      onPressed: () => Navigator.pop(context),
+                      onPressed: _handleBack,
                     ),
                     Expanded(
                       child: Text('Lobby – Dames',
@@ -361,6 +394,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
             ),
           ),
         ),
+      ),
       ),
     );
   }

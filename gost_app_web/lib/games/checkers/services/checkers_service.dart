@@ -61,6 +61,21 @@ class CheckersService {
     }
   }
 
+  /// Annule une room en `waiting` sans guest et refund le host.
+  /// Idempotent cote serveur (status='cancelled' = no-op).
+  /// Retourne true si refund effectue (ou idempotent), false sur erreur.
+  Future<bool> cancelWaitingRoom(String roomId) async {
+    try {
+      final r = await _client.rpc('checkers_cancel_waiting_room', params: {
+        'p_room_id': roomId,
+      });
+      return r is Map && r['success'] == true;
+    } catch (e) {
+      debugPrint('[CHECKERS] cancelWaitingRoom error: $e');
+      return false;
+    }
+  }
+
   /// Rejoindre une room par ID via le treasury unifie.
   Future<CheckersRoom?> joinRoom(String roomId) async {
     final uid = currentUserId;
