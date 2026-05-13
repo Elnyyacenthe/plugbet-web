@@ -28,52 +28,34 @@
       z-index: 9999;
       transition: opacity 0.5s ease-out;
     }
-    #loading-overlay.done {
-      opacity: 0;
-      pointer-events: none;
-    }
+    #loading-overlay.done { opacity: 0; pointer-events: none; }
     .logo-text {
-      font-size: 42px;
-      font-weight: 900;
-      letter-spacing: -1px;
+      font-size: 42px; font-weight: 900; letter-spacing: -1px;
       background: linear-gradient(135deg, #00E676, #F0F2F5);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
       margin-bottom: 8px;
     }
     .logo-sub {
-      font-size: 12px;
-      color: #4A5568;
-      letter-spacing: 2px;
-      text-transform: uppercase;
-      margin-bottom: 48px;
+      font-size: 12px; color: #4A5568; letter-spacing: 2px;
+      text-transform: uppercase; margin-bottom: 48px;
     }
     .spinner {
       width: 48px; height: 48px;
       border: 3px solid rgba(0, 230, 118, 0.15);
-      border-top-color: #00E676;
-      border-radius: 50%;
+      border-top-color: #00E676; border-radius: 50%;
       animation: spin 0.9s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .loading-text {
-      color: #8E99A4;
-      font-size: 13px;
-      margin-top: 24px;
-      font-weight: 500;
-    }
+    .loading-text { color: #8E99A4; font-size: 13px; margin-top: 24px; font-weight: 500; }
     .progress-bar {
-      margin-top: 20px;
-      width: 200px; height: 3px;
+      margin-top: 20px; width: 200px; height: 3px;
       background: rgba(255, 255, 255, 0.05);
-      border-radius: 2px;
-      overflow: hidden;
+      border-radius: 2px; overflow: hidden;
     }
     .progress-fill {
       height: 100%;
       background: linear-gradient(90deg, #00E676, #FFD600);
-      width: 30%;
-      animation: progress 2s ease-in-out infinite;
+      width: 30%; animation: progress 2s ease-in-out infinite;
     }
     @keyframes progress {
       0%   { margin-left: -30%; }
