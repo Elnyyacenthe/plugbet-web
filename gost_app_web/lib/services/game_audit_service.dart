@@ -172,32 +172,4 @@ class GameAuditService {
         payload: {'reason': reason ?? 'unknown', ...?extra},
       );
 
-  /// Wrapper idempotent autour des paiements de gain.
-  /// Si requestId deja traite cote serveur, retourne le resultat memorise
-  /// au lieu de re-payer (anti double-paiement sur retry reseau).
-  Future<Map<String, dynamic>?> safeApplyPayout({
-    required String requestId,
-    required String userId,
-    required int amount,
-    required String gameType,
-    required String gameId,
-    String description = 'Gain',
-  }) async {
-    try {
-      final result = await _client.rpc('safe_apply_payout', params: {
-        'p_request_id': requestId,
-        'p_user_id': userId,
-        'p_amount': amount,
-        'p_game_type': gameType,
-        'p_game_id': gameId,
-        'p_description': description,
-      });
-      return result as Map<String, dynamic>?;
-    } catch (e) {
-      if (kDebugMode) {
-        debugPrint('[GameAudit] safeApplyPayout failed: $e');
-      }
-      return null;
-    }
-  }
 }

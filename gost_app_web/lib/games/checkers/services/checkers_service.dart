@@ -230,10 +230,11 @@ class CheckersService {
     CheckersGameState? finalState,
   }) async {
     if (winnerId != null) {
+      // S3 : p_final_state retire (le serveur ne fait plus confiance au state
+      // client). Cette RPC n'accepte que le forfait (caller != winner).
       await _client.rpc('checkers_finish_game', params: {
         'p_room_id': roomId,
         'p_winner_id': winnerId,
-        if (finalState != null) 'p_final_state': finalState.toJson(),
       });
       unawaited(GameAuditService.instance.logGameEnd(
         gameId: roomId, gameType: 'checkers', won: true,
