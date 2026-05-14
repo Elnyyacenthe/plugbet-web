@@ -84,6 +84,57 @@
         setTimeout(() => overlay.remove(), 500);
       }
     });
+
+    // ============================================================
+    // Force la prise en compte des nouvelles versions de l'app
+    // ============================================================
+    // Probleme classique Flutter web : le service worker garde
+    // l'ancienne version en cache. Le code ci-dessous :
+    //   1. Detecte quand une nouvelle version est installee
+    //   2. Force le SW a prendre le controle immediatement
+    //   3. Recharge la page pour appliquer la nouvelle version
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        // Un nouveau SW vient de prendre le controle -> reload
+        if (!window.__plugbet_reloading) {
+          window.__plugbet_reloading = true;
+          console.log('[Plugbet] Nouvelle version detectee, rechargement...');
+          window.location.reload();
+        }
+      });
+
+      navigator.serviceWorker.ready.then(reg => {
+        // Force le check au demarrage (au cas ou l'utilisateur ouvre
+        // l'app depuis un onglet inactif depuis longtemps)
+        reg.update().catch(() => {});
+
+        // Si un SW est en attente d'activation, force-l'activer
+        if (reg.waiting) {
+          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+        }
+
+        // Quand une nouvelle version arrive, activer immediatement
+        reg.addEventListener('updatefound', () => {
+          const newWorker = reg.installing;
+          if (!newWorker) return;
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              // Nouvelle version installee + SW deja actif -> on switch
+              newWorker.postMessage({ type: 'SKIP_WAITING' });
+            }
+          });
+        });
+      });
+
+      // Re-check periodique toutes les 60s tant que l'onglet est visible
+      setInterval(() => {
+        if (document.visibilityState === 'visible') {
+          navigator.serviceWorker.getRegistration().then(reg => {
+            if (reg) reg.update().catch(() => {});
+          });
+        }
+      }, 60000);
+    }
   </script>
 </body>
 </html>
