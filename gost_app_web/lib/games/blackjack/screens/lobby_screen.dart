@@ -33,8 +33,45 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
     _subscribe();
   }
 
+  bool _navigatedToGame = false;
+
+  /// Si le host quitte avant qu'un autre joueur n'ait join, on cancel + refund.
+  Future<bool> _cancelIfHostWaiting() async {
+    if (_room == null) return false;
+    final uid = _svc.currentUserId;
+    if (uid == null || uid != _room!.hostId) return false;
+    if (_room!.status != 'waiting') return false;
+    // Verifier qu'il n'y a pas d'autres joueurs
+    final otherPlayers = _players.where((p) => p['user_id'] != uid);
+    if (otherPlayers.isNotEmpty) return false;
+    return await _svc.cancelWaitingRoom(widget.roomId);
+  }
+
+  Future<void> _handleBack() async {
+    final cancelled = await _cancelIfHostWaiting();
+    if (!mounted) return;
+    if (cancelled) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Partie annulee, mise remboursee')),
+      );
+    }
+    Navigator.pop(context);
+  }
+
   @override
   void dispose() {
+    // Fire-and-forget : si l'utilisateur quitte sans bouton back (kill app,
+    // geste systeme), on tente quand meme le refund. Le serveur est
+    // idempotent donc safe.
+    if (!_navigatedToGame && _room != null) {
+      final uid = _svc.currentUserId;
+      if (uid != null &&
+          uid == _room!.hostId &&
+          _room!.status == 'waiting' &&
+          _players.where((p) => p['user_id'] != uid).isEmpty) {
+        _svc.cancelWaitingRoom(widget.roomId);
+      }
+    }
     if (_roomChannel != null) _svc.unsubscribe(_roomChannel!);
     if (_playersChannel != null) _svc.unsubscribe(_playersChannel!);
     super.dispose();
@@ -55,6 +92,7 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
     _roomChannel = _svc.subscribeRoom(widget.roomId, (room) {
       setState(() => _room = room);
       if (room.status == 'playing' && room.gameId != null) {
+        _navigatedToGame = true;
         Navigator.pushReplacement(context, MaterialPageRoute(
           builder: (_) => BJGameScreen(gameId: room.gameId!),
         ));
@@ -86,6 +124,7 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
       if (allReady && mounted) {
         final gameId = await _svc.startGame(widget.roomId);
         if (gameId != null && mounted) {
+          _navigatedToGame = true;
           Navigator.pushReplacement(context, MaterialPageRoute(
             builder: (_) => BJGameScreen(gameId: gameId),
           ));
@@ -106,10 +145,20 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
     final allReady = _players.length == _room!.playerCount &&
         _players.every((p) => p['is_ready'] as bool? ?? false);
 
-    return Scaffold(
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        await _handleBack();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new),
+          onPressed: _handleBack,
+        ),
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -187,6 +236,7 @@ class _BJLobbyScreenState extends State<BJLobbyScreen> {
             ),
           ],
         ),
+      ),
       ),
     );
   }

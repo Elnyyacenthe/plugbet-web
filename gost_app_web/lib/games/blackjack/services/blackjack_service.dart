@@ -42,6 +42,20 @@ class BlackjackService {
     }
   }
 
+  /// Annule une room en `waiting` sans autres joueurs et refund le host.
+  /// Idempotent cote serveur. Retourne true si refund effectue ou idempotent.
+  Future<bool> cancelWaitingRoom(String roomId) async {
+    try {
+      final r = await _client.rpc('bj_cancel_waiting_room', params: {
+        'p_room_id': roomId,
+      });
+      return r is Map && r['success'] == true;
+    } catch (e) {
+      debugPrint('[BJ] cancelWaitingRoom error: $e');
+      return false;
+    }
+  }
+
   /// Pre-check : recupere une room par son code pour valider le solde avant join.
   Future<BJRoom?> getRoomByCode(String code) async {
     try {

@@ -100,6 +100,7 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
   }
 
   void _showWaiting(String roomId, String code) {
+    bool gameStarted = false;
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -107,14 +108,34 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
         // S'abonner aux changements de la room
         final ch = _svc.subscribeRoom(roomId, (room) {
           if (room.status == 'playing' && room.gameId != null) {
+            gameStarted = true;
             Navigator.pop(ctx);
             Navigator.push(context, MaterialPageRoute(
               builder: (_) => CFGameScreen(gameId: room.gameId!)));
           }
         });
 
+        Future<void> handleCancel() async {
+          _svc.unsubscribe(ch);
+          // Refund + cancel cote serveur. Idempotent : safe meme si la game vient
+          // de demarrer (status != 'waiting' -> serveur rejette, on log).
+          if (!gameStarted) {
+            final ok = await _svc.cancelWaitingRoom(roomId);
+            if (ok && context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text('Partie annulee, mise remboursee')),
+              );
+            }
+          }
+          if (ctx.mounted) Navigator.pop(ctx);
+        }
+
         return PopScope(
-          onPopInvokedWithResult: (didPop, _) { _svc.unsubscribe(ch); },
+          canPop: false,
+          onPopInvokedWithResult: (didPop, _) async {
+            if (didPop) return;
+            await handleCancel();
+          },
           child: AlertDialog(
             backgroundColor: AppColors.bgCard,
             shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -130,7 +151,7 @@ class _CoinflipScreenState extends State<CoinflipScreen> {
             ]),
             actions: [
               TextButton(
-                onPressed: () { _svc.unsubscribe(ch); Navigator.pop(ctx); },
+                onPressed: handleCancel,
                 child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.neonRed))),
             ],
           ),

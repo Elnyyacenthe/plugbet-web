@@ -15,11 +15,26 @@ class CoinflipService {
   SupabaseClient get _client => Supabase.instance.client;
   String? get currentUserId => _client.auth.currentUser?.id;
 
+  /// Passe par la RPC serveur qui refund les rooms zombies au lieu de
+  /// DELETE direct (l'ancien code supprimait sans rembourser !).
   Future<void> cleanupStaleRooms() async {
     try {
-      await _client.from('coinflip_rooms').delete().eq('status', 'waiting')
-          .lt('created_at', DateTime.now().subtract(const Duration(hours: 1)).toIso8601String());
+      await _client.rpc('coinflip_cleanup_stale_rooms');
     } catch (_) {}
+  }
+
+  /// Annule une room en `waiting` et refund le host.
+  /// Idempotent cote serveur. Retourne true sur succes ou idempotent.
+  Future<bool> cancelWaitingRoom(String roomId) async {
+    try {
+      final r = await _client.rpc('cf_cancel_waiting_room', params: {
+        'p_room_id': roomId,
+      });
+      return r is Map && r['success'] == true;
+    } catch (e) {
+      debugPrint('[CF] cancelWaitingRoom error: $e');
+      return false;
+    }
   }
 
   Future<Map<String, dynamic>?> createRoom({int betAmount = 100}) async {
