@@ -75,40 +75,41 @@
 
   <script>
     // ============================================================
-    // FORCE CLEAR CACHE — actif jusqu'au 2026-05-21 (1 semaine)
+    // CLEAR CACHE A CHAQUE CHARGEMENT (actif jusqu'au 2026-05-21)
     // ============================================================
-    // S'execute UNE seule fois par navigateur. Apres la date limite,
-    // le bloc se desactive automatiquement (touche zero perf).
-    // Cible : forcer les users coinces sur l'ancien SW / cache a
-    // recuperer la derniere version.
+    // A chaque page load :
+    //   1. Unregister tous les service workers (sauf le sien si existe)
+    //   2. caches.delete() pour toutes les CacheStorage
+    // Premier load : si SW present, on redirige vers /clear-cache.html
+    // (qui clear + reload). Sinon : juste clear les caches en async.
     (function() {
-      var FORCE_CLEAR_UNTIL = '2026-05-21';
-      var DEPLOY_VERSION = '2026-05-14';
-      var today = new Date().toISOString().slice(0, 10);
-      if (today >= FORCE_CLEAR_UNTIL) return;
+      var DEADLINE = '2026-05-21';
+      if (new Date().toISOString().slice(0, 10) >= DEADLINE) return;
+
       try {
-        var flagKey = 'plugbet_force_clear';
-        if (localStorage.getItem(flagKey) === DEPLOY_VERSION) return;
-        localStorage.setItem(flagKey, DEPLOY_VERSION);
-        console.log('[Plugbet] Force-clear cache once for deploy', DEPLOY_VERSION);
-        (async function() {
-          try {
-            if ('serviceWorker' in navigator) {
-              var regs = await navigator.serviceWorker.getRegistrations();
-              await Promise.all(regs.map(function(r) { return r.unregister(); }));
+        // 1. Si Service Worker registered ET pas encore traite dans cette
+        //    session, redirect vers /clear-cache.html (qui fait un clear
+        //    complet + reload). Sinon on est dans une boucle si on essaie
+        //    de unregister puis reload ici.
+        if ('serviceWorker' in navigator && !sessionStorage.getItem('plugbet_sw_cleared')) {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            if (regs.length > 0) {
+              sessionStorage.setItem('plugbet_sw_cleared', '1');
+              window.location.replace('/clear-cache.html');
             }
-            if ('caches' in window) {
-              var keys = await caches.keys();
-              await Promise.all(keys.map(function(k) { return caches.delete(k); }));
-            }
-          } catch (e) {
-            console.warn('[Plugbet] Force-clear partial failure:', e);
-          } finally {
-            window.location.reload();
-          }
-        })();
+          }).catch(function(){});
+        }
+
+        // 2. Toujours clear les CacheStorage (sans reload, non bloquant).
+        //    Ca s'execute a chaque load. Pour les users sans SW c'est
+        //    instant et invisible.
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
+          }).catch(function(){});
+        }
       } catch (e) {
-        console.warn('[Plugbet] Force-clear init failed:', e);
+        console.warn('[Plugbet] Clear init failed:', e);
       }
     })();
   </script>
