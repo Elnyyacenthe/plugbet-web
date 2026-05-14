@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>Mise à jour Plugbet</title>
+  <style>
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: radial-gradient(ellipse at center, #0E1A2E 0%, #040810 100%);
+      color: #F0F2F5;
+      min-height: 100vh;
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      padding: 24px; text-align: center;
+    }
+    .logo {
+      font-size: 42px; font-weight: 900; letter-spacing: -1px;
+      background: linear-gradient(135deg, #00E676, #F0F2F5);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+      margin-bottom: 24px;
+    }
+    h1 { font-size: 22px; font-weight: 700; margin-bottom: 16px; }
+    p { color: #8E99A4; font-size: 14px; line-height: 1.5; max-width: 480px; margin-bottom: 8px; }
+    .spinner {
+      width: 48px; height: 48px;
+      border: 3px solid rgba(0, 230, 118, 0.15);
+      border-top-color: #00E676; border-radius: 50%;
+      margin: 32px auto;
+      animation: spin 0.9s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #status {
+      margin-top: 16px;
+      font-family: monospace;
+      font-size: 12px;
+      color: #4A5568;
+      max-width: 500px;
+      text-align: left;
+      background: rgba(0,0,0,0.3);
+      padding: 12px;
+      border-radius: 8px;
+      max-height: 240px;
+      overflow-y: auto;
+    }
+    .ok { color: #00E676; }
+    .err { color: #FF1744; }
+    .info { color: #FFD600; }
+    a.btn {
+      display: inline-block;
+      margin-top: 24px;
+      padding: 12px 24px;
+      background: #00E676;
+      color: #000;
+      text-decoration: none;
+      border-radius: 12px;
+      font-weight: 800;
+      font-size: 14px;
+    }
+  </style>
+</head>
+<body>
+  <div class="logo">Plugbet</div>
+  <h1>Mise à jour de l'application</h1>
+  <p>Nettoyage du cache en cours, vous serez redirigé automatiquement vers la nouvelle version.</p>
+  <div class="spinner" id="spin"></div>
+  <div id="status"></div>
+  <a id="manualLink" class="btn" href="/app/?ts=" style="display:none">Ouvrir l'application</a>
+
+  <script>
+    var log = function(msg, cls) {
+      var el = document.getElementById('status');
+      var line = document.createElement('div');
+      if (cls) line.className = cls;
+      line.textContent = '[' + new Date().toISOString().slice(11, 19) + '] ' + msg;
+      el.appendChild(line);
+      console.log('[Plugbet Reset]', msg);
+    };
+
+    (async function() {
+      log('Demarrage du reset...', 'info');
+
+      // 1. Unregister TOUS les service workers
+      if ('serviceWorker' in navigator) {
+        try {
+          var regs = await navigator.serviceWorker.getRegistrations();
+          log('Service workers trouves : ' + regs.length, 'info');
+          for (var i = 0; i < regs.length; i++) {
+            try {
+              await regs[i].unregister();
+              log('Unregister OK : ' + (regs[i].scope || 'unknown'), 'ok');
+            } catch (e) {
+              log('Unregister FAIL : ' + e.message, 'err');
+            }
+          }
+        } catch (e) {
+          log('getRegistrations FAIL : ' + e.message, 'err');
+        }
+      } else {
+        log('Service Worker API non disponible', 'info');
+      }
+
+      // 2. Clear toutes les CacheStorage
+      if ('caches' in window) {
+        try {
+          var keys = await caches.keys();
+          log('Caches trouves : ' + keys.length, 'info');
+          for (var j = 0; j < keys.length; j++) {
+            try {
+              await caches.delete(keys[j]);
+              log('Cache supprime : ' + keys[j], 'ok');
+            } catch (e) {
+              log('Cache delete FAIL ' + keys[j] + ' : ' + e.message, 'err');
+            }
+          }
+        } catch (e) {
+          log('caches.keys() FAIL : ' + e.message, 'err');
+        }
+      }
+
+      // 3. Optionnel : clear le localStorage et sessionStorage (sauf flag de reset)
+      try {
+        localStorage.removeItem('plugbet_force_clear');
+        log('localStorage flag de force-clear retire', 'ok');
+      } catch (e) {}
+
+      // 4. Redirection vers /app/ avec un timestamp pour bypasser tout cache restant
+      var ts = Date.now();
+      log('Redirection dans 1 seconde vers /app/?ts=' + ts, 'info');
+      document.getElementById('manualLink').href = '/app/?ts=' + ts;
+      document.getElementById('manualLink').style.display = 'inline-block';
+
+      setTimeout(function() {
+        // Hard reload via location.replace (history non polluee)
+        window.location.replace('/app/?ts=' + ts);
+      }, 1500);
+    })();
+  </script>
+</body>
+</html>
