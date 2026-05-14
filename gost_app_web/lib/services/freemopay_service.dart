@@ -11,6 +11,7 @@
 // ============================================================
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -98,16 +99,43 @@ class FreemopayService {
     required String payer,
     required int amount,
   }) async {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) {
+      return {'success': false, 'message': 'Vous devez être connecté.'};
+    }
+
+    // ============================================================
+    // WEB : passe par l'Edge Function (proxy serveur) pour eviter
+    // les blocages CORS. Sur mobile (natif), on reste sur l'appel direct.
+    // ============================================================
+    if (kIsWeb) {
+      try {
+        final res = await _client.functions.invoke(
+          'freemopay_initiate_deposit',
+          body: {'amount': amount, 'payer': payer},
+        );
+        final data = res.data;
+        if (data is Map) {
+          return Map<String, dynamic>.from(data);
+        }
+        return {'success': false, 'message': 'Reponse serveur invalide.'};
+      } catch (e, s) {
+        _log.error('initiateDeposit (web edge function)', e, s);
+        return {
+          'success': false,
+          'message': 'Erreur reseau. Verifiez votre connexion.',
+        };
+      }
+    }
+
+    // ============================================================
+    // MOBILE : appel direct FreemoPay (pas de CORS)
+    // ============================================================
     if (!await loadConfig()) {
       return {
         'success': false,
         'message': 'Configuration Freemopay manquante. Contactez le support.',
       };
-    }
-
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) {
-      return {'success': false, 'message': 'Vous devez être connecté.'};
     }
 
     // Générer un ID unique pour cette transaction
@@ -189,16 +217,18 @@ class FreemopayService {
     required String receiver,
     required int amount,
   }) async {
-    if (!await loadConfig()) {
+    final uid = _client.auth.currentUser?.id;
+    if (uid == null) {
+      return {'success': false, 'message': 'Vous devez être connecté.'};
+    }
+
+    // Sur mobile : besoin de loadConfig pour le POST direct
+    // Sur web : pas besoin, l'Edge Function lit la config server-side
+    if (!kIsWeb && !await loadConfig()) {
       return {
         'success': false,
         'message': 'Configuration Freemopay manquante. Contactez le support.',
       };
-    }
-
-    final uid = _client.auth.currentUser?.id;
-    if (uid == null) {
-      return {'success': false, 'message': 'Vous devez être connecté.'};
     }
 
     // Verification anti-fraude + limites de retrait
@@ -247,6 +277,38 @@ class FreemopayService {
     }
 
     // 2. APPEL FREEMOPAY
+    // Sur web : passe par l'Edge Function (CORS)
+    // Sur mobile : POST direct
+    if (kIsWeb) {
+      try {
+        final res = await _client.functions.invoke(
+          'freemopay_initiate_withdrawal',
+          body: {
+            'amount': amount,
+            'receiver': receiver,
+            'externalId': externalId,
+          },
+        );
+        final data = res.data;
+        if (data is Map && data['success'] == true) {
+          return Map<String, dynamic>.from(data);
+        }
+        // Echec serveur -> refund
+        final msg = (data is Map ? data['message'] : null) as String? ??
+            'Erreur lors de l\'initialisation du retrait. Solde restauré.';
+        _log.warn('initiateWithdrawal (web) refused: $data');
+        await _refundWithdrawal(amount, externalId, 'freemopay_init_failed_web');
+        return {'success': false, 'message': msg};
+      } catch (e, s) {
+        _log.error('initiateWithdrawal (web edge function)', e, s);
+        await _refundWithdrawal(amount, externalId, 'network_error_web');
+        return {
+          'success': false,
+          'message': 'Erreur reseau. Solde restaure, reessayez plus tard.',
+        };
+      }
+    }
+
     try {
       final response = await http.post(
         Uri.parse('$_baseUrl/payment/direct-withdraw'),
