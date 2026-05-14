@@ -103,29 +103,27 @@
 
   <script>
     // ============================================================
-    // AUTO-DETECT STALE CACHE — actif jusqu'au 2026-05-21
+    // CLEAR CACHE A CHAQUE CHARGEMENT (actif jusqu'au 2026-05-21)
     // ============================================================
-    // Si l'utilisateur a un Service Worker residuel pour /app/ ou
-    // des caches Plugbet en cache navigateur, on le redirige une fois
-    // vers /clear-cache.html qui clear tout puis renvoie sur /app/.
-    // Transparent pour les users fresh.
     (function() {
       var DEADLINE = '2026-05-21';
       if (new Date().toISOString().slice(0, 10) >= DEADLINE) return;
-      if (sessionStorage.getItem('plugbet_redirected') === '1') return;
       try {
-        if (!('serviceWorker' in navigator)) return;
-        Promise.all([
-          navigator.serviceWorker.getRegistrations().catch(function(){return [];}),
-          ('caches' in window ? caches.keys().catch(function(){return [];}) : [])
-        ]).then(function(results) {
-          var swCount = results[0].length;
-          var cacheCount = results[1].length;
-          if (swCount === 0 && cacheCount === 0) return;
-          sessionStorage.setItem('plugbet_redirected', '1');
-          console.log('[Plugbet] Stale state detected (', swCount, 'SW,', cacheCount, 'caches). Redirecting to clear-cache.');
-          window.location.replace('/clear-cache.html');
-        }).catch(function(e) { console.warn('[Plugbet] auto-clear check failed:', e); });
+        // 1. SW present + premiere fois cette session -> redirect clear-cache.html
+        if ('serviceWorker' in navigator && sessionStorage.getItem('plugbet_sw_cleared') !== '1') {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            if (regs.length > 0) {
+              sessionStorage.setItem('plugbet_sw_cleared', '1');
+              window.location.replace('/clear-cache.html');
+            }
+          }).catch(function(){});
+        }
+        // 2. Toujours : caches.delete() en background, a chaque load
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
+          }).catch(function(){});
+        }
       } catch (e) {}
     })();
   </script>

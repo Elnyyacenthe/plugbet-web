@@ -15,21 +15,24 @@
     .back { display: inline-block; margin-bottom: 24px; color: #448AFF; text-decoration: none; font-weight: 700; }
   </style>
   <script>
-    // Auto-detect stale cache (actif jusqu'au 2026-05-21)
+    // Clear cache a chaque chargement (actif jusqu'au 2026-05-21)
     (function() {
       var DEADLINE = '2026-05-21';
       if (new Date().toISOString().slice(0, 10) >= DEADLINE) return;
-      if (sessionStorage.getItem('plugbet_redirected') === '1') return;
       try {
-        if (!('serviceWorker' in navigator)) return;
-        Promise.all([
-          navigator.serviceWorker.getRegistrations().catch(function(){return [];}),
-          ('caches' in window ? caches.keys().catch(function(){return [];}) : [])
-        ]).then(function(r) {
-          if (r[0].length === 0 && r[1].length === 0) return;
-          sessionStorage.setItem('plugbet_redirected', '1');
-          window.location.replace('/clear-cache.html');
-        }).catch(function(){});
+        if ('serviceWorker' in navigator && sessionStorage.getItem('plugbet_sw_cleared') !== '1') {
+          navigator.serviceWorker.getRegistrations().then(function(regs) {
+            if (regs.length > 0) {
+              sessionStorage.setItem('plugbet_sw_cleared', '1');
+              window.location.replace('/clear-cache.html');
+            }
+          }).catch(function(){});
+        }
+        if ('caches' in window) {
+          caches.keys().then(function(keys) {
+            keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
+          }).catch(function(){});
+        }
       } catch (e) {}
     })();
   </script>
