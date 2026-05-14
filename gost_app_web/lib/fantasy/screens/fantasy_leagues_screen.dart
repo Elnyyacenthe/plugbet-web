@@ -556,7 +556,6 @@ class _LeagueStandingsScreenState extends State<_LeagueStandingsScreen> {
   List<Map<String, dynamic>> _standings = [];
   Map<String, dynamic> _league = {};
   bool _loading = true;
-  bool _closing = false;
 
   String get _leagueId => _league['id'] as String;
   String get _leagueName => _league['name'] as String? ?? 'Ligue';
@@ -609,103 +608,9 @@ class _LeagueStandingsScreenState extends State<_LeagueStandingsScreen> {
   bool get _isCreator =>
       Supabase.instance.client.auth.currentUser?.id == _creatorId;
 
-  Future<void> _confirmAndClose() async {
-    if (_standings.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Aucun membre dans la ligue'),
-        backgroundColor: Colors.red));
-      return;
-    }
-
-    final dist = _distribution;
-    final pot = _pot;
-
-    // Preview des gains nets (90% du gross)
-    final preview = <Widget>[];
-    for (var i = 0; i < dist.length && i < _standings.length; i++) {
-      final m = _standings[i];
-      final profile = m['user_profiles'] as Map<String, dynamic>?;
-      final name = profile?['username'] as String? ??
-          m['team_name'] as String? ?? '—';
-      final pct = dist[i];
-      final gross = (pot * pct / 100).floor();
-      final net = (gross * 0.90).floor();
-      final medal = i == 0 ? '🥇' : i == 1 ? '🥈' : i == 2 ? '🥉' : '🏆';
-      preview.add(Padding(
-        padding: EdgeInsets.symmetric(vertical: 4),
-        child: Text('$medal $name : $pct% → $net coins (sur $gross brut)',
-            style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
-      ));
-    }
-
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        backgroundColor: AppColors.bgCard,
-        title: Text('Clôturer la ligue ?',
-            style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800)),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Pot : $pot coins',
-                style: TextStyle(color: AppColors.neonYellow,
-                    fontWeight: FontWeight.w700, fontSize: 14)),
-            SizedBox(height: 8),
-            Text('Distribution :',
-                style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
-            SizedBox(height: 4),
-            ...preview,
-            SizedBox(height: 12),
-            Text('La caisse prend 10% sur chaque gain.',
-                style: TextStyle(color: AppColors.textMuted,
-                    fontSize: 11, fontStyle: FontStyle.italic)),
-            SizedBox(height: 8),
-            Text('Cette action est irréversible.',
-                style: TextStyle(color: Colors.redAccent, fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-          ],
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx, false),
-            child: Text(AppLocalizations.of(context)!.commonCancel,
-                style: TextStyle(color: AppColors.textSecondary)),
-          ),
-          ElevatedButton(
-            style: ElevatedButton.styleFrom(backgroundColor: AppColors.neonGreen),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text('Clôturer & distribuer',
-                style: TextStyle(color: Colors.black, fontWeight: FontWeight.w700)),
-          ),
-        ],
-      ),
-    );
-
-    if (ok != true || !mounted) return;
-    setState(() => _closing = true);
-    try {
-      final res = await FantasyService.instance.finishLeague(leagueId: _leagueId);
-      if (!mounted) return;
-      if (res['success'] == true) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Ligue clôturée — gains distribués'),
-          backgroundColor: AppColors.neonGreen));
-        await _load();
-      } else {
-        throw FantasyException(FantasyError.serverError,
-            res['error']?.toString() ?? 'Erreur');
-      }
-    } on FantasyException catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(e.message), backgroundColor: Colors.red),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _closing = false);
-    }
-  }
+  // _confirmAndClose retire : la cloture est AUTOMATIQUE via cron
+  // (fantasy_auto_close_stale, toutes les 10 min).
+  // Cf. supabase/migrations/security_fix_14_fantasy_auto_close.sql
 
   Widget _buildHeader() {
     final isFinished = _status == 'finished';
@@ -771,37 +676,35 @@ class _LeagueStandingsScreenState extends State<_LeagueStandingsScreen> {
               ),
             ]),
           ],
-          if (_isCreator && !isFinished && _pot > 0) ...[
+          if (!isFinished && _endDate != null) ...[
+            // FPL specialisee : la cloture est AUTOMATIQUE (cron toutes
+            // les 10 min). Aucun bouton n'est affiche, on indique juste
+            // quand le payout aura lieu.
             SizedBox(height: 12),
-            SizedBox(
+            Container(
               width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed:
-                    (_closing || !_canClose) ? null : _confirmAndClose,
-                icon: _closing
-                    ? SizedBox(
-                        width: 16, height: 16,
-                        child: CircularProgressIndicator(
-                            color: Colors.black, strokeWidth: 2))
-                    : Icon(
-                        _canClose ? Icons.flag : Icons.lock_clock,
-                        color: _canClose ? Colors.black : Colors.white54),
-                label: Text(
-                    _canClose
-                        ? 'Clôturer la ligue'
-                        : 'Clôture verrouillée jusqu\'au ${_fmtDate(_endDate!)}',
-                    style: TextStyle(
-                        color: _canClose ? Colors.black : Colors.white54,
-                        fontWeight: FontWeight.w800)),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: _canClose
-                      ? AppColors.neonGreen
-                      : AppColors.divider.withValues(alpha: 0.4),
-                  disabledBackgroundColor:
-                      AppColors.divider.withValues(alpha: 0.4),
-                  padding: EdgeInsets.symmetric(vertical: 12),
-                ),
+              padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+              decoration: BoxDecoration(
+                color: AppColors.divider.withValues(alpha: 0.15),
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
               ),
+              child: Row(children: [
+                Icon(Icons.auto_awesome, color: AppColors.neonYellow, size: 16),
+                SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    _canClose
+                        ? 'Distribution automatique en cours... (le gagnant est crédité sous 10 min)'
+                        : 'Distribution automatique le ${_fmtDate(_endDate!)}',
+                    style: TextStyle(
+                      color: AppColors.textSecondary,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ]),
             ),
           ],
         ],
