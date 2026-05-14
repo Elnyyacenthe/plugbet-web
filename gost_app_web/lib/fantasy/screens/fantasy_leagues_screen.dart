@@ -233,7 +233,14 @@ class _FantasyLeaguesScreenState extends State<FantasyLeaguesScreen> {
       return;
     }
     final fee = int.tryParse(feeCtrl.text.trim()) ?? 0;
-    final entryFee = fee < 0 ? 0 : fee;
+    // FPL = argent reel : minimum 100 FCFA d'entry fee
+    if (fee < 100) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text('Mise minimum : 100 FCFA (argent reel obligatoire)'),
+        backgroundColor: Colors.red));
+      return;
+    }
+    final entryFee = fee;
     // Check solde avant de creer la ligue (l'entry fee est deduite cote serveur)
     final wallet = context.read<WalletProvider>();
     if (wallet.coins < entryFee) {

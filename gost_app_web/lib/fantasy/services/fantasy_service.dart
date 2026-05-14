@@ -470,10 +470,16 @@ class FantasyService {
     required String name,
     required bool isPrivate,
     required DateTime endDate,
-    int entryFee = 0,
+    int entryFee = 100,
     List<int> prizeDistribution = const [60, 30, 10],
   }) async {
     final uid = _requireUid();
+
+    // FPL = argent reel : entry_fee >= 100 FCFA (idem check SQL)
+    if (entryFee < 100) {
+      throw FantasyException(FantasyError.serverError,
+          'Mise minimum 100 FCFA (argent reel obligatoire).');
+    }
 
     // Validation distribution
     final sum = prizeDistribution.fold<int>(0, (a, b) => a + b);
