@@ -21,9 +21,9 @@ import '../services/aviator_service.dart';
 // Durees fixes du round (en ms)
 // NOTE: si tu changes ces valeurs, MAJ aussi aviator_multiplayer.sql
 // (les RPC aviator_place_bet / aviator_cashout ont les memes constantes hardcodees)
-const int _kCountdownMs = 5000;  // 5s de countdown (mises autorisees)
+const int _kCountdownMs = 10000; // 10s de countdown (mises autorisees)
 const int _kMaxFlyMs    = 10000; // 10s max de vol
-const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 15s par round
+const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 20s par round
 
 class AviatorProvider extends ChangeNotifier {
   AviatorProvider() {
@@ -36,7 +36,7 @@ class AviatorProvider extends ChangeNotifier {
   AviatorPhase phase = AviatorPhase.waiting;
   double multiplier = 0.00;
   double crashPoint = 2.00;
-  int countdownSecs = 5;
+  int countdownSecs = 10;
 
   // Seeds provably fair (affichés après crash pour vérif)
   String serverSeed = '';
