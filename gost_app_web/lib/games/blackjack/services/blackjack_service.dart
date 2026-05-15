@@ -101,12 +101,14 @@ class BlackjackService {
   }
 
   Future<void> markReady(String roomId, bool isReady) async {
+    // S18 : passe par RPC (RLS bloque les UPDATE directs)
     try {
       final uid = currentUserId;
       if (uid == null) return;
-      await _client.from('blackjack_room_players').update({
-        'is_ready': isReady,
-      }).eq('room_id', roomId).eq('user_id', uid);
+      await _client.rpc('bj_set_ready', params: {
+        'p_room_id': roomId,
+        'p_is_ready': isReady,
+      });
     } catch (e) {
       debugPrint('[BJ] Erreur markReady: $e');
     }

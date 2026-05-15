@@ -93,9 +93,12 @@ class RouletteService {
   }
 
   Future<void> markReady(String roomId, bool ready) async {
+    // S18 : passe par RPC (RLS bloque les UPDATE directs)
     try {
-      await _client.from('roulette_room_players').update({'is_ready': ready})
-          .eq('room_id', roomId).eq('user_id', currentUserId!);
+      await _client.rpc('rlt_set_ready', params: {
+        'p_room_id': roomId,
+        'p_is_ready': ready,
+      });
     } catch (e) { debugPrint('[RLT] markReady: $e'); }
   }
 
