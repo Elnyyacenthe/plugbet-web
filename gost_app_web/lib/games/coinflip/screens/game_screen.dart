@@ -14,6 +14,8 @@ import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
 import '../models/coinflip_models.dart';
 import '../services/coinflip_service.dart';
+import '../../../services/network_retry.dart';
+import '../../../widgets/connectivity_banner.dart';
 
 class CFGameScreen extends StatefulWidget {
   final String gameId;
@@ -29,6 +31,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
   bool _choosing = false;
   RealtimeChannel? _channel;
   bool _showingResult = false;
+  Timer? _pollTimer; // fallback si realtime meurt
 
   // Animation pièce
   late AnimationController _flipCtrl;
@@ -51,6 +54,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
   @override
   void dispose() {
     _flipCtrl.dispose();
+    _pollTimer?.cancel();
     if (_channel != null) _svc.unsubscribe(_channel!);
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
     try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
@@ -59,8 +63,27 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
 
   Future<void> _init() async {
     _game = await _svc.getGame(widget.gameId);
-    _channel = _svc.subscribeGame(widget.gameId, _onUpdate);
+    _channel = _svc.subscribeGame(
+      widget.gameId,
+      _onUpdate,
+      onConnectionLost: _startPollingFallback,
+    );
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Active un polling toutes les 2s si le realtime meurt.
+  /// Auto-stop quand le game est fini.
+  void _startPollingFallback() {
+    if (_pollTimer != null && _pollTimer!.isActive) return;
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      if (!mounted || (_game?.gameState.isFinished ?? false)) {
+        t.cancel();
+        _pollTimer = null;
+        return;
+      }
+      final fresh = await _svc.getGame(widget.gameId);
+      if (fresh != null) _onUpdate(fresh);
+    });
   }
 
   void _onUpdate(CFGame g) {
@@ -92,10 +115,19 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
     if (_choosing) return;
     setState(() => _choosing = true);
     try {
-      await _svc.chooseSide(widget.gameId, side);
+      // Retry auto sur erreur reseau transitoire
+      await NetworkRetry.run(
+        () => _svc.chooseSide(widget.gameId, side),
+        label: 'cf_choose_side',
+      );
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('$e'), backgroundColor: Colors.red));
+      if (mounted) {
+        final msg = e.toString().contains('SocketException') || e.toString().contains('TimeoutException')
+            ? 'Connexion perdue — reessaie'
+            : '$e';
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(msg), backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _choosing = false);
     }
@@ -127,6 +159,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
         child: SafeArea(child: Column(children: [
+          const ConnectivityBanner(),
           // Status
           Container(width: double.infinity, padding: EdgeInsets.symmetric(vertical: 10),
             color: gs.phase == 'choosing' ? AppColors.neonBlue.withValues(alpha: 0.15) :

@@ -17,6 +17,7 @@ import '../../../services/game_settings.dart';
 import '../models/checkers_models.dart';
 import '../game/checkers_logic.dart';
 import '../services/checkers_service.dart';
+import '../../../widgets/connectivity_banner.dart';
 
 class CheckersGameScreen extends StatefulWidget {
   final CheckersRoom room;
@@ -607,6 +608,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
             child: Column(
               children: [
                 _buildTopBar(),
+                const ConnectivityBanner(),
                 if (_reconnecting) _buildReconnectingBanner(),
                 if (_buildAfkRemainingSeconds() != null) _buildAfkBanner(),
                 const Spacer(),

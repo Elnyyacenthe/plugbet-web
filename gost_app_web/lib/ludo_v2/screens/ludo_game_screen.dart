@@ -14,6 +14,7 @@ import '../widgets/dice_widget.dart';
 import '../widgets/ludo_board_widget.dart';
 import 'ludo_result_screen.dart';
 import '../../ludo/services/audio_service.dart';
+import '../../widgets/connectivity_banner.dart';
 
 class LudoV2GameScreen extends StatefulWidget {
   final String gameId;
@@ -205,6 +206,7 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
 
             return Column(
               children: [
+                const ConnectivityBanner(),
                 // Status bar
                 _buildStatusBar(game, prov),
 

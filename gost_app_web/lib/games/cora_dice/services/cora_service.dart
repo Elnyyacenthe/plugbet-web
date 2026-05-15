@@ -356,8 +356,9 @@ class CoraService {
   /// Écouter les mises à jour d'une partie.
   RealtimeChannel subscribeGame(
     String gameId,
-    void Function(CoraGame) onUpdate,
-  ) {
+    void Function(CoraGame) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client
         .channel('cora-game-$gameId')
         .onPostgresChanges(
@@ -378,7 +379,14 @@ class CoraService {
             }
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.channelError
+              || status == RealtimeSubscribeStatus.closed
+              || status == RealtimeSubscribeStatus.timedOut) {
+            debugPrint('[CORA] game channel issue: $status ${error ?? ""}');
+            onConnectionLost?.call();
+          }
+        });
   }
 
   // ============================================================

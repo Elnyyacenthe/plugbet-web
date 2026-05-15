@@ -21,6 +21,8 @@ import '../../../ludo/services/audio_service.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
 import '../components/dice_animation.dart';
+import '../../../services/network_retry.dart';
+import '../../../widgets/connectivity_banner.dart';
 
 class CoraGameScreen extends StatefulWidget {
   final String gameId;
@@ -53,6 +55,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   String? _lastTurnPlayerId; // to detect turn changes
 
   RealtimeChannel? _gameChannel;
+  Timer? _pollTimer; // fallback realtime mort
 
   // Animations
   late AnimationController _diceController;
@@ -92,6 +95,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     _coraController.dispose();
     _sevenController.dispose();
     _gameNotifier.dispose();
+    _pollTimer?.cancel();
     if (_gameChannel != null) _service.unsubscribe(_gameChannel!);
     // Forfait silencieux si on quitte une partie en cours sans finir.
     // Le RPC est idempotent et tolérant : si la partie est déjà finie,
@@ -134,7 +138,28 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   }
 
   void _subscribeToGame() {
-    _gameChannel = _service.subscribeGame(widget.gameId, (game) {
+    _gameChannel = _service.subscribeGame(
+      widget.gameId,
+      _onGameUpdate,
+      onConnectionLost: _startPollingFallback,
+    );
+  }
+
+  /// Polling 2s si le realtime meurt. Auto-stop quand fini.
+  void _startPollingFallback() {
+    if (_pollTimer != null && _pollTimer!.isActive) return;
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      if (!mounted || (_game?.gameState.isFinished ?? false)) {
+        t.cancel();
+        _pollTimer = null;
+        return;
+      }
+      final fresh = await _service.getGame(widget.gameId);
+      if (fresh != null) _onGameUpdate(fresh);
+    });
+  }
+
+  void _onGameUpdate(CoraGame game) {
       if (!mounted) return;
       setState(() => _game = game);
       _gameNotifier.value = game;
@@ -179,7 +204,6 @@ class _CoraGameScreenState extends State<CoraGameScreen>
           if (mounted && !_resultDialogOpen) _showResultDialog();
         });
       }
-    });
   }
 
   void _animateRoll(DiceRoll roll) {
@@ -264,6 +288,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
         child: SafeArea(
           child: Column(
             children: [
+              const ConnectivityBanner(),
               // Header
               _buildHeader(),
 
@@ -661,9 +686,10 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     try {
       // ANTI-CHEAT : le SERVEUR genere les des. Le client recoit le resultat
       // et l'utilise pour l'animation. forcedRoll est ignore (impossible
-      // de forcer un lancer cote serveur).
-      final serverRoll = await _service.submitRollAndGetServerDice(
-        gameId: widget.gameId,
+      // de forcer un lancer cote serveur). Retry auto sur erreur reseau.
+      final serverRoll = await NetworkRetry.run(
+        () => _service.submitRollAndGetServerDice(gameId: widget.gameId),
+        label: 'cora_submit_roll',
       );
       if (serverRoll != null) _animateRoll(serverRoll);
     } catch (e) {

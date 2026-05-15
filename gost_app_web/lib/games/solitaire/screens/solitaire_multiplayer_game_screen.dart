@@ -11,6 +11,7 @@ import '../models/solitaire_models.dart';
 import '../models/solitaire_room_models.dart';
 import '../game/solitaire_logic.dart';
 import '../services/solitaire_multiplayer_service.dart';
+import '../../../widgets/connectivity_banner.dart';
 
 class SolitaireMultiplayerGameScreen extends StatefulWidget {
   final SolitaireRoom room;
@@ -294,6 +295,7 @@ class _SolitaireMultiplayerGameScreenState
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
         child: SafeArea(
           child: Column(children: [
+            const ConnectivityBanner(),
             _topBar(),
             _scoreBar(),
             Expanded(child: _board()),

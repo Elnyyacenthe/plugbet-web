@@ -29,6 +29,8 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
   Timer? _turnTimer;
   Timer? _countdownTimer;
   Timer? _idleClaimWatcher;   // surveille les adversaires AFK
+  Timer? _pollTimer;          // fallback si realtime meurt
+  String? _gameId;
   int _secondsLeft = 0;
 
   // ── Callbacks ──────────────────────────────────────────
@@ -67,11 +69,16 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
     notifyListeners();
 
     try {
+      _gameId = gameId;
       _game = await _svc.getGame(gameId);
       if (_game == null) throw Exception('Partie introuvable');
 
       _gameChannel?.let(_svc.unsubscribe);
-      _gameChannel = _svc.subscribeGame(gameId, _onGameUpdate);
+      _gameChannel = _svc.subscribeGame(
+        gameId,
+        _onGameUpdate,
+        onConnectionLost: _startPollingFallback,
+      );
       WidgetsBinding.instance.addObserver(this);
 
       _computePlayable();
@@ -102,6 +109,20 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
     } catch (e) {
       debugPrint('[LUDO-V2-PROV] refresh error: $e');
     }
+  }
+
+  /// Polling 2s si le realtime meurt (onConnectionLost). Auto-stop fini.
+  void _startPollingFallback() {
+    if (_pollTimer != null && _pollTimer!.isActive) return;
+    debugPrint('[LUDO-V2-PROV] realtime down -> polling fallback ON');
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      if (_game == null || _game!.isFinished) {
+        t.cancel();
+        _pollTimer = null;
+        return;
+      }
+      await _refreshGame();
+    });
   }
 
   void _onGameUpdate(LudoV2Game updated) {
@@ -323,6 +344,7 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
     _turnTimer?.cancel();
     _countdownTimer?.cancel();
     _idleClaimWatcher?.cancel();
+    _pollTimer?.cancel();
     if (_gameChannel != null) _svc.unsubscribe(_gameChannel!);
     super.dispose();
   }

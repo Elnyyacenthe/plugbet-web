@@ -14,6 +14,8 @@ import '../../../services/live_score_manager.dart';
 import '../models/blackjack_models.dart';
 import '../services/blackjack_service.dart';
 import '../widgets/card_widget.dart';
+import '../../../services/network_retry.dart';
+import '../../../widgets/connectivity_banner.dart';
 
 class BJGameScreen extends StatefulWidget {
   final String gameId;
@@ -29,6 +31,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
   bool _acting = false;
   RealtimeChannel? _channel;
   Timer? _turnTimer;
+  Timer? _pollTimer; // fallback realtime mort
   int _countdown = 15;
   int _consecutiveTimeouts = 0;
   bool _showingResult = false;
@@ -48,6 +51,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
   @override
   void dispose() {
     _turnTimer?.cancel();
+    _pollTimer?.cancel();
     if (_channel != null) _svc.unsubscribe(_channel!);
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
     try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
@@ -58,9 +62,27 @@ class _BJGameScreenState extends State<BJGameScreen> {
     debugPrint('[BJ-GAME] Loading game: ${widget.gameId}');
     _game = await _svc.getGame(widget.gameId);
     debugPrint('[BJ-GAME] Game loaded: ${_game != null}, phase: ${_game?.gameState.phase}, players: ${_game?.gameState.players.length}');
-    _channel = _svc.subscribeGame(widget.gameId, _onGameUpdate);
+    _channel = _svc.subscribeGame(
+      widget.gameId,
+      _onGameUpdate,
+      onConnectionLost: _startPollingFallback,
+    );
     if (mounted) setState(() => _loading = false);
     _startTimer();
+  }
+
+  /// Polling 2s si le realtime meurt. Auto-stop quand game fini.
+  void _startPollingFallback() {
+    if (_pollTimer != null && _pollTimer!.isActive) return;
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      if (!mounted || (_game?.gameState.isFinished ?? false)) {
+        t.cancel();
+        _pollTimer = null;
+        return;
+      }
+      final fresh = await _svc.getGame(widget.gameId);
+      if (fresh != null) _onGameUpdate(fresh);
+    });
   }
 
   void _onGameUpdate(BJGame updated) {
@@ -104,9 +126,13 @@ class _BJGameScreenState extends State<BJGameScreen> {
     _consecutiveTimeouts = 0;
     setState(() => _acting = true);
     try {
-      await _svc.hit(widget.gameId);
+      await NetworkRetry.run(() => _svc.hit(widget.gameId), label: 'bj_hit');
     } catch (e) {
       debugPrint('[BJ] hit error: $e');
+      if (mounted && _isNet(e)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Connexion perdue — reessaie'), backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _acting = false);
     }
@@ -116,12 +142,22 @@ class _BJGameScreenState extends State<BJGameScreen> {
     if (_acting || _game == null) return;
     setState(() => _acting = true);
     try {
-      await _svc.stand(widget.gameId);
+      await NetworkRetry.run(() => _svc.stand(widget.gameId), label: 'bj_stand');
     } catch (e) {
       debugPrint('[BJ] stand error: $e');
+      if (mounted && _isNet(e)) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Connexion perdue — reessaie'), backgroundColor: Colors.red));
+      }
     } finally {
       if (mounted) setState(() => _acting = false);
     }
+  }
+
+  bool _isNet(Object e) {
+    final s = e.toString();
+    return s.contains('SocketException') || s.contains('TimeoutException')
+        || s.contains('Failed host lookup') || s.contains('ClientException');
   }
 
   @override
@@ -165,6 +201,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            const ConnectivityBanner(),
             // Status
             _buildStatusBar(gs),
 
