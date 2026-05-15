@@ -41,6 +41,12 @@ import 'games/cora_dice/screens/game_screen.dart';
 import 'games/blackjack/services/blackjack_service.dart';
 import 'games/blackjack/screens/game_screen.dart';
 import 'games/blackjack/screens/lobby_screen.dart';
+import 'games/checkers/services/checkers_service.dart';
+import 'games/checkers/screens/game_screen.dart';
+import 'games/checkers/screens/lobby_screen.dart';
+import 'games/checkers/models/checkers_models.dart' as cm;
+import 'ludo_v2/services/ludo_service.dart';
+import 'ludo_v2/screens/ludo_game_screen.dart';
 
 const _kSentryDsn =
     'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
@@ -364,6 +370,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   // pendant qu'on est déjà en train de naviguer.
   bool _coraResumeInFlight = false;
   bool _bjResumeInFlight = false;
+  bool _checkersResumeInFlight = false;
+  bool _ludoV2ResumeInFlight = false;
 
   // Lazy loading des écrans
   final Map<int, Widget> _cachedScreens = {};
@@ -464,6 +472,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         _checkActiveCoraSession();
         // Reprise de session Blackjack
         _checkActiveBlackjackSession();
+        _checkActiveCheckersSession();
+        _checkActiveLudoV2Session();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -535,6 +545,64 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       // ignore
     } finally {
       _bjResumeInFlight = false;
+    }
+  }
+
+  /// Reprise de session Checkers.
+  Future<void> _checkActiveCheckersSession() async {
+    if (_checkersResumeInFlight) return;
+    _checkersResumeInFlight = true;
+    try {
+      final svc = CheckersService();
+      final session = await svc.getActiveSession();
+      if (!mounted || session == null) return;
+      final roomId = session['room_id'] as String?;
+      if (roomId == null) return;
+      final room = await svc.getRoom(roomId);
+      if (!mounted || room == null) return;
+      final uid = svc.currentUserId;
+      final type = session['type'];
+      if (type == 'game') {
+        final myColor = room.hostId == uid
+            ? (room.hostColor == 'red' ? cm.PieceColor.red : cm.PieceColor.black)
+            : (room.hostColor == 'red' ? cm.PieceColor.black : cm.PieceColor.red);
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CheckersGameScreen(room: room, myColor: myColor),
+          ),
+        );
+      } else if (type == 'room') {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => CheckersLobbyScreen(room: room),
+          ),
+        );
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      _checkersResumeInFlight = false;
+    }
+  }
+
+  /// Reprise de session Ludo V2.
+  Future<void> _checkActiveLudoV2Session() async {
+    if (_ludoV2ResumeInFlight) return;
+    _ludoV2ResumeInFlight = true;
+    try {
+      final session = await LudoV2Service.instance.getActiveSession();
+      if (!mounted || session == null) return;
+      if (session['type'] == 'game' && session['game_id'] != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => LudoV2GameScreen(gameId: session['game_id'] as String),
+          ),
+        );
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      _ludoV2ResumeInFlight = false;
     }
   }
 

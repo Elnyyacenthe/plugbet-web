@@ -129,6 +129,17 @@ class CheckersService {
     } catch (_) {}
   }
 
+  /// Reprise de session : retourne {type, game, room_id} ou null.
+  Future<Map<String, dynamic>?> getActiveSession() async {
+    try {
+      final r = await _client.rpc('checkers_get_active');
+      return r is Map ? Map<String, dynamic>.from(r) : null;
+    } catch (e) {
+      debugPrint('[CHECKERS] getActiveSession: $e');
+      return null;
+    }
+  }
+
   /// Recuperer une room par son ID (utilise par le polling de secours)
   Future<CheckersRoom?> getRoom(String roomId) async {
     try {

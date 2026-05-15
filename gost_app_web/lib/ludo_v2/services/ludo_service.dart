@@ -33,6 +33,17 @@ class LudoV2Service {
     }
   }
 
+  /// Reprise de session : retourne {type, game, game_id|room_id} ou null.
+  Future<Map<String, dynamic>?> getActiveSession() async {
+    try {
+      final r = await _client.rpc('ludo_v2_get_active');
+      return r is Map ? Map<String, dynamic>.from(r) : null;
+    } catch (e) {
+      debugPrint('[LUDO-V2] getActiveSession: $e');
+      return null;
+    }
+  }
+
   // ── ROOMS ──────────────────────────────────────────────
 
   Future<Map<String, dynamic>> createRoom({
@@ -217,8 +228,9 @@ class LudoV2Service {
 
   RealtimeChannel subscribeGame(
     String gameId,
-    void Function(LudoV2Game game) onUpdate,
-  ) {
+    void Function(LudoV2Game game) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client
         .channel('ludo-v2-game-$gameId')
         .onPostgresChanges(
@@ -240,7 +252,14 @@ class LudoV2Service {
             }
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.channelError
+              || status == RealtimeSubscribeStatus.closed
+              || status == RealtimeSubscribeStatus.timedOut) {
+            debugPrint('[LUDO-V2-RT] channel issue: $status ${error ?? ""}');
+            onConnectionLost?.call();
+          }
+        });
   }
 
   RealtimeChannel subscribeRoom(
