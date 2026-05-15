@@ -31,6 +31,7 @@ import 'ludo/services/audio_service.dart';
 import 'services/notification_service.dart';
 import 'services/push_service.dart';
 import 'services/shorebird_service.dart';
+import 'services/realtime_heartbeat.dart';
 import 'l10n/generated/app_localizations.dart';
 import 'utils/logger.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
@@ -144,6 +145,9 @@ void main() async {
     // l'app immediatement pour qu'au prochain open, la version a jour
     // soit chargee. Sinon, telecharge en background.
     ShorebirdService.instance.autoApplyOnColdStart();
+    // Heartbeat Realtime : detecte un socket mort pendant l'attente
+    // du coup adverse (aucune RPC en cours -> sinon invisible).
+    RealtimeHeartbeat.instance.start();
   });
 
   // --- 3. Services API Football ---

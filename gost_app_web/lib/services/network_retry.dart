@@ -19,6 +19,7 @@ import 'dart:io';
 import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import '../utils/logger.dart';
 import 'connectivity_service.dart';
+import 'network_telemetry.dart';
 
 class NetworkRetry {
   static const _log = Logger('NET_RETRY');
@@ -49,6 +50,10 @@ class NetworkRetry {
         // Si on revient d'une erreur reseau : signale qu'on est revenu online
         if (attempt > 1) {
           ConnectivityService.instance.notifyOnline(source: label ?? 'rpc');
+          if (label != null) {
+            unawaited(NetworkTelemetry.instance.report(
+              label: label, retries: attempt - 1, outcome: 'recovered'));
+          }
         }
         return result;
       } catch (e) {
@@ -56,6 +61,11 @@ class NetworkRetry {
         if (!_isRetryable(e) || attempt >= maxAttempts) {
           if (_isNetworkError(e) && attempt >= maxAttempts) {
             ConnectivityService.instance.notifyOffline(source: label ?? 'rpc');
+            if (label != null) {
+              unawaited(NetworkTelemetry.instance.report(
+                label: label, retries: attempt, outcome: 'failed',
+                error: _errorBrief(e)));
+            }
           }
           if (label != null) _log.warn('$label: definitive fail apres $attempt essais: $e');
           rethrow;
