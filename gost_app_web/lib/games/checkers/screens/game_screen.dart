@@ -6,6 +6,7 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:uuid/uuid.dart';
 import '../../../theme/app_theme.dart';
 import '../../../l10n/generated/app_localizations.dart';
 import '../../../providers/player_provider.dart';
@@ -339,6 +340,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     required int fromRow, required int fromCol,
     required int toRow, required int toCol,
   }) async {
+    // S19 : un seul requestId pour tout le retry. L'idempotence serveur
+    // (checkers_play_move via p_request_id) detecte les retries et ne
+    // ré-applique pas un coup déjà exécuté.
+    final reqId = const Uuid().v4();
     const delays = [1, 2, 4, 8, 16, 30, 30, 30];
     for (int attempt = 0; attempt < delays.length; attempt++) {
       try {
@@ -346,6 +351,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           roomId: widget.room.id,
           fromRow: fromRow, fromCol: fromCol,
           toRow: toRow, toCol: toCol,
+          requestId: reqId,
         );
         if (_reconnecting && mounted) {
           setState(() => _reconnecting = false);

@@ -126,20 +126,44 @@ class CoinflipService {
     } catch (_) { return []; }
   }
 
-  RealtimeChannel subscribeRoom(String roomId, void Function(CFRoom) onUpdate) {
+  /// [onConnectionLost] : callback declenche si le channel ferme/error.
+  /// Le caller peut alors demarrer un polling fallback.
+  RealtimeChannel subscribeRoom(
+    String roomId,
+    void Function(CFRoom) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client.channel('cf-room-$roomId').onPostgresChanges(
       event: PostgresChangeEvent.update, schema: 'public', table: 'coinflip_rooms',
       filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: roomId),
       callback: (p) { try { onUpdate(CFRoom.fromJson(p.newRecord)); } catch (_) {} },
-    ).subscribe();
+    ).subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.channelError
+          || status == RealtimeSubscribeStatus.closed
+          || status == RealtimeSubscribeStatus.timedOut) {
+        debugPrint('[CF] room channel issue: $status ${error ?? ""}');
+        onConnectionLost?.call();
+      }
+    });
   }
 
-  RealtimeChannel subscribeGame(String gameId, void Function(CFGame) onUpdate) {
+  RealtimeChannel subscribeGame(
+    String gameId,
+    void Function(CFGame) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client.channel('cf-game-$gameId').onPostgresChanges(
       event: PostgresChangeEvent.update, schema: 'public', table: 'coinflip_games',
       filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: gameId),
       callback: (p) { try { onUpdate(CFGame.fromJson(p.newRecord)); } catch (_) {} },
-    ).subscribe();
+    ).subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.channelError
+          || status == RealtimeSubscribeStatus.closed
+          || status == RealtimeSubscribeStatus.timedOut) {
+        debugPrint('[CF] game channel issue: $status ${error ?? ""}');
+        onConnectionLost?.call();
+      }
+    });
   }
 
   RealtimeChannel subscribePlayers(String roomId, void Function() onChange) {
@@ -149,6 +173,7 @@ class CoinflipService {
       callback: (_) => onChange(),
     ).subscribe();
   }
+
 
   void unsubscribe(RealtimeChannel c) => _client.removeChannel(c);
 }

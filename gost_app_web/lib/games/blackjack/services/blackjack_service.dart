@@ -192,7 +192,11 @@ class BlackjackService {
   }
 
   // ── Realtime ───────────────────────────────────────────
-  RealtimeChannel subscribeRoom(String roomId, void Function(BJRoom) onUpdate) {
+  RealtimeChannel subscribeRoom(
+    String roomId,
+    void Function(BJRoom) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client.channel('bj-room-$roomId')
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
@@ -209,10 +213,21 @@ class BlackjackService {
             }
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.channelError
+              || status == RealtimeSubscribeStatus.closed
+              || status == RealtimeSubscribeStatus.timedOut) {
+            debugPrint('[BJ] room channel issue: $status ${error ?? ""}');
+            onConnectionLost?.call();
+          }
+        });
   }
 
-  RealtimeChannel subscribeGame(String gameId, void Function(BJGame) onUpdate) {
+  RealtimeChannel subscribeGame(
+    String gameId,
+    void Function(BJGame) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client.channel('bj-game-$gameId')
         .onPostgresChanges(
           event: PostgresChangeEvent.update,
@@ -229,7 +244,14 @@ class BlackjackService {
             }
           },
         )
-        .subscribe();
+        .subscribe((status, error) {
+          if (status == RealtimeSubscribeStatus.channelError
+              || status == RealtimeSubscribeStatus.closed
+              || status == RealtimeSubscribeStatus.timedOut) {
+            debugPrint('[BJ] game channel issue: $status ${error ?? ""}');
+            onConnectionLost?.call();
+          }
+        });
   }
 
   RealtimeChannel subscribePlayers(String roomId, void Function() onChange) {

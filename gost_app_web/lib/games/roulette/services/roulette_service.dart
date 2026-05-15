@@ -123,20 +123,42 @@ class RouletteService {
     } catch (e) { debugPrint('[RLT] getGame: $e'); return null; }
   }
 
-  RealtimeChannel subscribeRoom(String roomId, void Function(RouletteRoom) onUpdate) {
+  RealtimeChannel subscribeRoom(
+    String roomId,
+    void Function(RouletteRoom) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client.channel('rlt-room-$roomId').onPostgresChanges(
       event: PostgresChangeEvent.update, schema: 'public', table: 'roulette_rooms',
       filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: roomId),
       callback: (p) { try { onUpdate(RouletteRoom.fromJson(p.newRecord)); } catch (_) {} },
-    ).subscribe();
+    ).subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.channelError
+          || status == RealtimeSubscribeStatus.closed
+          || status == RealtimeSubscribeStatus.timedOut) {
+        debugPrint('[RLT] room channel issue: $status ${error ?? ""}');
+        onConnectionLost?.call();
+      }
+    });
   }
 
-  RealtimeChannel subscribeGame(String gameId, void Function(RouletteGame) onUpdate) {
+  RealtimeChannel subscribeGame(
+    String gameId,
+    void Function(RouletteGame) onUpdate, {
+    void Function()? onConnectionLost,
+  }) {
     return _client.channel('rlt-game-$gameId').onPostgresChanges(
       event: PostgresChangeEvent.update, schema: 'public', table: 'roulette_games',
       filter: PostgresChangeFilter(type: PostgresChangeFilterType.eq, column: 'id', value: gameId),
       callback: (p) { try { onUpdate(RouletteGame.fromJson(p.newRecord)); } catch (_) {} },
-    ).subscribe();
+    ).subscribe((status, error) {
+      if (status == RealtimeSubscribeStatus.channelError
+          || status == RealtimeSubscribeStatus.closed
+          || status == RealtimeSubscribeStatus.timedOut) {
+        debugPrint('[RLT] game channel issue: $status ${error ?? ""}');
+        onConnectionLost?.call();
+      }
+    });
   }
 
   RealtimeChannel subscribePlayers(String roomId, void Function() onChange) {
