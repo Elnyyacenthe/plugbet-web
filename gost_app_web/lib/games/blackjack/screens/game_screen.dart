@@ -29,6 +29,7 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
   BJGame? _game;
   bool _loading = true;
   bool _acting = false;
+  String? _pendingAction;
   RealtimeChannel? _channel;
   Timer? _turnTimer;
   Timer? _pollTimer; // fallback realtime mort
@@ -139,7 +140,7 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
   Future<void> _hit() async {
     if (_acting || _game == null) return;
     _consecutiveTimeouts = 0;
-    setState(() => _acting = true);
+    setState(() { _acting = true; _pendingAction = 'hit'; });
     final reqId = '$_myId-${widget.gameId}-hit-${DateTime.now().microsecondsSinceEpoch}';
     try {
       await NetworkRetry.run(
@@ -151,13 +152,13 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
           content: Text('Connexion perdue — reessaie'), backgroundColor: Colors.red));
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) setState(() { _acting = false; _pendingAction = null; });
     }
   }
 
   Future<void> _stand() async {
     if (_acting || _game == null) return;
-    setState(() => _acting = true);
+    setState(() { _acting = true; _pendingAction = 'stand'; });
     final reqId = '$_myId-${widget.gameId}-stand-${DateTime.now().microsecondsSinceEpoch}';
     try {
       await NetworkRetry.run(
@@ -169,7 +170,7 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
           content: Text('Connexion perdue — reessaie'), backgroundColor: Colors.red));
       }
     } finally {
-      if (mounted) setState(() => _acting = false);
+      if (mounted) setState(() { _acting = false; _pendingAction = null; });
     }
   }
 
@@ -246,11 +247,15 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
                         onPressed: canHit ? _hit : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.neonGreen,
+                          disabledBackgroundColor: AppColors.neonGreen.withValues(alpha: 0.5),
                           padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: Text(AppLocalizations.of(context)!.gameHit, style: TextStyle(
-                            color: Colors.black, fontWeight: FontWeight.w900, fontSize: 18)),
+                        child: _pendingAction == 'hit'
+                            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.black))
+                            : Text(AppLocalizations.of(context)!.gameHit, style: TextStyle(
+                                color: Colors.black, fontWeight: FontWeight.w900, fontSize: 18)),
                       ),
                     ),
                     SizedBox(width: 12),
@@ -259,11 +264,15 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
                         onPressed: canStand ? _stand : null,
                         style: ElevatedButton.styleFrom(
                           backgroundColor: AppColors.neonRed,
+                          disabledBackgroundColor: AppColors.neonRed.withValues(alpha: 0.5),
                           padding: EdgeInsets.symmetric(vertical: 14),
                           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
                         ),
-                        child: Text(AppLocalizations.of(context)!.gameStand, style: TextStyle(
-                            color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
+                        child: _pendingAction == 'stand'
+                            ? SizedBox(width: 20, height: 20, child: CircularProgressIndicator(
+                                strokeWidth: 2, color: Colors.white))
+                            : Text(AppLocalizations.of(context)!.gameStand, style: TextStyle(
+                                color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
                       ),
                     ),
                   ],

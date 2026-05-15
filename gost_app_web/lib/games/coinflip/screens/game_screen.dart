@@ -30,6 +30,7 @@ class _CFGameScreenState extends State<CFGameScreen>
   CFGame? _game;
   bool _loading = true;
   bool _choosing = false;
+  String? _pendingSide;
   RealtimeChannel? _channel;
   bool _showingResult = false;
   Timer? _pollTimer; // fallback si realtime meurt
@@ -131,7 +132,7 @@ class _CFGameScreenState extends State<CFGameScreen>
 
   Future<void> _choose(String side) async {
     if (_choosing) return;
-    setState(() => _choosing = true);
+    setState(() { _choosing = true; _pendingSide = side; });
     // request_id STABLE genere hors du closure -> reutilise a chaque
     // retry pour que le wrapper *_idem deduplique cote serveur.
     final reqId = '$_myId-${widget.gameId}-$side-${DateTime.now().microsecondsSinceEpoch}';
@@ -149,7 +150,7 @@ class _CFGameScreenState extends State<CFGameScreen>
           SnackBar(content: Text(msg), backgroundColor: Colors.red));
       }
     } finally {
-      if (mounted) setState(() => _choosing = false);
+      if (mounted) setState(() { _choosing = false; _pendingSide = null; });
     }
   }
 
@@ -301,13 +302,23 @@ class _CFGameScreenState extends State<CFGameScreen>
   }
 
   Widget _choiceButton(String label, String side, Color color) {
+    final isPending = _pendingSide == side;
     return ElevatedButton(
       onPressed: _choosing ? null : () => _choose(side),
       style: ElevatedButton.styleFrom(
         backgroundColor: color,
+        disabledBackgroundColor: color.withValues(alpha: 0.5),
         padding: EdgeInsets.symmetric(vertical: 18),
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16))),
-      child: Text(label, style: TextStyle(color: Colors.black, fontSize: 20, fontWeight: FontWeight.w900)),
+      child: isPending
+          ? Row(mainAxisAlignment: MainAxisAlignment.center, children: [
+              SizedBox(width: 20, height: 20, child: CircularProgressIndicator(
+                strokeWidth: 2, color: Colors.black)),
+              SizedBox(width: 10),
+              Text('Envoi…', style: TextStyle(
+                color: Colors.black, fontSize: 16, fontWeight: FontWeight.w900)),
+            ])
+          : Text(label, style: TextStyle(color: Colors.black, fontSize: 20, fontWeight: FontWeight.w900)),
     );
   }
 
