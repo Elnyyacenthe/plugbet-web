@@ -24,7 +24,7 @@ class BJGameScreen extends StatefulWidget {
   State<BJGameScreen> createState() => _BJGameScreenState();
 }
 
-class _BJGameScreenState extends State<BJGameScreen> {
+class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver {
   final _svc = BlackjackService.instance;
   BJGame? _game;
   bool _loading = true;
@@ -41,6 +41,7 @@ class _BJGameScreenState extends State<BJGameScreen> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _init();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
@@ -49,7 +50,21 @@ class _BJGameScreenState extends State<BJGameScreen> {
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed
+        && !(_game?.gameState.isFinished ?? false)) {
+      _refetchNow();
+    }
+  }
+
+  Future<void> _refetchNow() async {
+    final fresh = await _svc.getGame(widget.gameId);
+    if (fresh != null && mounted) _onGameUpdate(fresh);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _turnTimer?.cancel();
     _pollTimer?.cancel();
     if (_channel != null) _svc.unsubscribe(_channel!);
@@ -125,8 +140,10 @@ class _BJGameScreenState extends State<BJGameScreen> {
     if (_acting || _game == null) return;
     _consecutiveTimeouts = 0;
     setState(() => _acting = true);
+    final reqId = '$_myId-${widget.gameId}-hit-${DateTime.now().microsecondsSinceEpoch}';
     try {
-      await NetworkRetry.run(() => _svc.hit(widget.gameId), label: 'bj_hit');
+      await NetworkRetry.run(
+        () => _svc.hit(widget.gameId, requestId: reqId), label: 'bj_hit');
     } catch (e) {
       debugPrint('[BJ] hit error: $e');
       if (mounted && _isNet(e)) {
@@ -141,8 +158,10 @@ class _BJGameScreenState extends State<BJGameScreen> {
   Future<void> _stand() async {
     if (_acting || _game == null) return;
     setState(() => _acting = true);
+    final reqId = '$_myId-${widget.gameId}-stand-${DateTime.now().microsecondsSinceEpoch}';
     try {
-      await NetworkRetry.run(() => _svc.stand(widget.gameId), label: 'bj_stand');
+      await NetworkRetry.run(
+        () => _svc.stand(widget.gameId, requestId: reqId), label: 'bj_stand');
     } catch (e) {
       debugPrint('[BJ] stand error: $e');
       if (mounted && _isNet(e)) {

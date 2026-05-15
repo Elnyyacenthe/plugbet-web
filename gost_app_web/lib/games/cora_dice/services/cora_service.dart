@@ -266,25 +266,32 @@ class CoraService {
   }
 
   /// Lancer les dés. Le SERVEUR génère les valeurs (anti-cheat).
-  /// Retourne le DiceRoll réel calculé côté serveur.
-  Future<DiceRoll?> submitRoll(String gameId) {
+  /// Passe par cora_submit_roll_idem (idempotent via request_id stable) :
+  /// sur retry deduped, le roll arrive via realtime/polling (game_state).
+  Future<DiceRoll?> submitRoll(String gameId, {String? requestId}) {
+    final reqId = requestId
+        ?? '${currentUserId ?? "anon"}_${gameId}_roll_${DateTime.now().microsecondsSinceEpoch}';
     return _dedup('roll:$gameId:${currentUserId ?? ""}', () async {
       try {
-        final res = await _client.rpc('cora_submit_roll', params: {
+        final res = await _client.rpc('cora_submit_roll_idem', params: {
           'p_game_id': gameId,
+          'p_request_id': reqId,
         });
         if (res is Map) {
-          final d1 = (res['dice1'] as num).toInt();
-          final d2 = (res['dice2'] as num).toInt();
-          unawaited(GameAuditService.instance.logEvent(
-            gameId: gameId, gameType: 'cora_dice',
-            eventType: 'dice_roll',
-            payload: {'dice1': d1, 'dice2': d2, 'sum': d1 + d2},
-          ));
-          return DiceRoll(
-            dice1: d1, dice2: d2,
-            timestamp: DateTime.now(),
-          );
+          // deduped=true -> pas de nouveau lancer. Le realtime/polling
+          // fournira l'etat (animation declenchee par _onGameUpdate).
+          if (res['deduped'] == true) return null;
+          final roll = res['roll'];
+          if (roll is Map && roll['dice1'] != null && roll['dice2'] != null) {
+            final d1 = (roll['dice1'] as num).toInt();
+            final d2 = (roll['dice2'] as num).toInt();
+            unawaited(GameAuditService.instance.logEvent(
+              gameId: gameId, gameType: 'cora_dice',
+              eventType: 'dice_roll',
+              payload: {'dice1': d1, 'dice2': d2, 'sum': d1 + d2, 'request_id': reqId},
+            ));
+            return DiceRoll(dice1: d1, dice2: d2, timestamp: DateTime.now());
+          }
         }
         return null;
       } catch (e) {
@@ -295,8 +302,8 @@ class CoraService {
   }
 
   /// Compat : ancienne signature. Le `roll` côté client est ignoré.
-  Future<DiceRoll?> submitRollAndGetServerDice({required String gameId}) {
-    return submitRoll(gameId);
+  Future<DiceRoll?> submitRollAndGetServerDice({required String gameId, String? requestId}) {
+    return submitRoll(gameId, requestId: requestId);
   }
 
   /// Compat : ancienne API legacy.

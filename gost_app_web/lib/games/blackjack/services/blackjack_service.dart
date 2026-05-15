@@ -139,13 +139,17 @@ class BlackjackService {
     }
   }
 
-  Future<void> hit(String gameId) async {
+  Future<void> hit(String gameId, {String? requestId}) async {
+    final reqId = requestId
+        ?? '${currentUserId ?? "anon"}_${gameId}_hit_${DateTime.now().microsecondsSinceEpoch}';
     try {
-      await _client.rpc('bj_hit', params: {'p_game_id': gameId});
+      await _client.rpc('bj_hit_idem', params: {
+        'p_game_id': gameId, 'p_request_id': reqId,
+      });
       debugPrint('[BJ] hit OK');
       unawaited(GameAuditService.instance.logMove(
         gameId: gameId, gameType: 'blackjack',
-        moveData: {'action': 'hit'},
+        moveData: {'action': 'hit', 'request_id': reqId},
       ));
     } catch (e) {
       debugPrint('[BJ] Erreur hit: $e');
@@ -153,13 +157,17 @@ class BlackjackService {
     }
   }
 
-  Future<void> stand(String gameId) async {
+  Future<void> stand(String gameId, {String? requestId}) async {
+    final reqId = requestId
+        ?? '${currentUserId ?? "anon"}_${gameId}_stand_${DateTime.now().microsecondsSinceEpoch}';
     try {
-      await _client.rpc('bj_stand', params: {'p_game_id': gameId});
+      await _client.rpc('bj_stand_idem', params: {
+        'p_game_id': gameId, 'p_request_id': reqId,
+      });
       debugPrint('[BJ] stand OK');
       unawaited(GameAuditService.instance.logMove(
         gameId: gameId, gameType: 'blackjack',
-        moveData: {'action': 'stand'},
+        moveData: {'action': 'stand', 'request_id': reqId},
       ));
     } catch (e) {
       debugPrint('[BJ] Erreur stand: $e');

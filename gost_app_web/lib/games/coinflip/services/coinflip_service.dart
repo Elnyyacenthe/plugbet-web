@@ -78,12 +78,20 @@ class CoinflipService {
     } catch (e) { debugPrint('[CF] joinRoom: $e'); rethrow; }
   }
 
-  Future<void> chooseSide(String gameId, String choice) async {
+  /// [requestId] : id stable genere par l'appelant, reutilise sur chaque
+  /// retry pour l'idempotence (wrapper cf_choose_side_idem).
+  Future<void> chooseSide(String gameId, String choice, {String? requestId}) async {
+    final reqId = requestId
+        ?? '${currentUserId ?? "anon"}_${gameId}_cf_${DateTime.now().microsecondsSinceEpoch}';
     try {
-      await _client.rpc('cf_choose_side', params: {'p_game_id': gameId, 'p_choice': choice});
+      await _client.rpc('cf_choose_side_idem', params: {
+        'p_game_id': gameId,
+        'p_choice': choice,
+        'p_request_id': reqId,
+      });
       unawaited(GameAuditService.instance.logMove(
         gameId: gameId, gameType: 'coinflip',
-        moveData: {'choice': choice},
+        moveData: {'choice': choice, 'request_id': reqId},
       ));
     } catch (e) { debugPrint('[CF] chooseSide: $e'); rethrow; }
   }

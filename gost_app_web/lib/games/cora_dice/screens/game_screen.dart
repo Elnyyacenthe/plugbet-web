@@ -34,7 +34,7 @@ class CoraGameScreen extends StatefulWidget {
 }
 
 class _CoraGameScreenState extends State<CoraGameScreen>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, WidgetsBindingObserver {
   final CoraService _service = CoraService();
   CoraGame? _game;
   bool _isLoading = true;
@@ -78,6 +78,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       duration: const Duration(milliseconds: 600),
     );
 
+    WidgetsBinding.instance.addObserver(this);
     _loadGame();
     _subscribeToGame();
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -89,7 +90,21 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed
+        && !(_game?.gameState.isFinished ?? false)) {
+      _refetchNow();
+    }
+  }
+
+  Future<void> _refetchNow() async {
+    final fresh = await _service.getGame(widget.gameId);
+    if (fresh != null && mounted) _onGameUpdate(fresh);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _turnTimer?.cancel();
     _diceController.dispose();
     _coraController.dispose();
@@ -683,12 +698,15 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     setState(() => _isRolling = true);
     AudioService.instance.playDiceRoll();
 
+    // request_id STABLE hors du closure -> idempotence wrapper sur retry
+    final reqId = '${_service.currentUserId ?? "anon"}-${widget.gameId}-roll-${DateTime.now().microsecondsSinceEpoch}';
     try {
       // ANTI-CHEAT : le SERVEUR genere les des. Le client recoit le resultat
       // et l'utilise pour l'animation. forcedRoll est ignore (impossible
       // de forcer un lancer cote serveur). Retry auto sur erreur reseau.
       final serverRoll = await NetworkRetry.run(
-        () => _service.submitRollAndGetServerDice(gameId: widget.gameId),
+        () => _service.submitRollAndGetServerDice(
+          gameId: widget.gameId, requestId: reqId),
         label: 'cora_submit_roll',
       );
       if (serverRoll != null) _animateRoll(serverRoll);

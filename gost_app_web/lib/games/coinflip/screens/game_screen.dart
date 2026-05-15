@@ -24,7 +24,8 @@ class CFGameScreen extends StatefulWidget {
   State<CFGameScreen> createState() => _CFGameScreenState();
 }
 
-class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderStateMixin {
+class _CFGameScreenState extends State<CFGameScreen>
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final _svc = CoinflipService.instance;
   CFGame? _game;
   bool _loading = true;
@@ -42,6 +43,7 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _flipCtrl = AnimationController(vsync: this, duration: Duration(milliseconds: 800))
       ..addListener(() { setState(() {}); });
     _init();
@@ -52,7 +54,23 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Retour foreground : refetch pour rattraper les events realtime
+    // perdus pendant le background.
+    if (state == AppLifecycleState.resumed
+        && !(_game?.gameState.isFinished ?? false)) {
+      _refetchNow();
+    }
+  }
+
+  Future<void> _refetchNow() async {
+    final fresh = await _svc.getGame(widget.gameId);
+    if (fresh != null && mounted) _onUpdate(fresh);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _flipCtrl.dispose();
     _pollTimer?.cancel();
     if (_channel != null) _svc.unsubscribe(_channel!);
@@ -114,10 +132,12 @@ class _CFGameScreenState extends State<CFGameScreen> with SingleTickerProviderSt
   Future<void> _choose(String side) async {
     if (_choosing) return;
     setState(() => _choosing = true);
+    // request_id STABLE genere hors du closure -> reutilise a chaque
+    // retry pour que le wrapper *_idem deduplique cote serveur.
+    final reqId = '$_myId-${widget.gameId}-$side-${DateTime.now().microsecondsSinceEpoch}';
     try {
-      // Retry auto sur erreur reseau transitoire
       await NetworkRetry.run(
-        () => _svc.chooseSide(widget.gameId, side),
+        () => _svc.chooseSide(widget.gameId, side, requestId: reqId),
         label: 'cf_choose_side',
       );
     } catch (e) {
