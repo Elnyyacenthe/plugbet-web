@@ -114,6 +114,18 @@ class BlackjackService {
     }
   }
 
+  /// Reprise de session : retourne la partie/room Blackjack active
+  /// de l'user, ou null. Tolere toute erreur silencieusement.
+  Future<Map<String, dynamic>?> getActiveSession() async {
+    try {
+      final r = await _client.rpc('bj_get_active');
+      return r is Map ? Map<String, dynamic>.from(r) : null;
+    } catch (e) {
+      debugPrint('[BJ] getActiveSession: $e');
+      return null;
+    }
+  }
+
   // ── Game actions ───────────────────────────────────────
   Future<BJGame?> getGame(String gameId) async {
     try {

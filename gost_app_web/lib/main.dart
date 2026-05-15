@@ -38,6 +38,9 @@ import 'fantasy/providers/fpl_provider.dart';
 import 'games/cora_dice/services/cora_service.dart';
 import 'games/cora_dice/screens/lobby_screen.dart';
 import 'games/cora_dice/screens/game_screen.dart';
+import 'games/blackjack/services/blackjack_service.dart';
+import 'games/blackjack/screens/game_screen.dart';
+import 'games/blackjack/screens/lobby_screen.dart';
 
 const _kSentryDsn =
     'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
@@ -360,6 +363,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   // évite de naviguer plusieurs fois si l'app est ré-amenée au foreground
   // pendant qu'on est déjà en train de naviguer.
   bool _coraResumeInFlight = false;
+  bool _bjResumeInFlight = false;
 
   // Lazy loading des écrans
   final Map<int, Widget> _cachedScreens = {};
@@ -458,6 +462,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         try { context.read<MessagingProvider>().goOnline(); } catch (_) {}
         // Reprise de session Cora Dice (game ou room en cours côté serveur)
         _checkActiveCoraSession();
+        // Reprise de session Blackjack
+        _checkActiveBlackjackSession();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -500,6 +506,35 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       // ignore
     } finally {
       _coraResumeInFlight = false;
+    }
+  }
+
+  /// Au retour foreground, reprise de session Blackjack si l'utilisateur
+  /// a une partie ou room en cours cote serveur.
+  Future<void> _checkActiveBlackjackSession() async {
+    if (_bjResumeInFlight) return;
+    _bjResumeInFlight = true;
+    try {
+      final session = await BlackjackService.instance.getActiveSession();
+      if (!mounted || session == null) return;
+      final type = session['type'];
+      if (type == 'game' && session['game_id'] != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => BJGameScreen(gameId: session['game_id'] as String),
+          ),
+        );
+      } else if (type == 'room' && session['room_id'] != null) {
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) => BJLobbyScreen(roomId: session['room_id'] as String),
+          ),
+        );
+      }
+    } catch (_) {
+      // ignore
+    } finally {
+      _bjResumeInFlight = false;
     }
   }
 
