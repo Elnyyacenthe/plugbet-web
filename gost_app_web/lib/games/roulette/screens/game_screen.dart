@@ -28,6 +28,7 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   RouletteGame? _game;
   bool _loading = true;
   RealtimeChannel? _channel;
+  Timer? _pollTimer; // fallback si realtime meurt
   bool _placing = false;
   bool _spinning = false;
 
@@ -61,6 +62,7 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   @override
   void dispose() {
     _wheelCtrl.dispose();
+    _pollTimer?.cancel();
     if (_channel != null) _svc.unsubscribe(_channel!);
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
     try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
@@ -69,8 +71,26 @@ class _RLTGameScreenState extends State<RLTGameScreen>
 
   Future<void> _init() async {
     _game = await _svc.getGame(widget.gameId);
-    _channel = _svc.subscribeGame(widget.gameId, _onUpdate);
+    _channel = _svc.subscribeGame(
+      widget.gameId,
+      _onUpdate,
+      onConnectionLost: _startPollingFallback,
+    );
     if (mounted) setState(() => _loading = false);
+  }
+
+  /// Polling toutes les 2s si le realtime meurt. Auto-stop a la fin.
+  void _startPollingFallback() {
+    if (_pollTimer != null && _pollTimer!.isActive) return;
+    _pollTimer = Timer.periodic(const Duration(seconds: 2), (t) async {
+      if (!mounted || (_game?.gameState.isFinished ?? false)) {
+        t.cancel();
+        _pollTimer = null;
+        return;
+      }
+      final fresh = await _svc.getGame(widget.gameId);
+      if (fresh != null) _onUpdate(fresh);
+    });
   }
 
   void _onUpdate(RouletteGame g) {
