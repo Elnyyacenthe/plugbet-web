@@ -73,10 +73,53 @@
     <div class="progress-bar"><div class="progress-fill"></div></div>
   </div>
 
-  <!-- [Audit A4] Hack kill-SW retiré. Build --pwa-strategy=none (aucun
-       service worker généré) + Cache-Control: no-store (vercel.json)
-       gèrent la fraîcheur. Supprime les reloads en pleine partie et le
-       gel des clients après la deadline codée (2026-05-21). -->
+  <script>
+    // ============================================================
+    // KILL-SWITCH SERVICE WORKER — PERMANENT, SANS DEADLINE
+    // ============================================================
+    // D'anciennes versions ont deploye un vrai flutter_service_worker.js
+    // (PWA cache-first). Ces SW restent installes chez les visiteurs
+    // recurrents et continuent de servir l'app en cache, court-circuitant
+    // le Cache-Control: no-store cote serveur. Ce build n'a PLUS de SW
+    // (--pwa-strategy=none) : il faut donc EVINCER activement tout SW
+    // residuel, sinon ces clients sont figes a vie sur l'ancienne version.
+    //
+    // Anti-boucle (le bug de la version precedente venait d'une DEADLINE
+    // codee qui desactivait l'echappatoire le 2026-05-21) :
+    //   - Si la page est CONTROLEE par un SW et pas deja nettoyee dans
+    //     cette session : unregister tous les SW + purge CacheStorage,
+    //     puis UN seul reload (garde sessionStorage).
+    //   - Sinon : purge en arriere-plan sans reload. Une fois les clients
+    //     evinces, plus aucun SW n'est installe (build sans SW) -> ce
+    //     bloc devient un no-op invisible et permanent. Aucune date limite.
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
+      try {
+        var hadController = !!navigator.serviceWorker.controller;
+        var alreadyCleared = sessionStorage.getItem('pb_sw_killed') === '1';
+
+        navigator.serviceWorker.getRegistrations().then(function (regs) {
+          regs.forEach(function (r) { r.unregister().catch(function () {}); });
+        }).catch(function () {});
+        if ('caches' in window) {
+          caches.keys().then(function (keys) {
+            keys.forEach(function (k) { caches.delete(k).catch(function () {}); });
+          }).catch(function () {});
+        }
+
+        if (hadController && !alreadyCleared) {
+          sessionStorage.setItem('pb_sw_killed', '1');
+          setTimeout(function () { window.location.reload(); }, 300);
+        }
+      } catch (e) {
+        console.warn('[Plugbet] SW kill-switch:', e);
+      }
+    })();
+  </script>
+
+  <!-- Build --pwa-strategy=none : aucun SW genere. Fraicheur assuree par
+       Cache-Control: no-store (nginx) + kill-switch ci-dessus pour evincer
+       les SW historiques. -->
   <script src="flutter_bootstrap.js" async></script>
 
   <script>
