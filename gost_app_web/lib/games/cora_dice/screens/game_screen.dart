@@ -51,6 +51,10 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   final ValueNotifier<CoraGame?> _gameNotifier = ValueNotifier<CoraGame?>(null);
   bool _resultDialogOpen = false;
   bool _rematchNavigated = false;
+  // [Cora #6] Vrai dès qu'un forfait serveur explicite a été émis
+  // (kick inactivité ou bouton quitter) → évite le re-forfait redondant
+  // au dispose et fiabilise l'abandon (ne dépend plus d'un effet de bord).
+  bool _forfeitDone = false;
 
   // Turn timer
   static const int _turnSeconds = 12;
@@ -135,6 +139,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
         game.status == CoraRoomStatus.playing &&
         !game.gameState.isFinished &&
         !_rematchNavigated &&
+        !_forfeitDone &&
         isResumed) {
       // ignore: discarded_futures
       _service.forfeit(widget.gameId);
@@ -313,7 +318,17 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     final me = myId != null ? _game!.gameState.players[myId] : null;
     final isMyTurn = _game!.gameState.currentTurn == myId;
 
-    return Scaffold(
+    // [Cora #8] Le geste retour système ne doit PAS contourner la
+    // confirmation de forfait. canPop:false → on route vers _confirmExit
+    // (qui pop directement si la partie est finie, sinon dialog "tu
+    // perdras ta mise"). Même pattern que Ludo/Checkers.
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (didPop) return;
+        _confirmExit();
+      },
+      child: Scaffold(
       backgroundColor: AppColors.bgDark,
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
@@ -342,6 +357,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
             ],
           ),
         ),
+      ),
       ),
     );
   }
@@ -669,7 +685,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
 
     _consecutiveTimeouts++;
     if (_consecutiveTimeouts >= 4) {
-      _handleForfeit();
+      unawaited(_handleForfeit());
       return;
     }
     // [Cora #3] Auto-roll sur timeout : la mise est DÉJÀ engagée au début
@@ -680,7 +696,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     _rollDice(isAuto: true);
   }
 
-  void _handleForfeit() {
+  Future<void> _handleForfeit() async {
     _turnTimer?.cancel();
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
@@ -690,6 +706,13 @@ class _CoraGameScreenState extends State<CoraGameScreen>
         duration: Duration(seconds: 3),
       ),
     );
+    // [Cora #6] Forfait serveur EXPLICITE (idempotent) — ne plus dépendre
+    // de l'effet de bord du dispose. Puis refresh wallet pour que le
+    // joueur voie son solde à jour immédiatement.
+    _forfeitDone = true;
+    try { await _service.forfeit(widget.gameId); } catch (_) {}
+    if (!mounted) return;
+    try { context.read<WalletProvider>().refresh(); } catch (_) {}
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) Navigator.pop(context);
     });
@@ -1050,6 +1073,8 @@ class _CoraGameScreenState extends State<CoraGameScreen>
               Navigator.pop(ctx);
               // Forfait explicite côté serveur AVANT de naviguer hors de l'écran
               // pour que l'utilisateur voie immédiatement son solde mis à jour.
+              // [Cora #6] marque le forfait fait → pas de re-forfait au dispose.
+              _forfeitDone = true;
               try {
                 await _service.forfeit(widget.gameId);
               } catch (_) {}
