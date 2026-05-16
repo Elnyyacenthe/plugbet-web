@@ -204,7 +204,12 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
               return Center(child: CircularProgressIndicator(color: AppColors.neonGreen));
             }
             if (prov.error != null) {
-              return Center(child: Text(prov.error!, style: TextStyle(color: AppColors.neonRed)));
+              // Page d'erreur/réseau IDENTITAIRE LUDO (couvre Ludo) —
+              // remplace le Text brut bloquant (audit ANO-9).
+              return _LudoErrorView(
+                message: prov.error!,
+                onRetry: () => prov.loadGame(widget.gameId),
+              );
             }
             final game = prov.game;
             if (game == null) {
@@ -479,5 +484,144 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
     final idx = game.colorMap[uid] ?? 0;
     const colors = [Color(0xFFE53935), Color(0xFF43A047), Color(0xFF1E88E5), Color(0xFFFDD835)];
     return colors[idx.clamp(0, 3)];
+  }
+}
+
+/// Page d'erreur / perte réseau IDENTITAIRE LUDO (rendue dans l'écran
+/// Ludo uniquement — le filet global main.dart est neutre). Emblème
+/// 4 pions Ludo + détection réseau + Réessayer.
+class _LudoErrorView extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  const _LudoErrorView({required this.message, required this.onRetry});
+
+  bool get _isNetwork {
+    final m = message.toLowerCase();
+    return m.contains('socketexception') ||
+        m.contains('failed host lookup') ||
+        m.contains('connection') ||
+        m.contains('network') ||
+        m.contains('timed out') ||
+        m.contains('timeout');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = _isNetwork ? AppColors.neonOrange : AppColors.neonRed;
+    final pawns = [
+      AppColors.neonRed,
+      AppColors.neonGreen,
+      AppColors.neonBlue,
+      AppColors.neonYellow,
+    ];
+    return Container(
+      decoration: BoxDecoration(gradient: AppColors.bgGradient),
+      child: Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(28),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 116,
+                height: 116,
+                child: Stack(
+                  alignment: Alignment.center,
+                  children: [
+                    Container(
+                      width: 104,
+                      height: 104,
+                      decoration: BoxDecoration(
+                        gradient: AppColors.cardGradient,
+                        borderRadius: BorderRadius.circular(22),
+                        border: Border.all(
+                            color: accent.withValues(alpha: 0.35), width: 1.5),
+                      ),
+                      padding: const EdgeInsets.all(16),
+                      child: GridView.count(
+                        crossAxisCount: 2,
+                        physics: const NeverScrollableScrollPhysics(),
+                        mainAxisSpacing: 10,
+                        crossAxisSpacing: 10,
+                        children: [
+                          for (final c in pawns)
+                            Container(
+                              decoration: BoxDecoration(
+                                color: c.withValues(alpha: 0.85),
+                                shape: BoxShape.circle,
+                              ),
+                            ),
+                        ],
+                      ),
+                    ),
+                    Positioned(
+                      bottom: 0,
+                      right: 0,
+                      child: Container(
+                        padding: const EdgeInsets.all(7),
+                        decoration: BoxDecoration(
+                          color: AppColors.bgDark,
+                          shape: BoxShape.circle,
+                          border: Border.all(color: accent, width: 2),
+                        ),
+                        child: Icon(
+                          _isNetwork
+                              ? Icons.wifi_off_rounded
+                              : Icons.error_outline_rounded,
+                          size: 22,
+                          color: accent,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 26),
+              Text(
+                _isNetwork ? 'Connexion perdue' : 'Souci sur la partie',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w900,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _isNetwork
+                    ? 'Ta partie de Ludo est en sécurité. Reconnecte-toi : '
+                        'tu reprends là où tu t\'es arrêté.'
+                    : 'Un imprévu est survenu. Réessaie — ta mise et ta '
+                        'progression sont sauvegardées.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  height: 1.55,
+                ),
+              ),
+              const SizedBox(height: 30),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: onRetry,
+                  icon: const Icon(Icons.refresh_rounded, size: 19),
+                  label: const Text('Réessayer'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.neonGreen,
+                    foregroundColor: Colors.black,
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.w900, fontSize: 15),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -685,23 +685,27 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         _confirmExit();
       },
       child: Scaffold(
-        body: Container(
-          decoration: BoxDecoration(gradient: AppColors.bgGradient),
-          child: SafeArea(
-            child: Column(
-              children: [
-                _buildTopBar(),
-                const ConnectivityBanner(),
-                if (_reconnecting) _buildReconnectingBanner(),
-                if (_buildAfkRemainingSeconds() != null) _buildAfkBanner(),
-                const Spacer(),
-                _buildBoard(),
-                const Spacer(),
-                _buildBottomBar(),
-              ],
-            ),
-          ),
-        ),
+        // Page perte réseau IDENTITAIRE DAMES (rendue dans l'écran Dames
+        // uniquement ; le filet global main.dart est neutre).
+        body: _reconnecting
+            ? const _CheckersNetworkView()
+            : Container(
+                decoration: BoxDecoration(gradient: AppColors.bgGradient),
+                child: SafeArea(
+                  child: Column(
+                    children: [
+                      _buildTopBar(),
+                      const ConnectivityBanner(),
+                      if (_reconnecting) _buildReconnectingBanner(),
+                      if (_buildAfkRemainingSeconds() != null) _buildAfkBanner(),
+                      const Spacer(),
+                      _buildBoard(),
+                      const Spacer(),
+                      _buildBottomBar(),
+                    ],
+                  ),
+                ),
+              ),
       ),
     );
   }
@@ -1046,4 +1050,128 @@ class _GameOverDialog extends StatelessWidget {
       ]),
     );
   }
+}
+
+/// Page perte réseau IDENTITAIRE DAMES (rendue dans l'écran Dames
+/// uniquement — le filet global main.dart est neutre). Emblème damier
+/// + pions + état réseau ; la reconnexion est automatique (spinner).
+class _CheckersNetworkView extends StatelessWidget {
+  const _CheckersNetworkView();
+
+  @override
+  Widget build(BuildContext context) {
+    final accent = AppColors.neonOrange;
+    return Container(
+      decoration: BoxDecoration(gradient: AppColors.bgGradient),
+      child: SafeArea(
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(28),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                  width: 116,
+                  height: 116,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Damier 4x4 (identité Dames)
+                      Container(
+                        width: 104,
+                        height: 104,
+                        decoration: BoxDecoration(
+                          borderRadius: BorderRadius.circular(18),
+                          border: Border.all(
+                              color: accent.withValues(alpha: 0.35),
+                              width: 1.5),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: GridView.count(
+                          crossAxisCount: 4,
+                          physics: const NeverScrollableScrollPhysics(),
+                          children: [
+                            for (int i = 0; i < 16; i++)
+                              Container(
+                                color: ((i ~/ 4) + i) % 2 == 0
+                                    ? AppColors.bgElevated
+                                    : AppColors.bgCard,
+                                child: (i == 5)
+                                    ? Center(
+                                        child: _Disc(AppColors.neonRed))
+                                    : (i == 10)
+                                        ? const Center(
+                                            child: _Disc(Colors.white70))
+                                        : null,
+                              ),
+                          ],
+                        ),
+                      ),
+                      Positioned(
+                        bottom: 0,
+                        right: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(7),
+                          decoration: BoxDecoration(
+                            color: AppColors.bgDark,
+                            shape: BoxShape.circle,
+                            border: Border.all(color: accent, width: 2),
+                          ),
+                          child: Icon(Icons.wifi_off_rounded,
+                              size: 22, color: accent),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 26),
+                Text(
+                  'Connexion perdue',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  'Reconnexion en cours… Ta partie de Dames est en '
+                  'sécurité, tu reprends dès que le réseau revient.',
+                  textAlign: TextAlign.center,
+                  style: TextStyle(
+                    color: AppColors.textSecondary,
+                    fontSize: 14,
+                    height: 1.55,
+                  ),
+                ),
+                const SizedBox(height: 26),
+                SizedBox(
+                  width: 26,
+                  height: 26,
+                  child: CircularProgressIndicator(
+                      strokeWidth: 3, color: accent),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _Disc extends StatelessWidget {
+  final Color color;
+  const _Disc(this.color);
+  @override
+  Widget build(BuildContext context) => Container(
+        width: 16,
+        height: 16,
+        decoration: BoxDecoration(
+          color: color,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.black26, width: 1),
+        ),
+      );
 }

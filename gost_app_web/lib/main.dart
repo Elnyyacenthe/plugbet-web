@@ -798,15 +798,9 @@ class _PlugbetErrorWidget extends StatelessWidget {
       );
     }
 
-    // Erreur reseau / autre : ecran pro identitaire Ludo + retry.
+    // Filet GLOBAL NEUTRE (non thématisé jeu). Les pages identitaires
+    // Ludo / Dames sont rendues DANS leurs écrans de jeu respectifs.
     final accent = _isNetwork ? AppColors.neonOrange : AppColors.neonRed;
-    // Couleurs des 4 pions Ludo (embleme de marque).
-    final ludoColors = [
-      AppColors.neonRed,
-      AppColors.neonGreen,
-      AppColors.neonYellow,
-      AppColors.neonBlue,
-    ];
     return Material(
       color: AppColors.bgDark,
       child: Container(
@@ -826,61 +820,23 @@ class _PlugbetErrorWidget extends StatelessWidget {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    // Embleme Ludo : plateau 2x2 des 4 pions + badge d'etat
-                    SizedBox(
-                      width: 116,
-                      height: 116,
-                      child: Stack(
-                        alignment: Alignment.center,
-                        children: [
-                          Container(
-                            width: 104,
-                            height: 104,
-                            decoration: BoxDecoration(
-                              gradient: AppColors.cardGradient,
-                              borderRadius: BorderRadius.circular(22),
-                              border: Border.all(
-                                  color: accent.withValues(alpha: 0.35),
-                                  width: 1.5),
-                            ),
-                            padding: const EdgeInsets.all(16),
-                            child: GridView.count(
-                              crossAxisCount: 2,
-                              physics: const NeverScrollableScrollPhysics(),
-                              mainAxisSpacing: 10,
-                              crossAxisSpacing: 10,
-                              children: [
-                                for (final c in ludoColors)
-                                  Container(
-                                    decoration: BoxDecoration(
-                                      color: c.withValues(alpha: 0.85),
-                                      shape: BoxShape.circle,
-                                    ),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          // Pastille d'etat (wifi-off / erreur)
-                          Positioned(
-                            bottom: 0,
-                            right: 0,
-                            child: Container(
-                              padding: const EdgeInsets.all(7),
-                              decoration: BoxDecoration(
-                                color: AppColors.bgDark,
-                                shape: BoxShape.circle,
-                                border: Border.all(color: accent, width: 2),
-                              ),
-                              child: Icon(
-                                _isNetwork
-                                    ? Icons.wifi_off_rounded
-                                    : Icons.error_outline_rounded,
-                                size: 22,
-                                color: accent,
-                              ),
-                            ),
-                          ),
-                        ],
+                    // Badge NEUTRE (filet global générique, sans thème jeu)
+                    Container(
+                      width: 104,
+                      height: 104,
+                      decoration: BoxDecoration(
+                        gradient: AppColors.cardGradient,
+                        shape: BoxShape.circle,
+                        border: Border.all(
+                            color: accent.withValues(alpha: 0.40),
+                            width: 2),
+                      ),
+                      child: Icon(
+                        _isNetwork
+                            ? Icons.wifi_off_rounded
+                            : Icons.error_outline_rounded,
+                        size: 46,
+                        color: accent,
                       ),
                     ),
                     const SizedBox(height: 26),
@@ -899,10 +855,10 @@ class _PlugbetErrorWidget extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       _isNetwork
-                          ? 'Ta partie est en sécurité. Reconnecte-toi : '
-                              'tu reprends là où tu t\'es arrêté.'
+                          ? 'Vérifie ta connexion internet et réessaie. '
+                              'Tes données sont en sécurité.'
                           : 'Un imprévu est survenu. Réessaie — '
-                              'ta progression et ton solde sont sauvegardés.',
+                              'tes données sont sauvegardées.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppColors.textSecondary,
@@ -934,7 +890,7 @@ class _PlugbetErrorWidget extends StatelessWidget {
                     const SizedBox(height: 14),
                     Text(
                       _isNetwork
-                          ? 'Aucune mise n\'est perdue pendant une coupure réseau.'
+                          ? 'Aucune donnée n\'est perdue pendant une coupure réseau.'
                           : 'Si le problème persiste, redémarre l\'application.',
                       textAlign: TextAlign.center,
                       style: TextStyle(
