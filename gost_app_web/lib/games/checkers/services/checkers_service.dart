@@ -267,9 +267,12 @@ class CheckersService {
         extra: {'winner_id': winnerId, 'pot': pot},
       ));
     } else {
+      // [C1] checkers_draw_game live = signature (p_room_id uuid) UNIQUEMENT.
+      // Envoyer p_final_state -> PGRST202 (no function matches) -> le refund
+      // de match nul ECHOUAIT, mises gelees a chaque nulle. Le serveur ne
+      // fait de toute façon plus confiance au state client (S3).
       await _client.rpc('checkers_draw_game', params: {
         'p_room_id': roomId,
-        if (finalState != null) 'p_final_state': finalState.toJson(),
       });
       unawaited(GameAuditService.instance.logEvent(
         gameId: roomId, gameType: 'checkers', eventType: 'game_draw',

@@ -23,18 +23,29 @@ class CheckersGameScreen extends StatefulWidget {
   final CheckersRoom room;
   final PieceColor myColor;
   const CheckersGameScreen({super.key, required this.room, required this.myColor});
+
+  /// [A2] Garde anti-empilement : vrai tant qu'un écran de partie
+  /// Checkers est monté. La reprise de session (main.dart) ne
+  /// re-navigue pas si une partie est déjà affichée (port du
+  /// correctif Ludo F2).
+  static bool isOnScreen = false;
+
   @override
   State<CheckersGameScreen> createState() => _CheckersGameScreenState();
 }
 
 class _CheckersGameScreenState extends State<CheckersGameScreen>
-    with SingleTickerProviderStateMixin {
+    with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final CheckersService _service = CheckersService();
   late CheckersGameState _gameState;
   BoardPos? _selected;
   List<CheckerMove> _possibleMoves = [];
   bool _myTurn = false;
   bool _gameOver = false;
+  // [A3] Verrou de clôture UNIQUE, posé avant tout await de fin de
+  // partie et JAMAIS ré-armé : empêche forfait + game-over realtime
+  // concurrents de re-déclencher distributeWinnings / re-rentrer.
+  bool _endInFlight = false;
   bool _moving = false;  // verrou anti double-clic pendant l'attente serveur
   BoardPos? _serverJumpFrom; // multi-capture en cours (envoyé par serveur)
   bool _reconnecting = false; // true pendant retry reseau
@@ -58,6 +69,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   @override
   void initState() {
     super.initState();
+    CheckersGameScreen.isOnScreen = true;            // [A2]
+    WidgetsBinding.instance.addObserver(this);        // [A1]
     _gameState = CheckersGameState.initial();
     _pulseCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
@@ -196,7 +209,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   }
 
   Future<void> _handleForfeit() async {
-    if (_gameOver) return;
+    if (_endInFlight || _gameOver) return;   // [A3]
+    _endInFlight = true;                      // [A3] jamais ré-armé
     _gameOver = true;
     _turnTimer?.cancel();
     final isMultiplayer = !widget.room.isAI && widget.room.guestId != null;
@@ -224,17 +238,26 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           finalState: forfeitState,
         );
       } catch (e) {
-        // L'RPC a echoue : annuler le forfait local pour eviter de quitter
-        // sans avoir transmis la fin de partie a l'adversaire.
-        _gameOver = false;
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Erreur forfait : $e'),
-            backgroundColor: AppColors.neonRed,
-            duration: const Duration(seconds: 5),
-          ));
+        final msg = e.toString();
+        final alreadyClosed = msg.contains('ROOM_NOT_PLAYING') ||
+            msg.contains('ROOM_ALREADY_FINISHED') ||
+            msg.contains('already finished');
+        if (!alreadyClosed) {
+          // [A3] Vraie erreur (réseau...) : on NE ré-arme PAS _gameOver/
+          // _endInFlight (sinon forfait + game-over realtime se
+          // re-déclenchent en boucle). La partie reste fermée localement ;
+          // côté serveur, le cron timeout/cleanup gère l'abandon.
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+              content: Text('Erreur forfait : $e'),
+              backgroundColor: AppColors.neonRed,
+              duration: const Duration(seconds: 5),
+            ));
+          }
+          return;
         }
-        return;
+        // [A3] ROOM_NOT_PLAYING/ALREADY_FINISHED = l'adversaire a déjà
+        // clôturé : succès idempotent -> on continue vers l'écran de fin.
       }
     }
 
@@ -487,7 +510,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   }
 
   Future<void> _handleGameOver(CheckersGameState state) async {
-    if (_gameOver) return;
+    if (_endInFlight || _gameOver) return;   // [A3] verrou unique partagé
+    _endInFlight = true;                      // [A3] jamais ré-armé
     _gameOver = true;
     final uid = _service.currentUserId ?? '';
     final isWin = state.winner == widget.myColor;
@@ -542,7 +566,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         // La RPC a peut-etre deja ete appelee par l'adversaire : ignore
         // ROOM_NOT_PLAYING. Pour le reste : afficher l'erreur.
         final msg = e.toString();
-        if (!msg.contains('ROOM_NOT_PLAYING')) {
+        final alreadyClosed = msg.contains('ROOM_NOT_PLAYING') ||
+            msg.contains('ROOM_ALREADY_FINISHED') ||
+            msg.contains('already finished');
+        if (!alreadyClosed) {
           if (mounted) {
             ScaffoldMessenger.of(context).showSnackBar(SnackBar(
               content: Text('Erreur distribution : $e'),
@@ -583,6 +610,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
 
   @override
   void dispose() {
+    CheckersGameScreen.isOnScreen = false;           // [A2]
+    WidgetsBinding.instance.removeObserver(this);     // [A1]
     _turnTimer?.cancel();
     _pollTimer?.cancel();
     _afkCheckTimer?.cancel();
@@ -591,6 +620,38 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
     try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
     super.dispose();
+  }
+
+  /// [A1] Cycle de vie : sans ça, le timer de tour 8 s continue de
+  /// décompter en arrière-plan (appel, lock écran, switch app) et,
+  /// au retour, _onTurnTimeout joue un coup ALÉATOIRE ou forfaite
+  /// avec de l'argent réel. On coupe les timers en arrière-plan et
+  /// on re-synchronise l'état autoritaire au retour.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      if (_gameOver) return;
+      if (!widget.room.isAI && widget.room.guestId != null) {
+        _service.getRoom(widget.room.id).then((fresh) {
+          if (fresh != null && mounted) _handleRemoteRoomUpdate(fresh);
+        });
+        _pollTimer?.cancel();
+        _pollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
+          if (!mounted || _gameOver) return;
+          final fresh = await _service.getRoom(widget.room.id);
+          if (fresh != null) _handleRemoteRoomUpdate(fresh);
+        });
+      }
+      // Repart d'un compte à rebours plein (jamais d'expiration
+      // instantanée au retour) si c'est mon tour.
+      if (!_gameState.isGameOver && _myTurn) _startTurnTimer();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive ||
+        state == AppLifecycleState.hidden) {
+      _turnTimer?.cancel();
+      _pollTimer?.cancel();
+      _afkCheckTimer?.cancel();
+    }
   }
 
   @override

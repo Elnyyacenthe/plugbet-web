@@ -576,6 +576,10 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       final uid = svc.currentUserId;
       final type = session['type'];
       if (type == 'game') {
+        // [A2] Anti-empilement : si une partie Checkers est déjà
+        // affichée (bascule app PENDANT la partie), on ne re-navigue
+        // pas (sinon double subscription/timers/RPC sur room d'argent).
+        if (CheckersGameScreen.isOnScreen) return;
         // Meme calcul que lobby_screen : host -> host_color,
         // guest -> couleur opposee.
         final myColor = room.hostId == uid
