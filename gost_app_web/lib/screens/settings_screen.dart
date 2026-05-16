@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../theme/app_theme.dart';
+import '../app_version.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../services/supabase_service.dart';
 import '../services/hive_service.dart';
@@ -323,7 +324,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
               _card(Column(children: [
                 _infoRow(t.settingsApplication, 'Plugbet'),
                 const _Divider(),
-                _infoRow(t.settingsVersion, '1.0.0'),
+                _infoRow(t.settingsVersion, kAppVersion),
                 const _Divider(),
                 _linkRow(t.settingsGameRules, Icons.rule, () => _showInfoDialog(
                   t.settingsGameRules,
