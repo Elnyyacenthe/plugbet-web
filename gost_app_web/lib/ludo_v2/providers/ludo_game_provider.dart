@@ -22,6 +22,7 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _rolling = false;
   bool _moving = false;       // anti double-clic playMove
   bool _forfeiting = false;   // anti double-clic forfeit
+  bool _observerAdded = false; // [F7] idempotence addObserver
   List<PawnMove> _playableMoves = [];
 
   // ── Timer + Vies serveur ───────────────────────────────
@@ -79,7 +80,12 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
         _onGameUpdate,
         onConnectionLost: _startPollingFallback,
       );
-      WidgetsBinding.instance.addObserver(this);
+      // [F7] N'enregistrer l'observer qu'une seule fois (sinon
+      // didChangeAppLifecycleState -> _refreshGame multiplié).
+      if (!_observerAdded) {
+        WidgetsBinding.instance.addObserver(this);
+        _observerAdded = true;
+      }
 
       _computePlayable();
       _startTurnTimer();
@@ -126,10 +132,23 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
   }
 
   void _onGameUpdate(LudoV2Game updated) {
+    // [F4] Garde monotone : rejeter un snapshot obsolète (réordonnancement
+    // entre realtime / _refreshGame / polling 2s) sauf transition
+    // terminale 'finished'. turn_number est strictement croissant côté
+    // serveur. Sans ça, le plateau "recule" et des coups déjà joués
+    // peuvent être rejoués.
+    if (_game != null &&
+        updated.turnNumber < _game!.turnNumber &&
+        !updated.isFinished) {
+      return;
+    }
     _previousGame = _game;
     _game = updated;
-    _rolling = false;
-    _moving = false;
+    // [F4] NE PLUS réinitialiser _rolling/_moving ici. Ces flags
+    // anti-double-action sont remis à false à la RÉSOLUTION du Future
+    // RPC (finally de rollDice/playMove), pas sur un event realtime non
+    // lié — sinon le timer d'auto-action peut repartir avant la
+    // confirmation serveur => action dupliquée/divergente.
     _computePlayable();
     _startTurnTimer();
     _startIdleClaimWatcher();
@@ -158,9 +177,11 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
       return dice;
     } catch (e) {
       _error = e.toString();
+      return null;
+    } finally {
+      // [F4] Reset à la résolution du RPC (succès OU échec), pas via realtime.
       _rolling = false;
       notifyListeners();
-      return null;
     }
   }
 
@@ -184,11 +205,13 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
       // Ignorer les race conditions de tour silencieusement (Realtime arrive)
       if (!msg.contains('NOT_YOUR_TURN') && !msg.contains('Pas votre tour')) {
         _error = msg;
-        notifyListeners();
       }
-      _moving = false;
       debugPrint('[LUDO-V2-PROV] playMove error: $e');
       return null;
+    } finally {
+      // [F4] Reset à la résolution du RPC, pas via realtime.
+      _moving = false;
+      notifyListeners();
     }
   }
 
@@ -340,7 +363,10 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   @override
   void dispose() {
-    WidgetsBinding.instance.removeObserver(this);
+    if (_observerAdded) {
+      WidgetsBinding.instance.removeObserver(this);
+      _observerAdded = false;
+    }
     _turnTimer?.cancel();
     _countdownTimer?.cancel();
     _idleClaimWatcher?.cancel();

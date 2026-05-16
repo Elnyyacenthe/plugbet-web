@@ -73,29 +73,10 @@
     <div class="progress-bar"><div class="progress-fill"></div></div>
   </div>
 
-  <script>
-    // Clear cache a chaque chargement (actif jusqu'au 2026-05-21)
-    (function() {
-      var DEADLINE = '2026-05-21';
-      if (new Date().toISOString().slice(0, 10) >= DEADLINE) return;
-      try {
-        if ('serviceWorker' in navigator && !sessionStorage.getItem('plugbet_sw_cleared')) {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            if (regs.length > 0) {
-              sessionStorage.setItem('plugbet_sw_cleared', '1');
-              window.location.replace('/clear-cache.html');
-            }
-          }).catch(function(){});
-        }
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
-          }).catch(function(){});
-        }
-      } catch (e) {}
-    })();
-  </script>
-
+  <!-- [Audit A4] Hack kill-SW retiré. Build --pwa-strategy=none (aucun
+       service worker généré) + Cache-Control: no-store (vercel.json)
+       gèrent la fraîcheur. Supprime les reloads en pleine partie et le
+       gel des clients après la deadline codée (2026-05-21). -->
   <script src="flutter_bootstrap.js" async></script>
 
   <script>
@@ -108,44 +89,10 @@
       }
     });
 
-    // ============================================================
-    // Auto-update : force le service worker a appliquer les nouvelles
-    // versions immediatement (au lieu d'attendre la fermeture des onglets).
-    // ============================================================
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (!window.__plugbet_reloading) {
-          window.__plugbet_reloading = true;
-          console.log('[Plugbet] Nouvelle version detectee, rechargement...');
-          window.location.reload();
-        }
-      });
-
-      navigator.serviceWorker.ready.then(reg => {
-        reg.update().catch(() => {});
-        if (reg.waiting) {
-          reg.waiting.postMessage({ type: 'SKIP_WAITING' });
-        }
-        reg.addEventListener('updatefound', () => {
-          const newWorker = reg.installing;
-          if (!newWorker) return;
-          newWorker.addEventListener('statechange', () => {
-            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-              newWorker.postMessage({ type: 'SKIP_WAITING' });
-            }
-          });
-        });
-      });
-
-      // Re-check periodique toutes les 60s
-      setInterval(() => {
-        if (document.visibilityState === 'visible') {
-          navigator.serviceWorker.getRegistration().then(reg => {
-            if (reg) reg.update().catch(() => {});
-          });
-        }
-      }, 60000);
-    }
+    // [Audit A4] Bloc service-worker retiré : plus de SW (build
+    // --pwa-strategy=none) -> plus de controllerchange->reload en
+    // pleine partie Ludo, plus de gel post-deadline. Fraîcheur =
+    // Cache-Control: no-store (vercel.json).
   </script>
 </body>
 </html>

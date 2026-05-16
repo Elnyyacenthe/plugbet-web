@@ -20,6 +20,11 @@ class LudoV2GameScreen extends StatefulWidget {
   final String gameId;
   const LudoV2GameScreen({super.key, required this.gameId});
 
+  /// [F2] Garde anti-empilement : vrai tant qu'un écran de partie Ludo V2
+  /// est monté. La reprise de session (main.dart) ne re-navigue pas si
+  /// une partie est déjà affichée.
+  static bool isOnScreen = false;
+
   @override
   State<LudoV2GameScreen> createState() => _LudoV2GameScreenState();
 }
@@ -33,6 +38,7 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
   @override
   void initState() {
     super.initState();
+    LudoV2GameScreen.isOnScreen = true; // [F2]
     // Pause tout le polling réseau pendant le jeu
     WidgetsBinding.instance.addPostFrameCallback((_) {
       try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
@@ -45,8 +51,13 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
 
   @override
   void dispose() {
-    _forfeitIfNeeded();
-    // Reprendre le polling à la sortie du jeu
+    LudoV2GameScreen.isOnScreen = false; // [F2]
+    // [F3] NE PAS forfaiter au dispose : le dispose n'est pas un signal
+    // fiable d'intention (recréation d'arbre sur changement thème/langue,
+    // pushReplacement externe...). L'abandon ne se fait QUE via une
+    // intention explicite confirmée (_onWillPop -> _forfeitIfNeeded).
+    // L'absence du joueur est déjà gérée serveur (register_timeout /
+    // claim_idle_win).
     try {
       context.read<MatchesProvider>().resumePolling();
     } catch (_) {}
@@ -209,6 +220,59 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
                 const ConnectivityBanner(),
                 // Status bar
                 _buildStatusBar(game, prov),
+
+                // [F5] Bouton "Réclamer la victoire" si l'adversaire est
+                // AFK > 90s. canClaimIdleWin est rafraîchi toutes les 5s
+                // par _startIdleClaimWatcher. Sans ce bouton (régression
+                // vs Checkers), le joueur présent finissait par forfaiter
+                // une partie où l'adversaire était absent.
+                if (prov.canClaimIdleWin)
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                    color: AppColors.neonOrange.withValues(alpha: 0.12),
+                    child: Row(
+                      children: [
+                        Icon(Icons.timer_off,
+                            color: AppColors.neonOrange, size: 18),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Adversaire absent depuis ${prov.adversaryIdleSeconds()}s',
+                            style: TextStyle(
+                                color: AppColors.neonOrange, fontSize: 12),
+                          ),
+                        ),
+                        ElevatedButton(
+                          onPressed: () async {
+                            // Capturer le messenger AVANT l'await (évite
+                            // use_build_context_synchronously).
+                            final messenger =
+                                ScaffoldMessenger.of(context);
+                            final won = await prov.claimIdleWin();
+                            if (!mounted) return;
+                            messenger.showSnackBar(
+                              SnackBar(
+                                content: Text(won
+                                    ? 'Victoire réclamée !'
+                                    : 'Impossible de réclamer pour le moment.'),
+                                backgroundColor: won
+                                    ? AppColors.neonGreen
+                                    : AppColors.neonRed,
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: AppColors.neonOrange,
+                            foregroundColor: Colors.black,
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 14, vertical: 8),
+                          ),
+                          child: const Text('Réclamer la victoire'),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Message flottant
                 if (_message != null)

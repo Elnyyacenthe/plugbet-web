@@ -1,13 +1,17 @@
 // ============================================================
-// FreemopayService – Gestion des paiements via Freemopay API v2
+// KpayService – Gestion des paiements via K-Pay API v1
 // ============================================================
-// API Base URL: https://api-v2.freemopay.com/api/v2
+// Base URL : https://admin.kpay.site
 //
 // Flux:
-// 1. DEPOSIT: initier paiement → user valide sur téléphone → webhook callback → créditer wallet
-// 2. WITHDRAW: débiter wallet → initier retrait → webhook callback → finaliser
+// 1. DEPOSIT : POST /api/v1/payments/init -> user valide sur tel
+//    -> polling GET /api/v1/payments/:id -> credit wallet
+// 2. WITHDRAW : debit wallet -> POST /api/v1/payments/withdraw
+//    -> polling GET /api/v1/payments/withdraw/:id -> finalise
 //
-// Auth: Basic Auth (appKey:secretKey) en base64
+// Auth : headers X-API-Key + X-Secret-Key
+// Montant 1:1 (1 FCFA = 1 unite K-Pay). Aucun calcul de frais cote app.
+// Pas de webhook : resolution de statut par polling de l'API.
 // ============================================================
 
 import 'dart:convert';
@@ -17,56 +21,60 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
 import '../utils/logger.dart';
 
-class FreemopayService {
-  static const _log = Logger('FREEMOPAY');
-  static const _baseUrl = 'https://api-v2.freemopay.com/api/v2';
+class KpayService {
+  static const _log = Logger('KPAY');
+  static const _defaultBaseUrl = 'https://admin.kpay.site';
+
+  /// Montant minimum de retrait imposé par K-Pay (refus 400 en dessous).
+  static const int minWithdrawalAmount = 100;
   final _client = Supabase.instance.client;
   final _uuid = const Uuid();
 
-  String? _appKey;
+  String? _apiKey;
   String? _secretKey;
-  String? _webhookUrl;
+  String _baseUrl = _defaultBaseUrl;
   bool _configLoaded = false;
 
   // ============================================================
   // Configuration
   // ============================================================
 
-  /// Charge la config depuis Supabase (table app_settings, clé freemopay_config)
+  /// Charge la config depuis Supabase (table app_settings, clé kpay_config)
   Future<bool> loadConfig() async {
     if (_configLoaded) return true;
     try {
       final res = await _client
           .from('app_settings')
           .select('value')
-          .eq('key', 'freemopay_config')
+          .eq('key', 'kpay_config')
           .maybeSingle();
 
       if (res == null || res['value'] == null) {
-        _log.error('loadConfig', 'No Freemopay config found in app_settings', null);
+        _log.error('loadConfig', 'No K-Pay config found in app_settings', null);
         return false;
       }
 
       final config = res['value'] as Map<String, dynamic>;
 
-      // Vérifier si le service est actif
       final isActive = config['active'] as bool? ?? false;
       if (!isActive) {
-        _log.warn('Freemopay service is disabled in config');
+        _log.warn('K-Pay service is disabled in config');
         return false;
       }
 
-      _appKey = config['appKey'] as String?;
+      _apiKey = config['apiKey'] as String?;
       _secretKey = config['secretKey'] as String?;
-      _webhookUrl = config['callbackUrl'] as String?;
+      _baseUrl = (config['baseUrl'] as String?)?.trim().isNotEmpty == true
+          ? (config['baseUrl'] as String).trim()
+          : _defaultBaseUrl;
 
-      if (_appKey == null || _secretKey == null) {
-        _log.error('loadConfig', 'Missing appKey or secretKey', null);
+      if (_apiKey == null || _secretKey == null) {
+        _log.error('loadConfig', 'Missing apiKey or secretKey', null);
         return false;
       }
 
       _configLoaded = true;
-      _log.info('Freemopay config loaded successfully');
+      _log.info('K-Pay config loaded successfully');
       return true;
     } catch (e, s) {
       _log.error('loadConfig', e, s);
@@ -74,27 +82,30 @@ class FreemopayService {
     }
   }
 
-  /// Génère le header Basic Auth
-  String _basicAuthHeader() {
-    final credentials = '$_appKey:$_secretKey';
-    final encoded = base64Encode(utf8.encode(credentials));
-    return 'Basic $encoded';
+  Map<String, String> _authHeaders() => {
+        'Content-Type': 'application/json',
+        'X-API-Key': _apiKey ?? '',
+        'X-Secret-Key': _secretKey ?? '',
+      };
+
+  /// Mappe un statut K-Pay (PENDING/PROCESSING/COMPLETED/FAILED/CANCELLED)
+  /// vers nos 3 etats internes (PENDING/SUCCESS/FAILED).
+  String _mapStatus(String raw) {
+    final s = raw.toUpperCase();
+    if (s == 'COMPLETED' || s == 'SUCCESS') return 'SUCCESS';
+    if (s == 'FAILED' || s == 'CANCELLED' || s == 'EXPIRED' || s == 'REJECTED') {
+      return 'FAILED';
+    }
+    return 'PENDING';
   }
 
   // ============================================================
   // DEPOSIT – Dépôt d'argent (Mobile Money → Coins)
   // ============================================================
 
-  /// Initie un dépôt via Freemopay
-  ///
-  /// [payer] : Numéro de téléphone au format international (ex: 237658895572)
-  /// [amount] : Montant en FCFA (= FCFA)
-  ///
-  /// Retourne un Map avec:
-  /// - 'success': bool
-  /// - 'reference': String? (référence Freemopay)
-  /// - 'message': String (message utilisateur)
-  /// - 'externalId': String? (notre ID interne)
+  /// Initie un dépôt via K-Pay.
+  /// [payer] : numéro au format 237XXXXXXXXX
+  /// [amount] : montant en FCFA (1:1)
   Future<Map<String, dynamic>> initiateDeposit({
     required String payer,
     required int amount,
@@ -104,20 +115,15 @@ class FreemopayService {
       return {'success': false, 'message': 'Vous devez être connecté.'};
     }
 
-    // ============================================================
-    // WEB : passe par l'Edge Function (proxy serveur) pour eviter
-    // les blocages CORS. Sur mobile (natif), on reste sur l'appel direct.
-    // ============================================================
+    // WEB : Edge Function (proxy serveur, evite CORS)
     if (kIsWeb) {
       try {
         final res = await _client.functions.invoke(
-          'freemopay_initiate_deposit',
+          'kpay_initiate_deposit',
           body: {'amount': amount, 'payer': payer},
         );
         final data = res.data;
-        if (data is Map) {
-          return Map<String, dynamic>.from(data);
-        }
+        if (data is Map) return Map<String, dynamic>.from(data);
         return {'success': false, 'message': 'Reponse serveur invalide.'};
       } catch (e, s) {
         _log.error('initiateDeposit (web edge function)', e, s);
@@ -128,56 +134,53 @@ class FreemopayService {
       }
     }
 
-    // ============================================================
-    // MOBILE : appel direct FreemoPay (pas de CORS)
-    // ============================================================
+    // MOBILE : appel direct K-Pay
     if (!await loadConfig()) {
       return {
         'success': false,
-        'message': 'Configuration Freemopay manquante. Contactez le support.',
+        'message': 'Configuration K-Pay manquante. Contactez le support.',
       };
     }
 
-    // Générer un ID unique pour cette transaction
     final externalId = 'DEPOSIT_${_uuid.v4().substring(0, 8)}_$uid';
 
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/payment'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': _basicAuthHeader(),
-        },
-        body: jsonEncode({
-          'payer': payer,
-          'amount': amount.toString(),
-          'externalId': externalId,
-          'description': 'Dépôt de $amount FCFA',
-          'callback': _webhookUrl ?? '',
-        }),
-      ).timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/payments/init'),
+            headers: _authHeaders(),
+            body: jsonEncode({
+              'amount': amount,
+              'phoneNumber': payer,
+              'externalId': externalId,
+              'description': 'Dépôt de $amount FCFA',
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final kId = (data['id'] as String?) ?? '';
+      final kStatus = (data['status'] as String? ?? '').toUpperCase();
+      final accepted = (response.statusCode == 200 ||
+              response.statusCode == 201) &&
+          kId.isNotEmpty &&
+          !['FAILED', 'CANCELLED', 'REJECTED'].contains(kStatus);
 
-      if (response.statusCode == 200 &&
-          (data['status'] == 'SUCCESS' || data['status'] == 'CREATED')) {
-        final reference = data['reference'] as String;
-
-        // Enregistrer dans freemopay_transactions
-        await _client.from('freemopay_transactions').insert({
+      if (accepted) {
+        await _client.from('kpay_transactions').insert({
           'user_id': uid,
-          'reference': reference,
+          'reference': kId,
           'external_id': externalId,
           'transaction_type': 'DEPOSIT',
           'amount': amount,
           'status': 'PENDING',
-          'payer_or_receiver': payer,
+          'phone': payer,
           'message': data['message'] ?? 'Paiement initié',
         });
 
         return {
           'success': true,
-          'reference': reference,
+          'reference': kId,
           'externalId': externalId,
           'message':
               'Transaction initiée. Validez le paiement sur votre téléphone.',
@@ -186,7 +189,8 @@ class FreemopayService {
         _log.warn('initiateDeposit failed: $data');
         return {
           'success': false,
-          'message': data['message']?['fr'] ?? data['message'] ??
+          'message': data['message'] ??
+              data['error'] ??
               'Erreur lors de l\'initialisation du paiement.',
         };
       }
@@ -203,16 +207,9 @@ class FreemopayService {
   // WITHDRAW – Retrait d'argent (Coins → Mobile Money)
   // ============================================================
 
-  /// Initie un retrait via Freemopay
-  ///
-  /// [receiver] : Numéro de téléphone au format international
-  /// [amount] : Montant en FCFA (= FCFA)
-  ///
-  /// Retourne un Map avec:
-  /// - 'success': bool
-  /// - 'reference': String?
-  /// - 'message': String
-  /// - 'externalId': String?
+  /// Initie un retrait via K-Pay.
+  /// [receiver] : numéro au format 237XXXXXXXXX
+  /// [amount] : montant en FCFA (1:1)
   Future<Map<String, dynamic>> initiateWithdrawal({
     required String receiver,
     required int amount,
@@ -222,44 +219,43 @@ class FreemopayService {
       return {'success': false, 'message': 'Vous devez être connecté.'};
     }
 
-    // Sur mobile : besoin de loadConfig pour le POST direct
-    // Sur web : pas besoin, l'Edge Function lit la config server-side
-    if (!kIsWeb && !await loadConfig()) {
+    // K-Pay refuse les retraits < 100 F (HTTP 400). On bloque ici, avant
+    // tout débit du wallet ou appel réseau, avec un message clair.
+    if (amount < minWithdrawalAmount) {
       return {
         'success': false,
-        'message': 'Configuration Freemopay manquante. Contactez le support.',
+        'message':
+            'Le montant minimum de retrait est de $minWithdrawalAmount FCFA.',
       };
     }
 
-    // Verification anti-fraude + limites de retrait
+    if (!kIsWeb && !await loadConfig()) {
+      return {
+        'success': false,
+        'message': 'Configuration K-Pay manquante. Contactez le support.',
+      };
+    }
+
+    // Verification anti-fraude + limites de retrait (optionnel)
     try {
       final check = await _client.rpc('check_withdrawal_allowed', params: {
         'p_amount': amount,
       });
-      if (check is Map) {
-        if (check['allowed'] != true) {
-          return {
-            'success': false,
-            'message': check['reason'] as String? ?? 'Retrait non autorisé',
-            'kyc_required': check['kyc_required'] == true,
-          };
-        }
-        // Si review manuelle requise, informer le joueur
-        if (check['review_needed'] == true) {
-          // On continue mais on pourrait demander confirmation UI
-        }
+      if (check is Map && check['allowed'] != true) {
+        return {
+          'success': false,
+          'message': check['reason'] as String? ?? 'Retrait non autorisé',
+          'kyc_required': check['kyc_required'] == true,
+        };
       }
-    } catch (e) {
-      // Si la RPC n'existe pas encore (migration pas faite), on continue
-      // Pas de blocage pour compat descendante
+    } catch (_) {
+      // RPC absente -> pas de blocage (compat descendante)
     }
 
     final externalId = 'WITHDRAW_${_uuid.v4().substring(0, 8)}_$uid';
 
     // 1. DEBIT WALLET via ledger V2 (atomique + idempotent)
-    // Avant tout appel Freemopay, on debite le solde via la RPC ledger.
-    // Si solde insuffisant -> rejet immediat, pas d'appel Freemopay.
-    final debitRes = await _client.rpc('freemopay_debit_for_withdrawal', params: {
+    final debitRes = await _client.rpc('kpay_debit_for_withdrawal', params: {
       'p_amount': amount,
       'p_external_id': externalId,
     });
@@ -276,13 +272,11 @@ class FreemopayService {
       return {'success': false, 'message': 'Erreur debit solde: $err'};
     }
 
-    // 2. APPEL FREEMOPAY
-    // Sur web : passe par l'Edge Function (CORS)
-    // Sur mobile : POST direct
+    // 2. APPEL K-Pay
     if (kIsWeb) {
       try {
         final res = await _client.functions.invoke(
-          'freemopay_initiate_withdrawal',
+          'kpay_initiate_withdrawal',
           body: {
             'amount': amount,
             'receiver': receiver,
@@ -293,11 +287,10 @@ class FreemopayService {
         if (data is Map && data['success'] == true) {
           return Map<String, dynamic>.from(data);
         }
-        // Echec serveur -> refund
         final msg = (data is Map ? data['message'] : null) as String? ??
             'Erreur lors de l\'initialisation du retrait. Solde restauré.';
         _log.warn('initiateWithdrawal (web) refused: $data');
-        await _refundWithdrawal(amount, externalId, 'freemopay_init_failed_web');
+        await _refundWithdrawal(amount, externalId, 'kpay_init_failed_web');
         return {'success': false, 'message': msg};
       } catch (e, s) {
         _log.error('initiateWithdrawal (web edge function)', e, s);
@@ -310,56 +303,56 @@ class FreemopayService {
     }
 
     try {
-      final response = await http.post(
-        Uri.parse('$_baseUrl/payment/direct-withdraw'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': _basicAuthHeader(),
-        },
-        body: jsonEncode({
-          'receiver': receiver,
-          'amount': amount.toString(),
-          'externalId': externalId,
-          'callback': _webhookUrl ?? '',
-        }),
-      ).timeout(const Duration(seconds: 20));
+      final response = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/payments/withdraw'),
+            headers: _authHeaders(),
+            body: jsonEncode({
+              'amount': amount,
+              'phoneNumber': receiver,
+              'description': 'Retrait de $amount FCFA',
+            }),
+          )
+          .timeout(const Duration(seconds: 20));
 
       final data = jsonDecode(response.body) as Map<String, dynamic>;
+      final kId = (data['id'] as String?) ?? '';
+      final kStatus = (data['status'] as String? ?? '').toUpperCase();
+      final accepted = (response.statusCode == 200 ||
+              response.statusCode == 201) &&
+          kId.isNotEmpty &&
+          !['FAILED', 'CANCELLED', 'REJECTED'].contains(kStatus);
 
-      if (response.statusCode == 200 &&
-          (data['status'] == 'CREATED' || data['status'] == 'SUCCESS')) {
-        final reference = data['reference'] as String;
-
-        // Enregistrer dans freemopay_transactions
-        await _client.from('freemopay_transactions').insert({
+      if (accepted) {
+        await _client.from('kpay_transactions').insert({
           'user_id': uid,
-          'reference': reference,
+          'reference': kId,
           'external_id': externalId,
           'transaction_type': 'WITHDRAW',
           'amount': amount,
           'status': 'PENDING',
-          'payer_or_receiver': receiver,
+          'phone': receiver,
           'message': data['message'] ?? 'Retrait initié',
         });
 
         return {
           'success': true,
-          'reference': reference,
+          'reference': kId,
           'externalId': externalId,
           'message': 'Retrait en cours. Vous recevrez l\'argent sous peu.',
         };
       } else {
-        // 3. ECHEC FREEMOPAY -> REFUND auto
-        _log.warn('initiateWithdrawal Freemopay failed: $data');
-        await _refundWithdrawal(amount, externalId, 'freemopay_init_failed');
+        // ECHEC K-Pay -> REFUND auto
+        _log.warn('initiateWithdrawal K-Pay failed: $data');
+        await _refundWithdrawal(amount, externalId, 'kpay_init_failed');
         return {
           'success': false,
-          'message': data['message']?['fr'] ?? data['message'] ??
+          'message': data['message'] ??
+              data['error'] ??
               'Erreur lors de l\'initialisation du retrait. Solde restauré.',
         };
       }
     } catch (e, s) {
-      // 3bis. ERREUR RESEAU/TIMEOUT -> REFUND auto
       _log.error('initiateWithdrawal', e, s);
       await _refundWithdrawal(amount, externalId, 'network_error');
       return {
@@ -369,17 +362,18 @@ class FreemopayService {
     }
   }
 
-  /// Refund interne si l'init Freemopay echoue apres le debit.
-  Future<void> _refundWithdrawal(int amount, String externalId, String reason) async {
+  /// Refund interne si l'init K-Pay echoue apres le debit.
+  Future<void> _refundWithdrawal(
+      int amount, String externalId, String reason) async {
     try {
-      await _client.rpc('freemopay_refund_withdrawal', params: {
+      await _client.rpc('kpay_refund_withdrawal', params: {
         'p_amount': amount,
         'p_external_id': externalId,
         'p_reason': reason,
       });
     } catch (e) {
       _log.error('refundWithdrawal', e, null);
-      // Si meme le refund plante, on log et le cron prendra le relai
+      // Si meme le refund plante, le cron prendra le relai
     }
   }
 
@@ -387,35 +381,47 @@ class FreemopayService {
   // STATUS – Récupérer le statut d'une transaction
   // ============================================================
 
-  /// Verifie si une transaction a deja ete creditee (anti-double-credit).
-  /// Le webhook ou le cron reconcile peuvent avoir credite avant que le
-  /// polling client n'arrive. On evite le doublon.
+  /// Vérifie si une transaction a déjà été créditée/refundée (anti-doublon).
   Future<bool> isAlreadyCredited(String reference) async {
     try {
-      final r = await _client.rpc('is_freemopay_credited',
-          params: {'p_reference': reference});
+      final r = await _client
+          .rpc('is_kpay_credited', params: {'p_reference': reference});
       return r == true;
     } catch (e) {
       _log.warn('isAlreadyCredited check failed: $e');
-      return false;  // En cas d'erreur, on laisse passer (fallback safe)
+      return false;
     }
   }
 
-  /// Récupère le statut d'une transaction Freemopay
-  /// Utile pour le polling manuel si pas de webhook
-  Future<Map<String, dynamic>?> getTransactionStatus(String reference) async {
+  /// Récupère le statut courant d'une transaction K-Pay via l'API.
+  /// [transactionType] : 'DEPOSIT' ou 'WITHDRAW' (endpoint différent).
+  /// Retourne un map { 'status': PENDING|SUCCESS|FAILED, 'raw', 'reason' }.
+  Future<Map<String, dynamic>?> getTransactionStatus(
+    String reference, {
+    required String transactionType,
+  }) async {
     if (!await loadConfig()) return null;
 
+    final path = transactionType == 'WITHDRAW'
+        ? '/api/v1/payments/withdraw/$reference'
+        : '/api/v1/payments/$reference';
+
     try {
-      final response = await http.get(
-        Uri.parse('$_baseUrl/payment/$reference'),
-        headers: {
-          'Authorization': _basicAuthHeader(),
-        },
-      );
+      final response = await http
+          .get(Uri.parse('$_baseUrl$path'), headers: _authHeaders())
+          .timeout(const Duration(seconds: 15));
 
       if (response.statusCode == 200) {
-        return jsonDecode(response.body) as Map<String, dynamic>;
+        final body = jsonDecode(response.body) as Map<String, dynamic>;
+        final data = (body['data'] is Map)
+            ? body['data'] as Map<String, dynamic>
+            : body;
+        final raw = (data['status'] as String? ?? '').toUpperCase();
+        return {
+          'status': _mapStatus(raw),
+          'raw': raw,
+          'reason': data['failureReason'] ?? data['message'] ?? '',
+        };
       } else {
         _log.warn('getTransactionStatus failed: ${response.body}');
         return null;
@@ -430,14 +436,14 @@ class FreemopayService {
   // HELPERS
   // ============================================================
 
-  /// Récupère les transactions Freemopay de l'utilisateur courant
+  /// Récupère les transactions K-Pay de l'utilisateur courant.
   Future<List<Map<String, dynamic>>> getMyTransactions() async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return [];
 
     try {
       final res = await _client
-          .from('freemopay_transactions')
+          .from('kpay_transactions')
           .select()
           .eq('user_id', uid)
           .order('created_at', ascending: false)
@@ -449,7 +455,7 @@ class FreemopayService {
     }
   }
 
-  /// Met à jour le statut d'une transaction (appelé par webhook ou polling)
+  /// Met à jour le statut d'une transaction (appelé par le polling client).
   Future<void> updateTransactionStatus({
     required String reference,
     required String status,
@@ -457,7 +463,7 @@ class FreemopayService {
     Map<String, dynamic>? callbackData,
   }) async {
     try {
-      await _client.from('freemopay_transactions').update({
+      await _client.from('kpay_transactions').update({
         'status': status,
         if (message != null) 'message': message,
         if (callbackData != null) 'callback_data': callbackData,
@@ -467,36 +473,23 @@ class FreemopayService {
     }
   }
 
-  /// Normalise un numero de telephone en format API (sans +, sans espace,
-  /// avec prefixe 237 auto-ajoute si absent).
-  ///
-  /// Accepte tous ces formats et retourne '237XXXXXXXXX' :
-  ///   - '699123456'       -> '237699123456'
-  ///   - '237699123456'    -> '237699123456'
-  ///   - '+237 699 123 456' -> '237699123456'
-  ///   - '00237699123456'  -> '237699123456'
+  /// Normalise un numéro -> '237XXXXXXXXX'.
   String normalizePhoneNumber(String phone) {
-    // 1. Retire tout ce qui n'est pas chiffre
     var digits = phone.replaceAll(RegExp(r'[^0-9]'), '');
-    // 2. Retire prefixe international 00 si present
     if (digits.startsWith('00')) digits = digits.substring(2);
-    // 3. Si commence deja par 237 -> garder
     if (digits.startsWith('237')) return digits;
-    // 4. Si commence par 0 (format local francais 0691... -> 691...) retire le 0
     if (digits.startsWith('0') && digits.length >= 10) {
       digits = digits.substring(1);
     }
-    // 5. Prepend 237
     return '237$digits';
   }
 
-  /// Valide le format d'un numéro de téléphone après normalisation.
-  /// Format attendu: 237XXXXXXXXX (9 chiffres après le préfixe)
+  /// Valide le format après normalisation : 237 + 9 chiffres.
   bool validatePhoneNumber(String phone) {
     final n = normalizePhoneNumber(phone);
     return RegExp(r'^237[0-9]{9}$').hasMatch(n);
   }
 
-  /// Nettoie un numéro de téléphone pour l'API (alias de normalizePhoneNumber).
+  /// Alias de normalizePhoneNumber.
   String cleanPhoneNumber(String phone) => normalizePhoneNumber(phone);
 }

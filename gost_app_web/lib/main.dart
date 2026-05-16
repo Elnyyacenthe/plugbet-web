@@ -48,6 +48,7 @@ import 'games/checkers/screens/lobby_screen.dart';
 import 'games/checkers/models/checkers_models.dart' as cm;
 import 'ludo_v2/services/ludo_service.dart';
 import 'ludo_v2/screens/ludo_game_screen.dart';
+import 'ludo_v2/providers/ludo_game_provider.dart';
 
 const _kSentryDsn =
     'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
@@ -65,6 +66,12 @@ class PlugbetHttpOverrides extends HttpOverrides {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Remplace le red-screen-of-death Flutter par un ecran propre.
+  // Detecte si erreur reseau et affiche un message adapte.
+  ErrorWidget.builder = (FlutterErrorDetails details) {
+    return _PlugbetErrorWidget(details: details);
+  };
 
   // Neutraliser tous les debugPrint en release
   // (evite le spam de logs en prod + micro gain CPU)
@@ -476,6 +483,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         _checkActiveCoraSession();
         // Reprise de session Blackjack
         _checkActiveBlackjackSession();
+        // Reprise de session Checkers + Ludo V2
         _checkActiveCheckersSession();
         _checkActiveLudoV2Session();
         break;
@@ -552,7 +560,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     }
   }
 
-  /// Reprise de session Checkers.
+  /// Reprise de session Checkers : fetch la room, recalcule la couleur
+  /// du joueur (host_color si host, oppose si guest), navigue.
   Future<void> _checkActiveCheckersSession() async {
     if (_checkersResumeInFlight) return;
     _checkersResumeInFlight = true;
@@ -567,6 +576,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       final uid = svc.currentUserId;
       final type = session['type'];
       if (type == 'game') {
+        // Meme calcul que lobby_screen : host -> host_color,
+        // guest -> couleur opposee.
         final myColor = room.hostId == uid
             ? (room.hostColor == 'red' ? cm.PieceColor.red : cm.PieceColor.black)
             : (room.hostColor == 'red' ? cm.PieceColor.black : cm.PieceColor.red);
@@ -589,7 +600,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     }
   }
 
-  /// Reprise de session Ludo V2.
+  /// Reprise de session Ludo V2 : navigue vers la partie en cours.
   Future<void> _checkActiveLudoV2Session() async {
     if (_ludoV2ResumeInFlight) return;
     _ludoV2ResumeInFlight = true;
@@ -597,12 +608,25 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       final session = await LudoV2Service.instance.getActiveSession();
       if (!mounted || session == null) return;
       if (session['type'] == 'game' && session['game_id'] != null) {
+        // [F2] Anti-empilement : si une partie Ludo V2 est déjà affichée
+        // (cas typique : bascule app PENDANT la partie), on ne re-navigue
+        // pas (sinon double provider/timers + forfait au pop).
+        if (LudoV2GameScreen.isOnScreen) return;
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => LudoV2GameScreen(gameId: session['game_id'] as String),
+            // [F1] L'écran exige un LudoV2GameProvider dans l'arbre.
+            // Il n'est PAS dans le MultiProvider global -> on l'enveloppe
+            // ici comme le fait ludo_menu_screen (sinon
+            // ProviderNotFoundException = crash à chaque reprise).
+            builder: (_) => ChangeNotifierProvider(
+              create: (_) => LudoV2GameProvider(),
+              child: LudoV2GameScreen(gameId: session['game_id'] as String),
+            ),
           ),
         );
       }
+      // Cas 'room' (waiting) : Ludo V2 n'a pas d'ecran lobby dedie,
+      // le menu gere la re-entree. On ne navigue pas.
     } catch (_) {
       // ignore
     } finally {
@@ -710,6 +734,122 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
               label: t.tabSettings,
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// ============================================================
+/// _PlugbetErrorWidget — remplace le red-screen-of-death Flutter
+/// par une UI propre. Detecte les erreurs reseau pour adapter le
+/// message et propose un bouton "Reessayer" qui force un rebuild.
+/// ============================================================
+class _PlugbetErrorWidget extends StatelessWidget {
+  final FlutterErrorDetails details;
+  const _PlugbetErrorWidget({required this.details});
+
+  bool get _isNetwork {
+    final msg = details.exception.toString().toLowerCase();
+    return msg.contains('socketexception')
+        || msg.contains('connection abort')
+        || msg.contains('failed host lookup')
+        || msg.contains('network is unreachable')
+        || msg.contains('connection timed out')
+        || msg.contains('connection refused');
+  }
+
+  bool get _isRender {
+    final lib = details.library ?? '';
+    return lib.contains('rendering')
+        || lib.contains('widgets library');
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Pour les erreurs de rendu (sliver, layout, etc.) qu'on voit
+    // typiquement en cas de re-build sous pression reseau : on affiche
+    // un loader discret qui laisse le widget tree se reconstruire.
+    if (_isRender) {
+      return Container(
+        color: AppColors.bgDark,
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              SizedBox(
+                width: 32, height: 32,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  valueColor: AlwaysStoppedAnimation(AppColors.neonGreen),
+                ),
+              ),
+              SizedBox(height: 12),
+              Text('Chargement...',
+                  style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+            ],
+          ),
+        ),
+      );
+    }
+
+    // Erreurs reseau / autres : ecran "oops" propre avec retry
+    return Material(
+      color: AppColors.bgDark,
+      child: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(
+                _isNetwork ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
+                size: 64,
+                color: _isNetwork ? AppColors.neonOrange : AppColors.neonRed,
+              ),
+              const SizedBox(height: 20),
+              Text(
+                _isNetwork ? 'Connexion perdue' : 'Oups, un souci',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 22,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                _isNetwork
+                    ? 'Verifie ta connexion internet et reessaie.'
+                    : 'Un imprevu est arrive. Reessaie ou redemarre l\'app.',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 14,
+                  height: 1.5,
+                ),
+              ),
+              const SizedBox(height: 28),
+              ElevatedButton.icon(
+                onPressed: () {
+                  // Force un rebuild en remontant la racine. Le widget
+                  // qui a leve l'erreur sera reconstruit. Si le probleme
+                  // (reseau) est passe, l'app reprend.
+                  WidgetsBinding.instance.scheduleForcedFrame();
+                },
+                icon: const Icon(Icons.refresh, size: 18),
+                label: const Text('Reessayer'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: AppColors.neonGreen,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
+                ),
+              ),
+            ],
+          ),
         ),
       ),
     );

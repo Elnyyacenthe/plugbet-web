@@ -16,14 +16,12 @@ import '../models/player_models.dart';
 import '../services/messaging_service.dart';
 import '../services/profile_service.dart';
 import '../services/supabase_service.dart';
-import '../services/freemopay_service.dart';
-import '../services/wallet_service.dart';
+import '../services/kpay_service.dart';
 import '../utils/logger.dart';
 import '../widgets/profile/transaction_tile.dart';
 import '../widgets/user_avatar.dart';
 import 'auth_screen.dart';
 import 'user_search_screen.dart';
-import 'freemopay_awaiting_screen.dart';
 import 'my_payments_screen.dart';
 
 class ProfileScreen extends StatefulWidget {
@@ -38,8 +36,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   static const _log = Logger('PROFILE');
   final _profileService = ProfileService();
   final _messagingService = MessagingService();
-  final _freemopayService = FreemopayService();
-  final _walletService = WalletService();
+  final _kpayService = KpayService();
 
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _transactions = [];
@@ -206,11 +203,10 @@ class _ProfileScreenState extends State<ProfileScreen>
       });
     }
 
-    // 2. Charger les transactions Freemopay
+    // 2. Charger les transactions K-Pay
     try {
-      final freemopayTx = await _freemopayService.getMyTransactions();
-      for (final row in freemopayTx) {
-        print('Freemopay transaction: $row');
+      final kpayTx = await _kpayService.getMyTransactions();
+      for (final row in kpayTx) {
         final txType = row['transaction_type'] as String? ?? '';
         final status = row['status'] as String? ?? '';
         final amount = row['amount'] as int? ?? 0;
@@ -261,7 +257,7 @@ class _ProfileScreenState extends State<ProfileScreen>
         });
       }
     } catch (e, s) {
-      _log.error('loadFreemopayTransactions', e, s);
+      _log.error('loadKpayTransactions', e, s);
     }
 
     // 3. Trier par date décroissante (plus récent en premier)
@@ -1502,7 +1498,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   }
 
   // ═══════════════════════════════════════════════════════════
-  // FREEMOPAY – DÉPÔT ET RETRAIT
+  // K-PAY – DÉPÔT ET RETRAIT
   // ═══════════════════════════════════════════════════════════
 
   Widget _buildActionButton({
@@ -1662,7 +1658,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         return;
                       }
 
-                      if (!_freemopayService.validatePhoneNumber(phone)) {
+                      if (!_kpayService.validatePhoneNumber(phone)) {
                         setS(() => error =
                             'Numéro invalide. Format: 237XXXXXXXXX');
                         return;
@@ -1674,8 +1670,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       });
 
                       final cleanedPhone =
-                          _freemopayService.cleanPhoneNumber(phone);
-                      final result = await _freemopayService.initiateDeposit(
+                          _kpayService.cleanPhoneNumber(phone);
+                      final result = await _kpayService.initiateDeposit(
                         payer: cleanedPhone,
                         amount: amount,
                       );
@@ -1685,42 +1681,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                       if (result['success'] == true) {
                         Navigator.pop(ctx);
 
-                        // Rediriger vers la page d'attente avec polling
+                        // Traitement en arriere-plan : pas d'ecran d'attente.
+                        // Le joueur continue a jouer ; il sera notifie (push)
+                        // des que le depot est credite cote serveur
+                        // (webhook / watcher / cron). Le solde se met a jour
+                        // tout seul (realtime + refresh au resume).
                         if (mounted) {
-                          final success = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => FreemopayAwaitingScreen(
-                                reference: result['reference'] as String,
-                                externalId: result['externalId'] as String,
-                                transactionType: 'DEPOSIT',
-                                amount: amount,
-                                phoneNumber: cleanedPhone,
+                          _loadTransactions();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Dépôt de $amount FCFA en cours. Valide le paiement sur ton téléphone — tu peux continuer à jouer, on te notifie dès que c\'est crédité.',
                               ),
+                              backgroundColor: AppColors.neonBlue,
+                              duration: const Duration(seconds: 5),
                             ),
                           );
-
-                          // Recharger les données après retour
-                          if (mounted) {
-                            context.read<WalletProvider>().refresh();
-                            _loadTransactions();
-
-                            if (success == true) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Dépôt de $amount FCFA réussi !'),
-                                  backgroundColor: AppColors.neonGreen,
-                                ),
-                              );
-                            } else if (success == false) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Dépôt échoué'),
-                                  backgroundColor: AppColors.neonRed,
-                                ),
-                              );
-                            }
-                          }
                         }
                       } else {
                         setS(() {
@@ -1931,7 +1907,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         return;
                       }
 
-                      if (!_freemopayService.validatePhoneNumber(phone)) {
+                      if (!_kpayService.validatePhoneNumber(phone)) {
                         setS(() =>
                             error = 'Numéro invalide. Format: 237XXXXXXXXX');
                         return;
@@ -1942,15 +1918,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                         error = null;
                       });
 
-                      // Le service initiateWithdrawal gere maintenant :
+                      // Le service initiateWithdrawal gere :
                       //   1. Le debit atomique via ledger V2
-                      //   2. L'appel Freemopay
-                      //   3. Le refund auto si Freemopay echoue
+                      //   2. L'appel K-Pay
+                      //   3. Le refund auto si K-Pay echoue
                       // Plus de double-debit ici.
                       final cleanedPhone =
-                          _freemopayService.cleanPhoneNumber(phone);
+                          _kpayService.cleanPhoneNumber(phone);
                       final result =
-                          await _freemopayService.initiateWithdrawal(
+                          await _kpayService.initiateWithdrawal(
                         receiver: cleanedPhone,
                         amount: amount,
                       );
@@ -1965,50 +1941,27 @@ class _ProfileScreenState extends State<ProfileScreen>
                       if (result['success'] == true) {
                         Navigator.pop(ctx);
 
-                        // Rediriger vers la page d'attente avec polling
+                        // Traitement en arriere-plan : pas d'ecran d'attente.
+                        // Le solde a deja ete debite ; le joueur continue a
+                        // jouer et sera notifie (push) du resultat
+                        // (retrait effectue, ou echec + remboursement).
                         if (mounted) {
-                          final success = await Navigator.push<bool>(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => FreemopayAwaitingScreen(
-                                reference: result['reference'] as String,
-                                externalId: result['externalId'] as String,
-                                transactionType: 'WITHDRAW',
-                                amount: amount,
-                                phoneNumber: cleanedPhone,
+                          wallet.refresh();
+                          _loadTransactions();
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                'Retrait de $amount FCFA en cours. Tu peux continuer à jouer — on te notifie dès qu\'il est traité.',
                               ),
+                              backgroundColor: AppColors.neonBlue,
+                              duration: const Duration(seconds: 5),
                             ),
                           );
-
-                          // Recharger les données après retour
-                          if (mounted) {
-                            wallet.refresh();
-                            _loadTransactions();
-
-                            if (success == true) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Retrait de $amount FCFA réussi !'),
-                                  backgroundColor: AppColors.neonGreen,
-                                ),
-                              );
-                            } else if (success == false) {
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                SnackBar(
-                                  content: Text('Retrait échoué - Montant remboursé'),
-                                  backgroundColor: AppColors.neonRed,
-                                ),
-                              );
-                            }
-                          }
                         }
                       } else {
-                        // Re-créditer en cas d'échec API (avant même d'atteindre Freemopay)
-                        await _walletService.addCoins(
-                          amount,
-                          source: 'freemopay_withdrawal_failed',
-                          note: 'Refund: ${result['message']}',
-                        );
+                        // Le refund est deja gere par KpayService.initiateWithdrawal
+                        // (RPC kpay_refund_withdrawal). Pas de re-credit ici
+                        // pour eviter le double-remboursement.
                         setS(() {
                           loading = false;
                           error = result['message'] ?? 'Erreur inconnue';

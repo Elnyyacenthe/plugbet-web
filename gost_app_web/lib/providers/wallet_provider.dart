@@ -1,12 +1,12 @@
 // ============================================================
 // WalletProvider – Solde global accessible depuis toute l'app
 // ============================================================
-import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
+import 'package:flutter/widgets.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../services/wallet_service.dart';
 
-class WalletProvider extends ChangeNotifier {
+class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
   final WalletService _service = WalletService();
   final SupabaseClient _client = Supabase.instance.client;
 
@@ -25,8 +25,23 @@ class WalletProvider extends ChangeNotifier {
   }
 
   Future<void> _init() async {
+    WidgetsBinding.instance.addObserver(this);
     await refresh();
     _subscribeRealtime();
+  }
+
+  /// Au retour de l'app (resume) : re-fetch le solde + re-abonnement
+  /// realtime. Couvre le cas où un crédit/refund serveur (webhook, cron,
+  /// watcher) a eu lieu pendant que l'app était fermée/en arrière-plan
+  /// (la socket realtime ne rejoue pas les events manqués).
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      refresh();
+      if (_channel == null) {
+        _subscribeRealtime();
+      }
+    }
   }
 
   /// notifyListeners safe — si on est en plein build, differe au prochain frame
@@ -83,6 +98,7 @@ class WalletProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     if (_channel != null) {
       _client.removeChannel(_channel!);
     }

@@ -1,7 +1,7 @@
 // ============================================================
 // Mes paiements — Historique Mobile Money pour le user
 // ============================================================
-// Affiche toutes les transactions Freemopay du user avec :
+// Affiche toutes les transactions K-Pay du user avec :
 //   - Statut clair en français
 //   - Bouton "Vérifier maintenant" (force reconcile)
 //   - Bouton "Contacter support" si PENDING > 1h
@@ -46,7 +46,7 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
     setState(() { _loading = true; _error = null; });
     try {
       final data = await _client
-          .from('my_freemopay_transactions_v')
+          .from('my_kpay_transactions_v')
           .select()
           .order('created_at', ascending: false)
           .limit(100);
@@ -70,11 +70,11 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) return;
     _channel = _client
-        .channel('my-freemopay-$uid')
+        .channel('my-kpay-$uid')
         .onPostgresChanges(
           event: PostgresChangeEvent.all,
           schema: 'public',
-          table: 'freemopay_transactions',
+          table: 'kpay_transactions',
           filter: PostgresChangeFilter(
             type: PostgresChangeFilterType.eq,
             column: 'user_id',
@@ -88,7 +88,7 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
   Future<void> _checkPending() async {
     setState(() => _checking = true);
     try {
-      final r = await _client.rpc('user_check_my_pending_freemopay');
+      final r = await _client.rpc('user_check_my_pending_kpay');
       if (mounted && r is Map) {
         final msg = r['message'] as String? ?? 'Vérification effectuée';
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
