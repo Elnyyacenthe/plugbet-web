@@ -60,6 +60,12 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   int _turnCountdown = _turnSeconds;
   Timer? _turnTimer;
   int _consecutiveTimeouts = 0;
+  // [A5] Auto-jeu au timeout : on GARDE le coup aléatoire, mais on
+  // décompte. À _maxAutoPlays auto-jeux consécutifs SANS action
+  // manuelle -> forfait. L'UI affiche les "cœurs" restants ; un coup
+  // manuel recharge le compteur (joueur de nouveau actif).
+  static const int _maxAutoPlays = 5;
+  int _autoPlays = 0;
 
   // Fallback polling : si realtime ne livre pas (RLS, ws, ...), on re-fetch
   // la room toutes les 2 secondes pour ne pas rester bloque sur un coup
@@ -191,6 +197,13 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     if (legalMoves.isNotEmpty) {
       final randomMove = legalMoves[Random().nextInt(legalMoves.length)];
       _consecutiveTimeouts = 0;
+      // [A5] Décompte des auto-jeux : à _maxAutoPlays consécutifs sans
+      // coup manuel -> forfait (au lieu d'auto-jouer indéfiniment).
+      setState(() => _autoPlays++);
+      if (_autoPlays >= _maxAutoPlays) {
+        _handleForfeit();
+        return;
+      }
       _applyMove(randomMove);
       return;
     }
@@ -314,6 +327,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       );
       if (move.to != _selected) {
         _consecutiveTimeouts = 0;
+        _autoPlays = 0; // [A5] coup manuel -> recharge les cœurs
         _applyMove(move);
       } else if (piece?.color == widget.myColor) {
         final legal = _legalMovesFromHere(tappedPos);
@@ -810,6 +824,25 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
             ]),
           ),
           SizedBox(width: 8),
+          // [A5] Cœurs : auto-jeux restants avant forfait
+          if (!_gameState.isGameOver) ...[
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (int i = 0; i < _maxAutoPlays; i++)
+                  Icon(
+                    i < (_maxAutoPlays - _autoPlays)
+                        ? Icons.favorite
+                        : Icons.favorite_border,
+                    size: 12,
+                    color: i < (_maxAutoPlays - _autoPlays)
+                        ? AppColors.neonRed
+                        : AppColors.textMuted,
+                  ),
+              ],
+            ),
+            SizedBox(width: 8),
+          ],
           // Countdown
           if (!_gameState.isGameOver)
             Container(
