@@ -503,7 +503,20 @@ class _SolitaireMultiplayerGameScreenState
         child: _state.waste.isNotEmpty
             ? _face(_state.waste.last, w, h,
                 onTap: _isMyTurn
-                    ? () => _act(SolitaireLogic.moveWasteToFoundation(_state))
+                    ? () {
+                        // [FIX] La carte du talon doit pouvoir se
+                        // combiner partout : fondation EN PREMIER, puis
+                        // n'importe quelle colonne du tableau (vide ou
+                        // non). Avant, seule la fondation était câblée
+                        // -> impossible de poser le talon sur une
+                        // colonne non vide.
+                        final f = SolitaireLogic.moveWasteToFoundation(_state);
+                        if (f != null) { _act(f); return; }
+                        for (int d = 0; d < 7; d++) {
+                          final r = SolitaireLogic.moveWasteToTableau(_state, d);
+                          if (r != null) { _act(r); return; }
+                        }
+                      }
                     : null)
             : null,
       );

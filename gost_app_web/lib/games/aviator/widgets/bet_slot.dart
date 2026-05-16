@@ -319,6 +319,12 @@ class _BetSlotState extends State<BetSlot> {
     return GestureDetector(
       onTap: canBet
           ? () async {
+              // [FIX MISE] Committer le montant saisi AVANT de miser.
+              // Sans ça, si le joueur tape un montant puis appuie
+              // directement sur MISER (sans valider le clavier),
+              // onSubmitted/onEditingComplete ne se déclenchent pas et
+              // c'est l'ANCIENNE valeur (90 par défaut) qui est misée.
+              _applyAmount(_ctrl.text);
               final ok = await provider.placeBet(bet);
               if (!ok && context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
