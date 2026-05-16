@@ -794,61 +794,155 @@ class _PlugbetErrorWidget extends StatelessWidget {
       );
     }
 
-    // Erreurs reseau / autres : ecran "oops" propre avec retry
+    // Erreur reseau / autre : ecran pro identitaire Ludo + retry.
+    final accent = _isNetwork ? AppColors.neonOrange : AppColors.neonRed;
+    // Couleurs des 4 pions Ludo (embleme de marque).
+    final ludoColors = [
+      AppColors.neonRed,
+      AppColors.neonGreen,
+      AppColors.neonYellow,
+      AppColors.neonBlue,
+    ];
     return Material(
       color: AppColors.bgDark,
-      child: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Icon(
-                _isNetwork ? Icons.wifi_off_rounded : Icons.error_outline_rounded,
-                size: 64,
-                color: _isNetwork ? AppColors.neonOrange : AppColors.neonRed,
-              ),
-              const SizedBox(height: 20),
-              Text(
-                _isNetwork ? 'Connexion perdue' : 'Oups, un souci',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textPrimary,
-                  fontSize: 22,
-                  fontWeight: FontWeight.w800,
+      child: Container(
+        decoration: BoxDecoration(gradient: AppColors.bgGradient),
+        child: SafeArea(
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(28),
+              child: TweenAnimationBuilder<double>(
+                duration: const Duration(milliseconds: 450),
+                curve: Curves.easeOutBack,
+                tween: Tween(begin: 0.85, end: 1.0),
+                builder: (_, scale, child) => Opacity(
+                  opacity: scale.clamp(0.0, 1.0),
+                  child: Transform.scale(scale: scale, child: child),
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    // Embleme Ludo : plateau 2x2 des 4 pions + badge d'etat
+                    SizedBox(
+                      width: 116,
+                      height: 116,
+                      child: Stack(
+                        alignment: Alignment.center,
+                        children: [
+                          Container(
+                            width: 104,
+                            height: 104,
+                            decoration: BoxDecoration(
+                              gradient: AppColors.cardGradient,
+                              borderRadius: BorderRadius.circular(22),
+                              border: Border.all(
+                                  color: accent.withValues(alpha: 0.35),
+                                  width: 1.5),
+                            ),
+                            padding: const EdgeInsets.all(16),
+                            child: GridView.count(
+                              crossAxisCount: 2,
+                              physics: const NeverScrollableScrollPhysics(),
+                              mainAxisSpacing: 10,
+                              crossAxisSpacing: 10,
+                              children: [
+                                for (final c in ludoColors)
+                                  Container(
+                                    decoration: BoxDecoration(
+                                      color: c.withValues(alpha: 0.85),
+                                      shape: BoxShape.circle,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          // Pastille d'etat (wifi-off / erreur)
+                          Positioned(
+                            bottom: 0,
+                            right: 0,
+                            child: Container(
+                              padding: const EdgeInsets.all(7),
+                              decoration: BoxDecoration(
+                                color: AppColors.bgDark,
+                                shape: BoxShape.circle,
+                                border: Border.all(color: accent, width: 2),
+                              ),
+                              child: Icon(
+                                _isNetwork
+                                    ? Icons.wifi_off_rounded
+                                    : Icons.error_outline_rounded,
+                                size: 22,
+                                color: accent,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 26),
+                    Text(
+                      _isNetwork
+                          ? 'Connexion perdue'
+                          : 'Oups, un souci',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 23,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.3,
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      _isNetwork
+                          ? 'Ta partie est en sécurité. Reconnecte-toi : '
+                              'tu reprends là où tu t\'es arrêté.'
+                          : 'Un imprévu est survenu. Réessaie — '
+                              'ta progression et ton solde sont sauvegardés.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textSecondary,
+                        fontSize: 14,
+                        height: 1.55,
+                      ),
+                    ),
+                    const SizedBox(height: 30),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () {
+                          WidgetsBinding.instance.scheduleForcedFrame();
+                        },
+                        icon: const Icon(Icons.refresh_rounded, size: 19),
+                        label: const Text('Réessayer'),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: AppColors.neonGreen,
+                          foregroundColor: Colors.black,
+                          padding:
+                              const EdgeInsets.symmetric(vertical: 15),
+                          shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(14)),
+                          textStyle: const TextStyle(
+                              fontWeight: FontWeight.w900, fontSize: 15),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 14),
+                    Text(
+                      _isNetwork
+                          ? 'Aucune mise n\'est perdue pendant une coupure réseau.'
+                          : 'Si le problème persiste, redémarre l\'application.',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        height: 1.4,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 10),
-              Text(
-                _isNetwork
-                    ? 'Verifie ta connexion internet et reessaie.'
-                    : 'Un imprevu est arrive. Reessaie ou redemarre l\'app.',
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                  color: AppColors.textSecondary,
-                  fontSize: 14,
-                  height: 1.5,
-                ),
-              ),
-              const SizedBox(height: 28),
-              ElevatedButton.icon(
-                onPressed: () {
-                  // Force un rebuild en remontant la racine. Le widget
-                  // qui a leve l'erreur sera reconstruit. Si le probleme
-                  // (reseau) est passe, l'app reprend.
-                  WidgetsBinding.instance.scheduleForcedFrame();
-                },
-                icon: const Icon(Icons.refresh, size: 18),
-                label: const Text('Reessayer'),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.neonGreen,
-                  foregroundColor: Colors.black,
-                  padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                  textStyle: const TextStyle(fontWeight: FontWeight.w800),
-                ),
-              ),
-            ],
+            ),
           ),
         ),
       ),
