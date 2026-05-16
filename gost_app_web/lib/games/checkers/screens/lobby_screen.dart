@@ -101,7 +101,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
     final uid = _service.currentUserId;
     if (uid == null || uid != _room.hostId) return false;
     if (_room.status != CheckersRoomStatus.waiting) return false;
-    if (_room.guestId != null) return false;
+    if (_room.guestId != null) return false;  // un guest a deja join
     return await _service.cancelWaitingRoom(_room.id);
   }
 
@@ -118,12 +118,13 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
 
   @override
   void dispose() {
-    if (!_navigated &&
-        _service.currentUserId == _room.hostId &&
-        _room.status == CheckersRoomStatus.waiting &&
-        _room.guestId == null) {
-      _service.cancelWaitingRoom(_room.id);
-    }
+    // [A12] On NE déclenche PLUS l'annulation/refund de la room au
+    // dispose : le dispose n'est pas un signal d'intention fiable
+    // (recréation d'arbre sur changement thème/langue -> annulerait
+    // une room en attente valide). L'annulation se fait uniquement
+    // sur intention explicite (_handleBack confirmé). Les rooms
+    // réellement abandonnées (kill app) sont nettoyées par le cron
+    // serveur cleanup_stale_waiting. (Même raisonnement que Ludo F3.)
     _messageController.dispose();
     _scrollController.dispose();
     _messagesChannel?.unsubscribe();

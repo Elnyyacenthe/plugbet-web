@@ -274,7 +274,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       }
     }
 
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
+    try { await context.read<WalletProvider>().refresh(); } catch (_) {} // [A7] solde à jour avant l'écran de fin
     try {
       context.read<PlayerProvider>().recordGameResult(
         gameType: 'checkers',
@@ -290,7 +290,12 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         barrierDismissible: false,
         builder: (_) => _GameOverDialog(
           isWin: false, isDraw: false, prize: 0,
-          onBack: () { Navigator.pop(context); Navigator.pop(context); },
+          onBack: () {
+            Navigator.of(context).pop();            // ferme le dialog
+            if (Navigator.of(context).canPop()) {   // [A11] anti over-pop / écran figé
+              Navigator.of(context).pop();          // quitte l'écran de jeu
+            }
+          },
         ),
       );
     }
@@ -538,17 +543,20 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         (widget.room.isAI && widget.room.betAmount > 0);
 
     if (shouldDistribute && uid.isNotEmpty) {
+      // [A4] Fin multijoueur : le SERVEUR a déjà clôturé + payé
+      // (checkers_play_move étape 21 / timeout / claim_idle_win). Les
+      // 2 clients appelaient checkers_finish_game -> redondant et
+      // fragile (double-crédit évité seulement par idempotence serveur).
+      // On ne distribue plus côté client en multi. On garde uniquement :
+      //  - IA solo gagnante (aucun settlement serveur),
+      //  - match nul multi (play_move ne rembourse pas les nuls),
+      //  - IA perd (fermer la room).
       String? winnerId;
-      if (!isDraw) {
-        if (widget.room.isAI) {
-          winnerId = isWin ? uid : null; // pas de payout si IA gagne
-        } else {
-          winnerId = isWin ? uid
-              : (uid == widget.room.hostId ? widget.room.guestId : widget.room.hostId);
-        }
+      if (!isDraw && widget.room.isAI) {
+        winnerId = isWin ? uid : null; // pas de payout si IA gagne
       }
       try {
-        if (winnerId != null) {
+        if (widget.room.isAI && winnerId != null) {
           await _service.distributeWinnings(
             roomId: widget.room.id,
             winnerId: winnerId,
@@ -595,7 +603,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       }
     }
 
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
+    try { await context.read<WalletProvider>().refresh(); } catch (_) {} // [A7] solde à jour avant l'écran de fin
 
     // Enregistrer le résultat pour XP / stats
     try {
