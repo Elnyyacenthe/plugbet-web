@@ -4,7 +4,6 @@
 // ============================================================
 
 import 'dart:async';
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -16,7 +15,6 @@ import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
 // lobby_screen import removed - not needed
-import '../../../services/game_settings.dart';
 import '../../../ludo/services/audio_service.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
@@ -28,6 +26,13 @@ class CoraGameScreen extends StatefulWidget {
   final String gameId;
 
   const CoraGameScreen({super.key, required this.gameId});
+
+  /// [Cora #1] Anti-empilement : vrai tant qu'une partie Cora est affichée.
+  /// Lu par main.dart (_checkActiveCoraSession) pour ne PAS re-naviguer une
+  /// 2e CoraGameScreen au retour foreground (sinon double subscription
+  /// realtime + double turn-timer + double forfait au dispose sur une
+  /// room d'argent). Même pattern que CheckersGameScreen / LudoV2GameScreen.
+  static bool isOnScreen = false;
 
   @override
   State<CoraGameScreen> createState() => _CoraGameScreenState();
@@ -65,6 +70,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   @override
   void initState() {
     super.initState();
+    CoraGameScreen.isOnScreen = true;
     _diceController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 800),
@@ -104,6 +110,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
 
   @override
   void dispose() {
+    CoraGameScreen.isOnScreen = false;
     WidgetsBinding.instance.removeObserver(this);
     _turnTimer?.cancel();
     _diceController.dispose();
@@ -112,13 +119,23 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     _gameNotifier.dispose();
     _pollTimer?.cancel();
     if (_gameChannel != null) _service.unsubscribe(_gameChannel!);
-    // Forfait silencieux si on quitte une partie en cours sans finir.
-    // Le RPC est idempotent et tolérant : si la partie est déjà finie,
-    // il ne fait rien. On ne bloque pas dispose() : fire-and-forget.
+    // [Cora #2] Forfait silencieux si on quitte une partie en cours.
+    // Le RPC est idempotent (si déjà finie : no-op). MAIS on ne forfait
+    // QUE sur un retour arrière in-app volontaire (lifecycle == resumed)
+    // et PAS lors d'une navigation vers la revanche. Si l'app est
+    // backgroundée / tuée par l'OS (paused/inactive/detached/hidden), on
+    // NE forfait PAS : la perte de mise serait involontaire. Dans ce cas
+    // le serveur gère l'abandon (cron cora_cleanup_stuck_games +
+    // _cora_force_clean_user) et la session est reprise au retour
+    // foreground via _checkActiveCoraSession.
     final game = _game;
+    final isResumed = WidgetsBinding.instance.lifecycleState ==
+        AppLifecycleState.resumed;
     if (game != null &&
         game.status == CoraRoomStatus.playing &&
-        !game.gameState.isFinished) {
+        !game.gameState.isFinished &&
+        !_rematchNavigated &&
+        isResumed) {
       // ignore: discarded_futures
       _service.forfeit(widget.gameId);
     }
@@ -655,26 +672,12 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       _handleForfeit();
       return;
     }
-    // Auto-roll biaisé vers les mauvais lancers
-    _rollDice(forcedRoll: _generateBiasedRoll());
-  }
-
-  /// 65% mauvais (7 ou total faible), 35% bon (total élevé)
-  DiceRoll _generateBiasedRoll() {
-    final rng = Random();
-    // Biais lié à la difficulté IA : Facile=75% bad, Moyen=55%, Difficile=25%
-    final badChance = 1.0 - GameSettings.instance.aiBestMoveChance;
-    if (rng.nextDouble() < badChance) {
-      // Mauvais : 7 (perd des points) ou total bas
-      const bad = [[1,6],[2,5],[3,4],[4,3],[5,2],[6,1],[1,2],[2,1],[1,3],[3,1],[2,2]];
-      final pair = bad[rng.nextInt(bad.length)];
-      return DiceRoll(dice1: pair[0], dice2: pair[1], timestamp: DateTime.now());
-    } else {
-      // Bon : total élevé
-      const good = [[4,6],[6,4],[5,5],[5,6],[6,5],[6,6]];
-      final pair = good[rng.nextInt(good.length)];
-      return DiceRoll(dice1: pair[0], dice2: pair[1], timestamp: DateTime.now());
-    }
+    // [Cora #3] Auto-roll sur timeout : la mise est DÉJÀ engagée au début
+    // de la partie, lancer ne coûte rien de plus et évite de figer la
+    // partie. Le SERVEUR génère les dés (anti-cheat) — le client ne peut
+    // pas biaiser le résultat. L'ancien _generateBiasedRoll() était du
+    // code mort trompeur (passé en forcedRoll puis ignoré côté serveur).
+    _rollDice(isAuto: true);
   }
 
   void _handleForfeit() {
@@ -692,9 +695,9 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     });
   }
 
-  Future<void> _rollDice({DiceRoll? forcedRoll}) async {
+  Future<void> _rollDice({bool isAuto = false}) async {
     if (_isRolling) return; // Anti double-tap
-    if (forcedRoll == null) _consecutiveTimeouts = 0;
+    if (!isAuto) _consecutiveTimeouts = 0;
     setState(() => _isRolling = true);
     AudioService.instance.playDiceRoll();
 
@@ -702,8 +705,8 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     final reqId = '${_service.currentUserId ?? "anon"}-${widget.gameId}-roll-${DateTime.now().microsecondsSinceEpoch}';
     try {
       // ANTI-CHEAT : le SERVEUR genere les des. Le client recoit le resultat
-      // et l'utilise pour l'animation. forcedRoll est ignore (impossible
-      // de forcer un lancer cote serveur). Retry auto sur erreur reseau.
+      // et l'utilise uniquement pour l'animation (impossible de forcer un
+      // lancer cote serveur). Retry auto sur erreur reseau.
       final serverRoll = await NetworkRetry.run(
         () => _service.submitRollAndGetServerDice(
           gameId: widget.gameId, requestId: reqId),

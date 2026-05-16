@@ -512,6 +512,10 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       if (!mounted || session == null) return;
       final type = session['type'];
       if (type == 'game' && session['game_id'] != null) {
+        // [Cora #1] Anti-empilement : si une partie Cora est déjà
+        // affichée (bascule app PENDANT la partie), on ne re-navigue
+        // pas (sinon double subscription/timers/forfait sur room d'argent).
+        if (CoraGameScreen.isOnScreen) return;
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => CoraGameScreen(gameId: session['game_id'] as String),
