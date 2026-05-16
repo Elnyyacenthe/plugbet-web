@@ -9,6 +9,7 @@ import 'package:uuid/uuid.dart';
 import '../engine/ludo_engine.dart';
 import '../models/ludo_models.dart';
 import '../services/ludo_service.dart';
+import '../../services/network_retry.dart';
 
 class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
   final LudoV2Service _svc = LudoV2Service.instance;
@@ -170,9 +171,16 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
     _error = null;
     notifyListeners();
 
+    // [H2] reqId capturé UNE fois ; NetworkRetry rejoue les coupures
+    // réseau transitoires avec le MÊME reqId -> le serveur (idempotence
+    // ludo_v2_roll_dice via p_request_id) ne ré-applique pas. Les erreurs
+    // métier (PostgrestException 4xx) remontent sans retry.
     final reqId = _uuid.v4();
     try {
-      final dice = await _svc.rollDice(_game!.id, requestId: reqId);
+      final dice = await NetworkRetry.run(
+        () => _svc.rollDice(_game!.id, requestId: reqId),
+        label: 'ludo_v2_roll_dice',
+      );
       debugPrint('[LUDO-V2-PROV] Dice: $dice');
       return dice;
     } catch (e) {
@@ -195,9 +203,13 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
     _error = null;
     notifyListeners();
 
+    // [H2] reqId stable + retry idempotent (cf rollDice).
     final reqId = _uuid.v4();
     try {
-      final result = await _svc.playMove(_game!.id, pawnIndex, requestId: reqId);
+      final result = await NetworkRetry.run(
+        () => _svc.playMove(_game!.id, pawnIndex, requestId: reqId),
+        label: 'ludo_v2_play_move',
+      );
       onMoveResult?.call(result.captured, result.won, result.extraTurn);
       return result;
     } catch (e) {
@@ -217,9 +229,13 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
 
   Future<void> skipTurn() async {
     if (_game == null || !isMyTurn || !_game!.diceRolled) return;
+    // [H2] reqId stable + retry idempotent (cf rollDice).
     final reqId = _uuid.v4();
     try {
-      await _svc.skipTurn(_game!.id, requestId: reqId);
+      await NetworkRetry.run(
+        () => _svc.skipTurn(_game!.id, requestId: reqId),
+        label: 'ludo_v2_skip_turn',
+      );
     } catch (e) {
       debugPrint('[LUDO-V2-PROV] skipTurn error: $e');
     }
@@ -229,9 +245,13 @@ class LudoV2GameProvider extends ChangeNotifier with WidgetsBindingObserver {
     if (_game == null || _game!.status != 'playing') return;
     if (_forfeiting) return;
     _forfeiting = true;
+    // [H2] reqId stable + retry idempotent (cf rollDice).
     final reqId = _uuid.v4();
     try {
-      await _svc.forfeit(_game!.id, requestId: reqId);
+      await NetworkRetry.run(
+        () => _svc.forfeit(_game!.id, requestId: reqId),
+        label: 'ludo_v2_forfeit',
+      );
     } catch (e) {
       debugPrint('[LUDO-V2-PROV] forfeit error: $e');
     } finally {
