@@ -203,9 +203,13 @@ class _LudoV2GameScreenState extends State<LudoV2GameScreen> {
             if (prov.loading) {
               return Center(child: CircularProgressIndicator(color: AppColors.neonGreen));
             }
-            if (prov.error != null) {
-              // Page d'erreur/réseau IDENTITAIRE LUDO (couvre Ludo) —
-              // remplace le Text brut bloquant (audit ANO-9).
+            // Page plein écran UNIQUEMENT en vrai échec de chargement
+            // (aucune partie à afficher). Une erreur d'ACTION (lancer de
+            // dés / coup) ne doit PAS remplacer tout le plateau : la
+            // partie reste valide côté serveur et resync via realtime/
+            // polling. Sinon un hoquet de lancer = perte visuelle de la
+            // partie alors que mise/progression sont intactes.
+            if (prov.error != null && prov.game == null) {
               return _LudoErrorView(
                 message: prov.error!,
                 onRetry: () => prov.loadGame(widget.gameId),
