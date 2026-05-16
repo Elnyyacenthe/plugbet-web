@@ -19,6 +19,7 @@ import 'fantasy_transfers_screen.dart';
 import 'fantasy_player_screen.dart';
 import 'fantasy_leagues_screen.dart';
 import '../services/fantasy_service.dart';
+import '../../widgets/network_lost_overlay.dart';
 
 class FantasyHomeScreen extends StatefulWidget {
   const FantasyHomeScreen({super.key});
@@ -188,7 +189,10 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       body: Consumer<FplProvider>(

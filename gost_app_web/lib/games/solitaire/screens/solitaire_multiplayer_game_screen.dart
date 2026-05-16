@@ -12,6 +12,7 @@ import '../models/solitaire_room_models.dart';
 import '../game/solitaire_logic.dart';
 import '../services/solitaire_multiplayer_service.dart';
 import '../../../widgets/connectivity_banner.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class SolitaireMultiplayerGameScreen extends StatefulWidget {
   final SolitaireRoom room;
@@ -289,7 +290,10 @@ class _SolitaireMultiplayerGameScreenState
   // BUILD
   // ──────────────────────────────────────────────────────────
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),

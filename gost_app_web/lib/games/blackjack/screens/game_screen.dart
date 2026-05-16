@@ -16,6 +16,7 @@ import '../services/blackjack_service.dart';
 import '../widgets/card_widget.dart';
 import '../../../services/network_retry.dart';
 import '../../../widgets/connectivity_banner.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class BJGameScreen extends StatefulWidget {
   final String gameId;
@@ -181,7 +182,10 @@ class _BJGameScreenState extends State<BJGameScreen> with WidgetsBindingObserver
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     if (_loading || _game == null) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,

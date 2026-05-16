@@ -14,6 +14,7 @@ import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
 import '../models/roulette_models.dart';
 import '../services/roulette_service.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class RLTGameScreen extends StatefulWidget {
   final String gameId;
@@ -161,7 +162,10 @@ class _RLTGameScreenState extends State<RLTGameScreen>
 
   // ════════════════════════════════════════════════════════════
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     if (_loading || _game == null) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,

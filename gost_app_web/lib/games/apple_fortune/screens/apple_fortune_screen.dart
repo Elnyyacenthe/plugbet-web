@@ -13,6 +13,7 @@ import '../widgets/fortune_board.dart';
 
 import '../widgets/bet_panel.dart';
 import '../widgets/result_overlay.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class AppleFortuneScreen extends StatefulWidget {
   const AppleFortuneScreen({super.key});
@@ -269,7 +270,10 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
   bool get _isPlaying => _session != null && _session!.isActive;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
 
     return Scaffold(

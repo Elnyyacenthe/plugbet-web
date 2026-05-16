@@ -16,6 +16,7 @@ import '../models/coinflip_models.dart';
 import '../services/coinflip_service.dart';
 import '../../../services/network_retry.dart';
 import '../../../widgets/connectivity_banner.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class CFGameScreen extends StatefulWidget {
   final String gameId;
@@ -155,7 +156,10 @@ class _CFGameScreenState extends State<CFGameScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     if (_loading || _game == null) {
       return Scaffold(backgroundColor: AppColors.bgDark,
         body: Center(child: CircularProgressIndicator(color: AppColors.neonYellow)));

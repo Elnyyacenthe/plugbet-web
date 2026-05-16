@@ -20,6 +20,7 @@ import '../widgets/plane_widget.dart';
 import '../widgets/live_bets_panel.dart';
 import '../widgets/live_winnings_panel.dart';
 import '../widgets/aviator_background.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class AviatorGameScreen extends StatelessWidget {
   final bool demoMode;
@@ -86,7 +87,10 @@ class _AviatorBodyState extends State<_AviatorBody>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
     return Consumer<AviatorProvider>(
       builder: (ctx, prov, _) {

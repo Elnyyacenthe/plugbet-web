@@ -21,6 +21,7 @@ import '../services/cora_service.dart';
 import '../components/dice_animation.dart';
 import '../../../services/network_retry.dart';
 import '../../../widgets/connectivity_banner.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class CoraGameScreen extends StatefulWidget {
   final String gameId;
@@ -262,7 +263,10 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     if (_isLoading) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,

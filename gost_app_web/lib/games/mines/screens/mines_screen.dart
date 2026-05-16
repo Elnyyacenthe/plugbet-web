@@ -10,6 +10,7 @@ import '../../../l10n/generated/app_localizations.dart';
 import '../../../theme/app_theme.dart';
 import '../models/mines_models.dart';
 import '../services/mines_service.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class MinesScreen extends StatefulWidget {
   const MinesScreen({super.key});
@@ -236,7 +237,10 @@ class _MinesScreenState extends State<MinesScreen> {
   bool get _isPlaying => _session != null && _session!.isActive;
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) =>
+      NetworkLostOverlay(child: _buildInner(context));
+
+  Widget _buildInner(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
 
     return Scaffold(
