@@ -118,44 +118,24 @@ class SolitaireMultiplayerService {
       }
 
       final username = await _getUsername();
-      final newPlayers = [
-        ...room.players.map((p) => p.toJson()),
-        SolitaireRoomPlayer(id: uid, username: username).toJson(),
-      ];
-      final newCount = room.currentPlayers + 1;
-      final newPot = room.pot + room.betAmount;
-      final isNowFull = newCount >= room.maxPlayers;
-
-      Map<String, dynamic> gameState;
-      if (isNowFull) {
-        // Initialiser un plateau frais quand la salle est pleine
-        final freshState = SolitaireState.initial();
-        gameState = {
-          ...freshState.toJson(),
-          'players': newPlayers,
-          'currentTurnIndex': 0,
-        };
-      } else {
-        gameState = {
-          ...(room.gameStateJson ?? {}),
-          'players': newPlayers,
-          'currentTurnIndex': 0,
-        };
-      }
-
-      final updated = await _client
+      // [C2 P2] Mutation room atomique côté serveur (RPC SECURITY
+      // DEFINER) au lieu d'un UPDATE direct : le serveur ajoute le
+      // joueur, incrémente pot/current_players, passe en 'playing' si
+      // plein, et supprime la race join (FOR UPDATE). Le plateau frais
+      // n'est utilisé par le serveur QUE si la salle devient pleine
+      // (scores tous à 0 -> aucun enjeu financier à ce stade).
+      await _client.rpc('solitaire_multi_join', params: {
+        'p_room_id': roomId,
+        'p_username': username,
+        'p_fresh_state': SolitaireState.initial().toJson(),
+      });
+      final refreshed = await _client
           .from('solitaire_rooms')
-          .update({
-            'current_players': newCount,
-            'pot': newPot,
-            'status': isNowFull ? 'playing' : 'waiting',
-            'game_state': gameState,
-          })
-          .eq('id', roomId)
           .select()
+          .eq('id', roomId)
           .single();
 
-      return SolitaireRoom.fromJson(updated);
+      return SolitaireRoom.fromJson(refreshed);
     } catch (e) {
       debugPrint('[SOL-MULTI] joinRoom: $e');
       return null;
@@ -216,10 +196,14 @@ class SolitaireMultiplayerService {
       'currentTurnIndex': currentTurnIndex,
     };
     try {
-      await _client
-          .from('solitaire_rooms')
-          .update({'game_state': gameState})
-          .eq('id', roomId);
+      // [C2 P2] Écriture du game_state via RPC SECURITY DEFINER au lieu
+      // d'un UPDATE direct : le serveur fige les scores des autres
+      // joueurs et clampe le score du caller (monotone, delta borné,
+      // 0..1500). Stoppe la forge de score via PostgREST direct.
+      await _client.rpc('solitaire_multi_push_state', params: {
+        'p_room_id': roomId,
+        'p_state': gameState,
+      });
     } catch (e) {
       debugPrint('[SOL-MULTI] pushGameState: $e');
     }
