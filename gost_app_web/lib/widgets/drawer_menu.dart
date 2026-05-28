@@ -16,6 +16,7 @@ import '../screens/leaderboard_screen.dart';
 import '../screens/support_screen.dart';
 import '../screens/friends_screen.dart';
 import '../screens/favorites_screen.dart';
+import '../games/_hub/screens/games_home_page.dart';
 
 class AppDrawer extends StatelessWidget {
   final void Function(int index)? onTabChange;
@@ -167,6 +168,16 @@ class AppDrawer extends StatelessWidget {
                     Navigator.pop(context);
                     Navigator.push(context,
                         MaterialPageRoute(builder: (_) => const FavoritesScreen()));
+                  }),
+
+                  Divider(color: AppColors.divider, height: 24, indent: 16, endIndent: 16),
+
+                  // --- Jeux ---
+                  _sectionHeader('JEUX'),
+                  _menuItem(Icons.sports_esports_rounded, t.tabGames, () {
+                    Navigator.pop(context);
+                    Navigator.push(context,
+                        MaterialPageRoute(builder: (_) => const GamesHomePage()));
                   }),
 
                   Divider(color: AppColors.divider, height: 24, indent: 16, endIndent: 16),

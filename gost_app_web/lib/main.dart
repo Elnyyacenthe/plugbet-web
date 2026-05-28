@@ -27,6 +27,7 @@ import 'providers/notification_provider.dart';
 import 'providers/player_provider.dart';
 import 'widgets/drawer_menu.dart';
 import 'ludo/providers/ludo_provider.dart';
+import 'games/_hub/providers/games_hub_provider.dart';
 import 'ludo/services/audio_service.dart';
 import 'services/notification_service.dart';
 import 'services/push_service.dart';
@@ -240,6 +241,10 @@ class PlugbetApp extends StatelessWidget {
         ChangeNotifierProvider(
           lazy: true,
           create: (_) => LudoProvider(),
+        ),
+        ChangeNotifierProvider(
+          lazy: true,
+          create: (_) => GamesHubProvider(),
         ),
         ChangeNotifierProvider(
           lazy: true,
