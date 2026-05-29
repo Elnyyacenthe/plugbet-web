@@ -17,6 +17,7 @@
 import 'dart:async';
 import 'dart:ui' show lerpDouble;
 import 'package:flutter/material.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../providers/wallet_provider.dart';
@@ -744,153 +745,140 @@ class _PseudoRng {
 // FIGURES — gardien & joueur (formes Flutter)
 // ════════════════════════════════════════════════════════════════
 
+// SVG vectoriel — gardien vue de face, bras grand écart
+const String _kSvgKeeper = r'''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150">
+  <!-- Ombre au sol -->
+  <ellipse cx="50" cy="143" rx="30" ry="4" fill="#000" opacity="0.4"/>
+  <!-- Cuisses + jambes peau -->
+  <rect x="38" y="92" width="10" height="26" rx="4" fill="#E2B48E"/>
+  <rect x="52" y="92" width="10" height="26" rx="4" fill="#E2B48E"/>
+  <!-- Chaussettes -->
+  <rect x="37" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
+  <rect x="51" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
+  <!-- Chaussures -->
+  <ellipse cx="43" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
+  <ellipse cx="57" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
+  <!-- Short noir -->
+  <path d="M30,74 L70,74 L72,95 L62,98 L58,90 L42,90 L38,98 L28,95 Z" fill="#1A1A1A"/>
+  <!-- Maillot cyan avec col -->
+  <path d="M28,42 Q28,34 36,34 L42,34 Q45,38 50,38 Q55,38 58,34 L64,34 Q72,34 72,42 L74,78 L26,78 Z"
+        fill="#1AB6C8" stroke="#000" stroke-width="0.8"/>
+  <!-- Rayure verticale blanche -->
+  <rect x="48" y="38" width="4" height="40" fill="#FFFFFF" opacity="0.85"/>
+  <!-- Numéro 1 sur poitrine -->
+  <text x="50" y="60" font-family="Arial Black,sans-serif" font-size="14"
+        font-weight="900" fill="#FFFFFF" text-anchor="middle">1</text>
+  <!-- Bras gauche (cyan) -->
+  <path d="M28,42 Q14,44 6,52 L4,46 Q6,38 16,38 L28,40 Z" fill="#1AB6C8" stroke="#000" stroke-width="0.6"/>
+  <!-- Bras droit (cyan) -->
+  <path d="M72,42 Q86,44 94,52 L96,46 Q94,38 84,38 L72,40 Z" fill="#1AB6C8" stroke="#000" stroke-width="0.6"/>
+  <!-- Gant jaune gauche -->
+  <ellipse cx="5" cy="52" rx="7" ry="6" fill="#FFD500" stroke="#000" stroke-width="1"/>
+  <!-- Gant jaune droit -->
+  <ellipse cx="95" cy="52" rx="7" ry="6" fill="#FFD500" stroke="#000" stroke-width="1"/>
+  <!-- Cou -->
+  <rect x="46" y="30" width="8" height="6" fill="#E2B48E"/>
+  <!-- Tête -->
+  <ellipse cx="50" cy="22" rx="11" ry="12" fill="#E2B48E" stroke="#000" stroke-width="0.4"/>
+  <!-- Cheveux noirs (calotte) -->
+  <path d="M39,22 Q39,10 50,10 Q61,10 61,22 L61,18 Q60,13 50,13 Q40,13 39,18 Z" fill="#1E1E1E"/>
+  <!-- Sourcils -->
+  <rect x="43" y="20" width="5" height="1.5" fill="#1E1E1E"/>
+  <rect x="52" y="20" width="5" height="1.5" fill="#1E1E1E"/>
+  <!-- Yeux -->
+  <circle cx="45.5" cy="23" r="1.4" fill="#1E1E1E"/>
+  <circle cx="54.5" cy="23" r="1.4" fill="#1E1E1E"/>
+  <!-- Bouche (concentration) -->
+  <path d="M46,28.5 L54,28.5" stroke="#1E1E1E" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+</svg>
+''';
+
+// SVG vectoriel — joueur vu de DOS, en position debout
+const String _kSvgPlayerStand = r'''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150">
+  <!-- Ombre -->
+  <ellipse cx="50" cy="143" rx="32" ry="4" fill="#000" opacity="0.4"/>
+  <!-- Cuisses -->
+  <rect x="38" y="92" width="10" height="26" rx="4" fill="#7C5A3E"/>
+  <rect x="52" y="92" width="10" height="26" rx="4" fill="#7C5A3E"/>
+  <!-- Chaussettes -->
+  <rect x="37" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
+  <rect x="51" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
+  <!-- Chaussures -->
+  <ellipse cx="43" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
+  <ellipse cx="57" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
+  <!-- Short blanc -->
+  <path d="M30,74 L70,74 L72,95 L62,98 L58,90 L42,90 L38,98 L28,95 Z"
+        fill="#FFFFFF" stroke="#000" stroke-width="0.6"/>
+  <!-- Maillot noir (de dos, col en V à l'envers = ligne droite) -->
+  <path d="M28,42 Q28,34 36,34 L64,34 Q72,34 72,42 L74,78 L26,78 Z"
+        fill="#0A0A0A"/>
+  <!-- Numéro 10 dans le dos en blanc -->
+  <text x="50" y="64" font-family="Arial Black,sans-serif" font-size="22"
+        font-weight="900" fill="#FFFFFF" text-anchor="middle">10</text>
+  <!-- Bras gauche le long du corps -->
+  <path d="M28,42 L24,42 Q20,42 20,46 L22,76 L30,76 Z" fill="#0A0A0A"/>
+  <!-- Bras droit le long du corps -->
+  <path d="M72,42 L76,42 Q80,42 80,46 L78,76 L70,76 Z" fill="#0A0A0A"/>
+  <!-- Mains -->
+  <circle cx="22" cy="78" r="4" fill="#7C5A3E"/>
+  <circle cx="78" cy="78" r="4" fill="#7C5A3E"/>
+  <!-- Cou -->
+  <rect x="46" y="30" width="8" height="6" fill="#7C5A3E"/>
+  <!-- Tête (vue de dos, aucun trait de visage) -->
+  <ellipse cx="50" cy="22" rx="11" ry="12" fill="#7C5A3E" stroke="#000" stroke-width="0.4"/>
+  <!-- Cheveux noirs (couvrant toute la tête vue de dos) -->
+  <path d="M39,22 Q39,10 50,10 Q61,10 61,22 L61,22 Q60,15 50,15 Q40,15 39,22 Z" fill="#0A0A0A"/>
+</svg>
+''';
+
+// SVG vectoriel — joueur en pleine frappe (jambe droite swingée)
+const String _kSvgPlayerKick = r'''
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150">
+  <!-- Ombre allongée -->
+  <ellipse cx="50" cy="143" rx="36" ry="4" fill="#000" opacity="0.4"/>
+  <!-- Jambe d'appui gauche (verticale) -->
+  <rect x="38" y="92" width="10" height="26" rx="4" fill="#7C5A3E"/>
+  <!-- Chaussette + chaussure appui -->
+  <rect x="37" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
+  <ellipse cx="43" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
+  <!-- Jambe de frappe droite (oblique vers l'avant/droite) -->
+  <g transform="translate(56 92) rotate(-35)">
+    <rect x="0" y="0" width="10" height="28" rx="4" fill="#7C5A3E"/>
+    <rect x="-1" y="24" width="12" height="6" rx="2" fill="#FFFFFF"/>
+    <ellipse cx="5" cy="33" rx="11" ry="5" fill="#1A1A1A"/>
+  </g>
+  <!-- Short blanc -->
+  <path d="M30,74 L70,74 L72,95 L62,98 L58,90 L42,90 L38,98 L28,95 Z"
+        fill="#FFFFFF" stroke="#000" stroke-width="0.6"/>
+  <!-- Maillot noir -->
+  <path d="M28,42 Q28,34 36,34 L64,34 Q72,34 72,42 L74,78 L26,78 Z" fill="#0A0A0A"/>
+  <!-- Numéro 10 -->
+  <text x="50" y="64" font-family="Arial Black,sans-serif" font-size="22"
+        font-weight="900" fill="#FFFFFF" text-anchor="middle">10</text>
+  <!-- Bras gauche ouvert pour équilibre -->
+  <path d="M28,44 Q14,44 8,52 L4,46 Q4,38 16,38 L28,40 Z" fill="#0A0A0A"/>
+  <!-- Bras droit suit le mouvement (vers l'avant) -->
+  <path d="M72,44 Q84,46 88,56 L92,52 Q92,42 84,40 L72,40 Z" fill="#0A0A0A"/>
+  <!-- Mains -->
+  <circle cx="6" cy="52" r="4" fill="#7C5A3E"/>
+  <circle cx="89" cy="55" r="4" fill="#7C5A3E"/>
+  <!-- Cou -->
+  <rect x="46" y="30" width="8" height="6" fill="#7C5A3E"/>
+  <!-- Tête -->
+  <ellipse cx="50" cy="22" rx="11" ry="12" fill="#7C5A3E" stroke="#000" stroke-width="0.4"/>
+  <!-- Cheveux -->
+  <path d="M39,22 Q39,10 50,10 Q61,10 61,22 L61,22 Q60,15 50,15 Q40,15 39,22 Z" fill="#0A0A0A"/>
+</svg>
+''';
+
 class _KeeperFigure extends StatelessWidget {
   final bool diving;
   const _KeeperFigure({required this.diving});
   @override
   Widget build(BuildContext context) {
-    // Proportions agrandies + détails (gants jaunes, jersey rayé, casquette)
-    return LayoutBuilder(builder: (_, c) {
-      final w = c.maxWidth;
-      final h = c.maxHeight;
-      final unit = h / 100; // unité relative
-      return Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          // Ombre au sol (ellipse sombre derrière les pieds)
-          Positioned(
-            bottom: 0,
-            child: Container(
-              width: w * 0.7,
-              height: unit * 5,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          // Bras grand écart avec gants jaunes au bout
-          Positioned(
-            top: unit * 28,
-            child: SizedBox(
-              width: w,
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Container(
-                    width: w * 0.18, height: unit * 6,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFD500),
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: Colors.black, width: 1),
-                    ),
-                  ),
-                  Container(
-                    width: w * 0.18, height: unit * 6,
-                    decoration: BoxDecoration(
-                      color: const Color(0xFFFFD500),
-                      borderRadius: BorderRadius.circular(99),
-                      border: Border.all(color: Colors.black, width: 1),
-                    ),
-                  ),
-                ],
-              ),
-            ),
-          ),
-          // Bras cyan (entre gants et épaules)
-          Positioned(
-            top: unit * 28,
-            child: Container(
-              width: w * 0.78,
-              height: unit * 5,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1AB6C8),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          // Tête
-          Positioned(
-            top: unit * 6,
-            child: Container(
-              width: w * 0.30, height: unit * 22,
-              decoration: const BoxDecoration(
-                color: Color(0xFFE2B48E),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          // Casquette / cheveux foncés
-          Positioned(
-            top: unit * 4,
-            child: Container(
-              width: w * 0.32, height: unit * 10,
-              decoration: const BoxDecoration(
-                color: Color(0xFF1E1E1E),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(99),
-                  topRight: Radius.circular(99),
-                ),
-              ),
-            ),
-          ),
-          // Maillot (corps cyan) avec rayure blanche centrale
-          Positioned(
-            top: unit * 26,
-            child: Container(
-              width: w * 0.52, height: unit * 32,
-              decoration: BoxDecoration(
-                color: const Color(0xFF1AB6C8),
-                borderRadius: BorderRadius.circular(6),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.4)),
-              ),
-              child: Center(
-                child: Container(
-                  width: 4, height: unit * 20,
-                  color: Colors.white.withValues(alpha: 0.7),
-                ),
-              ),
-            ),
-          ),
-          // Short noir
-          Positioned(
-            top: unit * 58,
-            child: Container(
-              width: w * 0.48, height: unit * 16,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(4),
-                  bottomRight: Radius.circular(4),
-                ),
-              ),
-            ),
-          ),
-          // Jambes (couleur peau) + chaussettes/chaussures
-          Positioned(
-            top: unit * 74,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: w * 0.13, height: unit * 14, color: const Color(0xFFE2B48E)),
-              SizedBox(width: w * 0.06),
-              Container(width: w * 0.13, height: unit * 14, color: const Color(0xFFE2B48E)),
-            ]),
-          ),
-          // Chaussures noires
-          Positioned(
-            top: unit * 88,
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(width: w * 0.14, height: unit * 6,
-                decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(3))),
-              SizedBox(width: w * 0.04),
-              Container(width: w * 0.14, height: unit * 6,
-                decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(3))),
-            ]),
-          ),
-        ],
-      );
-    });
+    return SvgPicture.string(_kSvgKeeper, fit: BoxFit.contain);
   }
 }
 
@@ -899,137 +887,9 @@ class _PlayerFigure extends StatelessWidget {
   const _PlayerFigure({this.kicking = false});
   @override
   Widget build(BuildContext context) {
-    return LayoutBuilder(builder: (_, c) {
-      final w = c.maxWidth;
-      final h = c.maxHeight;
-      final unit = h / 100;
-      return Stack(
-        alignment: Alignment.topCenter,
-        children: [
-          // Ombre au sol
-          Positioned(
-            bottom: 0,
-            child: Container(
-              width: w * 0.85,
-              height: unit * 5,
-              decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.35),
-                borderRadius: BorderRadius.circular(99),
-              ),
-            ),
-          ),
-          // Tête
-          Positioned(
-            top: unit * 2,
-            child: Container(
-              width: w * 0.30, height: unit * 18,
-              decoration: const BoxDecoration(
-                color: Color(0xFF7C5A3E),
-                shape: BoxShape.circle,
-              ),
-            ),
-          ),
-          // Cheveux noirs
-          Positioned(
-            top: unit * 0,
-            child: Container(
-              width: w * 0.32, height: unit * 9,
-              decoration: const BoxDecoration(
-                color: Color(0xFF0A0A0A),
-                borderRadius: BorderRadius.only(
-                  topLeft: Radius.circular(99),
-                  topRight: Radius.circular(99),
-                ),
-              ),
-            ),
-          ),
-          // Maillot noir (de dos) avec col blanc
-          Positioned(
-            top: unit * 18,
-            child: Container(
-              width: w * 0.56, height: unit * 34,
-              decoration: BoxDecoration(
-                color: Colors.black,
-                borderRadius: BorderRadius.circular(6),
-              ),
-            ),
-          ),
-          // Numéro 10 blanc dans le dos
-          Positioned(
-            top: unit * 26,
-            child: Text('10',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: unit * 14,
-                  fontWeight: FontWeight.w900,
-                )),
-          ),
-          // Short blanc
-          Positioned(
-            top: unit * 52,
-            child: Container(
-              width: w * 0.52, height: unit * 16,
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.only(
-                  bottomLeft: Radius.circular(4),
-                  bottomRight: Radius.circular(4),
-                ),
-                border: Border.all(color: Colors.black.withValues(alpha: 0.3)),
-              ),
-            ),
-          ),
-          // Jambes : si kicking -> une jambe levée vers l'avant
-          if (!kicking) ...[
-            Positioned(
-              top: unit * 68,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: w * 0.15, height: unit * 18, color: const Color(0xFF7C5A3E)),
-                SizedBox(width: w * 0.06),
-                Container(width: w * 0.15, height: unit * 18, color: const Color(0xFF7C5A3E)),
-              ]),
-            ),
-            Positioned(
-              top: unit * 86,
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Container(width: w * 0.16, height: unit * 7,
-                  decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(3))),
-                SizedBox(width: w * 0.04),
-                Container(width: w * 0.16, height: unit * 7,
-                  decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
-                    borderRadius: BorderRadius.circular(3))),
-              ]),
-            ),
-          ] else ...[
-            // Jambe d'appui (gauche)
-            Positioned(
-              top: unit * 68,
-              left: w * 0.18,
-              child: Container(width: w * 0.15, height: unit * 25,
-                color: const Color(0xFF7C5A3E)),
-            ),
-            // Jambe de frappe (droite, oblique vers l'avant)
-            Positioned(
-              top: unit * 70,
-              right: w * 0.05,
-              child: Transform.rotate(
-                angle: -0.5,
-                child: Container(width: w * 0.16, height: unit * 26,
-                  color: const Color(0xFF7C5A3E)),
-              ),
-            ),
-            // Chaussure d'appui
-            Positioned(
-              top: unit * 92,
-              left: w * 0.16,
-              child: Container(width: w * 0.18, height: unit * 7,
-                decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
-                  borderRadius: BorderRadius.circular(3))),
-            ),
-          ],
-        ],
-      );
-    });
+    return SvgPicture.string(
+      kicking ? _kSvgPlayerKick : _kSvgPlayerStand,
+      fit: BoxFit.contain,
+    );
   }
 }
