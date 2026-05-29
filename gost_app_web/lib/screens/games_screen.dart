@@ -18,7 +18,7 @@ import '../games/roulette/screens/roulette_screen.dart';
 import '../games/coinflip/screens/coinflip_screen.dart';
 import '../games/apple_fortune/screens/apple_fortune_screen.dart';
 import '../games/mines/screens/mines_screen.dart';
-import '../games/_hub/screens/external_game_launcher.dart';
+import '../games/penalty/screens/penalty_bet_screen.dart';
 import '../widgets/game_rules_dialog.dart';
 import '../widgets/players_leaderboard.dart';
 
@@ -140,16 +140,16 @@ class GamesScreen extends StatelessWidget {
         builder: (_) => const SolitaireScreen(),
         rules: GameRulesLibrary.solitaire,
       ),
-      // ── Hub Jeux externes (pay-to-play, WebView) ─────────────
-      // Le tap déclenche le launcher : dialog 50c -> débit ->
-      // GamePlayPage (placeholder Phase 2, vraie WebView en Phase 3).
+      // ── Penalty natif (server-authoritative) ─────────────────
+      // 5 tirs au but, RNG serveur pour le gardien. Mise libre
+      // [10, 1000]. Si goals > misses -> 2× la mise. Sinon mise perdue.
       _Game(
-        title: 'Penalty Shooters 2',
-        subtitle: 'Tirs au but • 50 c / 5 min',
+        title: 'Penalty',
+        subtitle: 'Mise libre • 5 tirs • 2× si victoire',
         icon: Icons.sports_soccer_rounded,
         imageAsset: 'assets/games/penalty_shooters_2.png',
         color: const Color(0xFF00C853),
-        builder: (_) => const ExternalGameLauncher(gameId: 'penalty_shooters_2'),
+        builder: (_) => const PenaltyBetScreen(),
       ),
     ];
 
