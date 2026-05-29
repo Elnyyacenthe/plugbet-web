@@ -51,12 +51,16 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
       vsync: this,
       duration: const Duration(milliseconds: 700),
     );
+    // Ambiance foule en boucle pendant tout le round (bg_music.mp3 via
+    // FlameAudio.bgm = loop automatique).
+    try { AudioService.instance.startBackgroundMusic(); } catch (_) {}
   }
 
   @override
   void dispose() {
     _shotCtrl.dispose();
     _bannerTimer?.cancel();
+    try { AudioService.instance.stopBackgroundMusic(); } catch (_) {}
     super.dispose();
   }
 
@@ -745,131 +749,178 @@ class _PseudoRng {
 // FIGURES — gardien & joueur (formes Flutter)
 // ════════════════════════════════════════════════════════════════
 
-// SVG vectoriel — gardien vue de face, bras grand écart
+// SVG vectoriel — gardien vue de face, bras grand écart (silhouette
+// 100% paths à courbes, plus aucun rectangle visible)
 const String _kSvgKeeper = r'''
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150">
+  <defs>
+    <linearGradient id="kJersey" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#22C8DA"/>
+      <stop offset="100%" stop-color="#0E9EAE"/>
+    </linearGradient>
+    <linearGradient id="kSkin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#F2C99E"/>
+      <stop offset="100%" stop-color="#D9A678"/>
+    </linearGradient>
+  </defs>
   <!-- Ombre au sol -->
   <ellipse cx="50" cy="143" rx="30" ry="4" fill="#000" opacity="0.4"/>
-  <!-- Cuisses + jambes peau -->
-  <rect x="38" y="92" width="10" height="26" rx="4" fill="#E2B48E"/>
-  <rect x="52" y="92" width="10" height="26" rx="4" fill="#E2B48E"/>
-  <!-- Chaussettes -->
-  <rect x="37" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
-  <rect x="51" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
-  <!-- Chaussures -->
-  <ellipse cx="43" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
-  <ellipse cx="57" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
-  <!-- Short noir -->
-  <path d="M30,74 L70,74 L72,95 L62,98 L58,90 L42,90 L38,98 L28,95 Z" fill="#1A1A1A"/>
-  <!-- Maillot cyan avec col -->
-  <path d="M28,42 Q28,34 36,34 L42,34 Q45,38 50,38 Q55,38 58,34 L64,34 Q72,34 72,42 L74,78 L26,78 Z"
-        fill="#1AB6C8" stroke="#000" stroke-width="0.8"/>
+  <!-- Cuisses arrondies -->
+  <path d="M40,92 Q40,89 43,89 L46,89 Q49,89 49,92 L49,118 Q49,121 46,121 L43,121 Q40,121 40,118 Z"
+        fill="url(#kSkin)" stroke="#000" stroke-width="0.5"/>
+  <path d="M51,92 Q51,89 54,89 L57,89 Q60,89 60,92 L60,118 Q60,121 57,121 L54,121 Q51,121 51,118 Z"
+        fill="url(#kSkin)" stroke="#000" stroke-width="0.5"/>
+  <!-- Chaussettes blanches -->
+  <path d="M40,114 L49,114 L49,121 L40,121 Z" fill="#FFFFFF" stroke="#000" stroke-width="0.3"/>
+  <path d="M51,114 L60,114 L60,121 L51,121 Z" fill="#FFFFFF" stroke="#000" stroke-width="0.3"/>
+  <!-- Chaussures rondes -->
+  <ellipse cx="44.5" cy="125" rx="9" ry="5" fill="#1A1A1A" stroke="#000" stroke-width="0.4"/>
+  <ellipse cx="55.5" cy="125" rx="9" ry="5" fill="#1A1A1A" stroke="#000" stroke-width="0.4"/>
+  <!-- Short courbé -->
+  <path d="M32,74 Q30,74 30,76 L30,90 Q30,94 32,94 L46,94 L48,90 L52,90 L54,94 L68,94 Q70,94 70,90 L70,76 Q70,74 68,74 Z"
+        fill="#1A1A1A" stroke="#000" stroke-width="0.5"/>
+  <!-- Maillot (silhouette tapered, épaules arrondies) -->
+  <path d="M26,44 Q26,32 38,30 Q42,33 50,33 Q58,33 62,30 Q74,32 74,44 L74,78 Q74,80 72,80 L28,80 Q26,80 26,78 Z"
+        fill="url(#kJersey)" stroke="#000" stroke-width="0.6"/>
   <!-- Rayure verticale blanche -->
-  <rect x="48" y="38" width="4" height="40" fill="#FFFFFF" opacity="0.85"/>
-  <!-- Numéro 1 sur poitrine -->
+  <path d="M48,38 L52,38 L52,78 L48,78 Z" fill="#FFFFFF" opacity="0.85"/>
+  <!-- Numéro 1 -->
   <text x="50" y="60" font-family="Arial Black,sans-serif" font-size="14"
         font-weight="900" fill="#FFFFFF" text-anchor="middle">1</text>
-  <!-- Bras gauche (cyan) -->
-  <path d="M28,42 Q14,44 6,52 L4,46 Q6,38 16,38 L28,40 Z" fill="#1AB6C8" stroke="#000" stroke-width="0.6"/>
-  <!-- Bras droit (cyan) -->
-  <path d="M72,42 Q86,44 94,52 L96,46 Q94,38 84,38 L72,40 Z" fill="#1AB6C8" stroke="#000" stroke-width="0.6"/>
-  <!-- Gant jaune gauche -->
-  <ellipse cx="5" cy="52" rx="7" ry="6" fill="#FFD500" stroke="#000" stroke-width="1"/>
-  <!-- Gant jaune droit -->
-  <ellipse cx="95" cy="52" rx="7" ry="6" fill="#FFD500" stroke="#000" stroke-width="1"/>
-  <!-- Cou -->
-  <rect x="46" y="30" width="8" height="6" fill="#E2B48E"/>
-  <!-- Tête -->
-  <ellipse cx="50" cy="22" rx="11" ry="12" fill="#E2B48E" stroke="#000" stroke-width="0.4"/>
-  <!-- Cheveux noirs (calotte) -->
-  <path d="M39,22 Q39,10 50,10 Q61,10 61,22 L61,18 Q60,13 50,13 Q40,13 39,18 Z" fill="#1E1E1E"/>
+  <!-- Bras gauche (courbe organique) -->
+  <path d="M26,44 Q14,42 6,50 Q2,54 4,60 Q8,58 14,54 Q22,50 26,48 Z"
+        fill="url(#kJersey)" stroke="#000" stroke-width="0.5"/>
+  <!-- Bras droit -->
+  <path d="M74,44 Q86,42 94,50 Q98,54 96,60 Q92,58 86,54 Q78,50 74,48 Z"
+        fill="url(#kJersey)" stroke="#000" stroke-width="0.5"/>
+  <!-- Gants jaunes (bombés) -->
+  <ellipse cx="5" cy="56" rx="7.5" ry="6.5" fill="#FFD500" stroke="#000" stroke-width="1"/>
+  <ellipse cx="95" cy="56" rx="7.5" ry="6.5" fill="#FFD500" stroke="#000" stroke-width="1"/>
+  <!-- Cou tapered -->
+  <path d="M46,28 L54,28 Q55,32 54,36 L46,36 Q45,32 46,28 Z" fill="url(#kSkin)"/>
+  <!-- Tête (ovale légère) -->
+  <ellipse cx="50" cy="20" rx="11" ry="13" fill="url(#kSkin)" stroke="#000" stroke-width="0.5"/>
+  <!-- Cheveux (calotte qui suit le crâne) -->
+  <path d="M39,18 Q39,7 50,7 Q61,7 61,18 Q61,14 56,11 Q50,9 44,11 Q39,14 39,18 Z" fill="#1E1E1E"/>
   <!-- Sourcils -->
-  <rect x="43" y="20" width="5" height="1.5" fill="#1E1E1E"/>
-  <rect x="52" y="20" width="5" height="1.5" fill="#1E1E1E"/>
+  <path d="M43,19 Q46,17.5 49,19" stroke="#1E1E1E" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M51,19 Q54,17.5 57,19" stroke="#1E1E1E" stroke-width="1.5" fill="none" stroke-linecap="round"/>
   <!-- Yeux -->
-  <circle cx="45.5" cy="23" r="1.4" fill="#1E1E1E"/>
-  <circle cx="54.5" cy="23" r="1.4" fill="#1E1E1E"/>
-  <!-- Bouche (concentration) -->
-  <path d="M46,28.5 L54,28.5" stroke="#1E1E1E" stroke-width="1.2" fill="none" stroke-linecap="round"/>
+  <circle cx="45.5" cy="22.5" r="1.5" fill="#1E1E1E"/>
+  <circle cx="54.5" cy="22.5" r="1.5" fill="#1E1E1E"/>
+  <!-- Petit reflet dans les yeux -->
+  <circle cx="46" cy="22" r="0.4" fill="#FFFFFF"/>
+  <circle cx="55" cy="22" r="0.4" fill="#FFFFFF"/>
+  <!-- Nez -->
+  <path d="M50,24 Q49,27 50,29 Q51,27 50,24 Z" fill="#C99068"/>
+  <!-- Bouche (concentré) -->
+  <path d="M46,30.5 Q50,32 54,30.5" stroke="#1E1E1E" stroke-width="1.2" fill="none" stroke-linecap="round"/>
 </svg>
 ''';
 
-// SVG vectoriel — joueur vu de DOS, en position debout
+// SVG vectoriel — joueur vu de DOS, debout (silhouette en paths courbes)
 const String _kSvgPlayerStand = r'''
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150">
+  <defs>
+    <linearGradient id="pSkin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8C6749"/>
+      <stop offset="100%" stop-color="#6E4A30"/>
+    </linearGradient>
+    <linearGradient id="pJersey" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1A1A"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
   <!-- Ombre -->
-  <ellipse cx="50" cy="143" rx="32" ry="4" fill="#000" opacity="0.4"/>
-  <!-- Cuisses -->
-  <rect x="38" y="92" width="10" height="26" rx="4" fill="#7C5A3E"/>
-  <rect x="52" y="92" width="10" height="26" rx="4" fill="#7C5A3E"/>
+  <ellipse cx="50" cy="143" rx="33" ry="4" fill="#000" opacity="0.4"/>
+  <!-- Cuisses arrondies -->
+  <path d="M40,92 Q40,89 43,89 L46,89 Q49,89 49,92 L49,118 Q49,121 46,121 L43,121 Q40,121 40,118 Z"
+        fill="url(#pSkin)" stroke="#000" stroke-width="0.5"/>
+  <path d="M51,92 Q51,89 54,89 L57,89 Q60,89 60,92 L60,118 Q60,121 57,121 L54,121 Q51,121 51,118 Z"
+        fill="url(#pSkin)" stroke="#000" stroke-width="0.5"/>
   <!-- Chaussettes -->
-  <rect x="37" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
-  <rect x="51" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
+  <path d="M40,114 L49,114 L49,121 L40,121 Z" fill="#FFFFFF" stroke="#000" stroke-width="0.3"/>
+  <path d="M51,114 L60,114 L60,121 L51,121 Z" fill="#FFFFFF" stroke="#000" stroke-width="0.3"/>
   <!-- Chaussures -->
-  <ellipse cx="43" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
-  <ellipse cx="57" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
-  <!-- Short blanc -->
-  <path d="M30,74 L70,74 L72,95 L62,98 L58,90 L42,90 L38,98 L28,95 Z"
-        fill="#FFFFFF" stroke="#000" stroke-width="0.6"/>
-  <!-- Maillot noir (de dos, col en V à l'envers = ligne droite) -->
-  <path d="M28,42 Q28,34 36,34 L64,34 Q72,34 72,42 L74,78 L26,78 Z"
-        fill="#0A0A0A"/>
-  <!-- Numéro 10 dans le dos en blanc -->
-  <text x="50" y="64" font-family="Arial Black,sans-serif" font-size="22"
+  <ellipse cx="44.5" cy="125" rx="9" ry="5" fill="#1A1A1A" stroke="#000" stroke-width="0.4"/>
+  <ellipse cx="55.5" cy="125" rx="9" ry="5" fill="#1A1A1A" stroke="#000" stroke-width="0.4"/>
+  <!-- Short blanc courbé -->
+  <path d="M32,74 Q30,74 30,76 L30,90 Q30,94 32,94 L46,94 L48,90 L52,90 L54,94 L68,94 Q70,94 70,90 L70,76 Q70,74 68,74 Z"
+        fill="#FFFFFF" stroke="#000" stroke-width="0.5"/>
+  <!-- Maillot noir tapered avec épaules arrondies -->
+  <path d="M26,44 Q26,32 38,30 L62,30 Q74,32 74,44 L74,78 Q74,80 72,80 L28,80 Q26,80 26,78 Z"
+        fill="url(#pJersey)" stroke="#1A1A1A" stroke-width="0.4"/>
+  <!-- Numéro 10 dans le dos -->
+  <text x="50" y="62" font-family="Arial Black,sans-serif" font-size="22"
         font-weight="900" fill="#FFFFFF" text-anchor="middle">10</text>
-  <!-- Bras gauche le long du corps -->
-  <path d="M28,42 L24,42 Q20,42 20,46 L22,76 L30,76 Z" fill="#0A0A0A"/>
+  <!-- Bras gauche le long du corps (courbé) -->
+  <path d="M26,44 Q22,44 22,48 Q22,62 24,76 L30,78 L30,46 Z" fill="url(#pJersey)"/>
   <!-- Bras droit le long du corps -->
-  <path d="M72,42 L76,42 Q80,42 80,46 L78,76 L70,76 Z" fill="#0A0A0A"/>
+  <path d="M74,44 Q78,44 78,48 Q78,62 76,76 L70,78 L70,46 Z" fill="url(#pJersey)"/>
   <!-- Mains -->
-  <circle cx="22" cy="78" r="4" fill="#7C5A3E"/>
-  <circle cx="78" cy="78" r="4" fill="#7C5A3E"/>
+  <circle cx="24" cy="80" r="4.5" fill="url(#pSkin)" stroke="#000" stroke-width="0.4"/>
+  <circle cx="76" cy="80" r="4.5" fill="url(#pSkin)" stroke="#000" stroke-width="0.4"/>
   <!-- Cou -->
-  <rect x="46" y="30" width="8" height="6" fill="#7C5A3E"/>
-  <!-- Tête (vue de dos, aucun trait de visage) -->
-  <ellipse cx="50" cy="22" rx="11" ry="12" fill="#7C5A3E" stroke="#000" stroke-width="0.4"/>
-  <!-- Cheveux noirs (couvrant toute la tête vue de dos) -->
-  <path d="M39,22 Q39,10 50,10 Q61,10 61,22 L61,22 Q60,15 50,15 Q40,15 39,22 Z" fill="#0A0A0A"/>
+  <path d="M46,28 L54,28 Q55,32 54,36 L46,36 Q45,32 46,28 Z" fill="url(#pSkin)"/>
+  <!-- Tête vue de dos -->
+  <ellipse cx="50" cy="20" rx="11" ry="13" fill="url(#pSkin)" stroke="#000" stroke-width="0.5"/>
+  <!-- Cheveux (couvrent toute la tête vue de dos) -->
+  <path d="M39,18 Q39,6 50,6 Q61,6 61,18 L61,25 Q60,22 50,22 Q40,22 39,25 Z" fill="#0A0A0A"/>
 </svg>
 ''';
 
-// SVG vectoriel — joueur en pleine frappe (jambe droite swingée)
+// SVG vectoriel — joueur en pleine frappe (jambe droite swingée, bras
+// en équilibre, silhouette à courbes)
 const String _kSvgPlayerKick = r'''
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 150">
+  <defs>
+    <linearGradient id="kkSkin" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#8C6749"/>
+      <stop offset="100%" stop-color="#6E4A30"/>
+    </linearGradient>
+    <linearGradient id="kkJersey" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#1A1A1A"/>
+      <stop offset="100%" stop-color="#000000"/>
+    </linearGradient>
+  </defs>
   <!-- Ombre allongée -->
-  <ellipse cx="50" cy="143" rx="36" ry="4" fill="#000" opacity="0.4"/>
-  <!-- Jambe d'appui gauche (verticale) -->
-  <rect x="38" y="92" width="10" height="26" rx="4" fill="#7C5A3E"/>
-  <!-- Chaussette + chaussure appui -->
-  <rect x="37" y="116" width="12" height="6" rx="2" fill="#FFFFFF"/>
-  <ellipse cx="43" cy="125" rx="11" ry="5" fill="#1A1A1A"/>
-  <!-- Jambe de frappe droite (oblique vers l'avant/droite) -->
+  <ellipse cx="50" cy="143" rx="38" ry="4" fill="#000" opacity="0.4"/>
+  <!-- Jambe d'appui gauche -->
+  <path d="M40,92 Q40,89 43,89 L46,89 Q49,89 49,92 L49,118 Q49,121 46,121 L43,121 Q40,121 40,118 Z"
+        fill="url(#kkSkin)" stroke="#000" stroke-width="0.5"/>
+  <path d="M40,114 L49,114 L49,121 L40,121 Z" fill="#FFFFFF" stroke="#000" stroke-width="0.3"/>
+  <ellipse cx="44.5" cy="125" rx="9" ry="5" fill="#1A1A1A" stroke="#000" stroke-width="0.4"/>
+  <!-- Jambe de frappe droite (groupe avec rotation oblique) -->
   <g transform="translate(56 92) rotate(-35)">
-    <rect x="0" y="0" width="10" height="28" rx="4" fill="#7C5A3E"/>
-    <rect x="-1" y="24" width="12" height="6" rx="2" fill="#FFFFFF"/>
-    <ellipse cx="5" cy="33" rx="11" ry="5" fill="#1A1A1A"/>
+    <path d="M0,0 Q0,-3 3,-3 L7,-3 Q10,-3 10,0 L10,28 Q10,31 7,31 L3,31 Q0,31 0,28 Z"
+          fill="url(#kkSkin)" stroke="#000" stroke-width="0.5"/>
+    <path d="M0,26 L10,26 L10,31 L0,31 Z" fill="#FFFFFF" stroke="#000" stroke-width="0.3"/>
+    <ellipse cx="5" cy="34" rx="11" ry="5" fill="#1A1A1A" stroke="#000" stroke-width="0.4"/>
   </g>
-  <!-- Short blanc -->
-  <path d="M30,74 L70,74 L72,95 L62,98 L58,90 L42,90 L38,98 L28,95 Z"
-        fill="#FFFFFF" stroke="#000" stroke-width="0.6"/>
+  <!-- Short blanc courbé -->
+  <path d="M32,74 Q30,74 30,76 L30,90 Q30,94 32,94 L46,94 L48,90 L52,90 L54,94 L68,94 Q70,94 70,90 L70,76 Q70,74 68,74 Z"
+        fill="#FFFFFF" stroke="#000" stroke-width="0.5"/>
   <!-- Maillot noir -->
-  <path d="M28,42 Q28,34 36,34 L64,34 Q72,34 72,42 L74,78 L26,78 Z" fill="#0A0A0A"/>
+  <path d="M26,44 Q26,32 38,30 L62,30 Q74,32 74,44 L74,78 Q74,80 72,80 L28,80 Q26,80 26,78 Z"
+        fill="url(#kkJersey)" stroke="#1A1A1A" stroke-width="0.4"/>
   <!-- Numéro 10 -->
-  <text x="50" y="64" font-family="Arial Black,sans-serif" font-size="22"
+  <text x="50" y="62" font-family="Arial Black,sans-serif" font-size="22"
         font-weight="900" fill="#FFFFFF" text-anchor="middle">10</text>
-  <!-- Bras gauche ouvert pour équilibre -->
-  <path d="M28,44 Q14,44 8,52 L4,46 Q4,38 16,38 L28,40 Z" fill="#0A0A0A"/>
-  <!-- Bras droit suit le mouvement (vers l'avant) -->
-  <path d="M72,44 Q84,46 88,56 L92,52 Q92,42 84,40 L72,40 Z" fill="#0A0A0A"/>
+  <!-- Bras gauche ouvert pour équilibre (courbe) -->
+  <path d="M26,44 Q14,42 6,52 Q2,56 4,62 Q8,60 14,56 Q22,52 26,50 Z"
+        fill="url(#kkJersey)"/>
+  <!-- Bras droit suit la frappe (vers l'avant) -->
+  <path d="M74,44 Q86,46 92,58 Q94,62 92,66 Q86,62 80,58 Q76,54 74,52 Z"
+        fill="url(#kkJersey)"/>
   <!-- Mains -->
-  <circle cx="6" cy="52" r="4" fill="#7C5A3E"/>
-  <circle cx="89" cy="55" r="4" fill="#7C5A3E"/>
+  <circle cx="5" cy="58" r="4.5" fill="url(#kkSkin)" stroke="#000" stroke-width="0.4"/>
+  <circle cx="92" cy="62" r="4.5" fill="url(#kkSkin)" stroke="#000" stroke-width="0.4"/>
   <!-- Cou -->
-  <rect x="46" y="30" width="8" height="6" fill="#7C5A3E"/>
-  <!-- Tête -->
-  <ellipse cx="50" cy="22" rx="11" ry="12" fill="#7C5A3E" stroke="#000" stroke-width="0.4"/>
+  <path d="M46,28 L54,28 Q55,32 54,36 L46,36 Q45,32 46,28 Z" fill="url(#kkSkin)"/>
+  <!-- Tête (légèrement penchée vers la frappe — décalée à droite) -->
+  <ellipse cx="51" cy="20" rx="11" ry="13" fill="url(#kkSkin)" stroke="#000" stroke-width="0.5"/>
   <!-- Cheveux -->
-  <path d="M39,22 Q39,10 50,10 Q61,10 61,22 L61,22 Q60,15 50,15 Q40,15 39,22 Z" fill="#0A0A0A"/>
+  <path d="M40,18 Q40,6 51,6 Q62,6 62,18 L62,25 Q61,22 51,22 Q41,22 40,25 Z" fill="#0A0A0A"/>
 </svg>
 ''';
 
