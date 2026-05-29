@@ -161,8 +161,8 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
       final w = c.maxWidth;
       final h = c.maxHeight;
       // Géométrie de la cage (proportions stade)
-      final goalW = w * 0.78;
-      final goalH = h * 0.32;
+      final goalW = w * 0.84;
+      final goalH = h * 0.40;
       final goalLeft = (w - goalW) / 2;
       final goalTop = h * 0.14;
       final goalRight = goalLeft + goalW;
@@ -183,9 +183,10 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
       final aimY = goalTop + goalH * 0.55;
 
       // Position gardien : départ au centre, cible selon RNG serveur
-      final keeperW = goalW * 0.16;
+      final keeperW = goalW * 0.26;
+      final keeperH = goalH * 0.78;
       final keeperHomeX = goalLeft + (goalW - keeperW) / 2;
-      final keeperY = goalTop + goalH * 0.32;
+      final keeperY = goalTop + goalH * 0.22;
       final keeperTargetX = _keeperDir == null
           ? keeperHomeX
           : _zoneCenterX(goalLeft, goalW, _keeperDir!) - keeperW / 2;
@@ -253,17 +254,33 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
               // 5) Gardien (animé)
               Positioned(
                 left: keeperX, top: keeperYAnim,
-                width: keeperW, height: goalH * 0.55,
+                width: keeperW, height: keeperH,
                 child: _KeeperFigure(diving: _keeperDir != null && t > 0.1),
               ),
-              // 6) Joueur (statique, en bas)
+              // 6) Joueur (statique en attente, jambe levée pendant le tir)
               Positioned(
-                left: ballHomeX - w * 0.07,
-                top: ballHomeY - h * 0.16,
-                width: w * 0.10, height: h * 0.18,
-                child: const _PlayerFigure(),
+                left: ballHomeX - w * 0.10,
+                top: ballHomeY - h * 0.24,
+                width: w * 0.20, height: h * 0.26,
+                child: _PlayerFigure(kicking: _animating),
               ),
-              // 7) Ballon (animé)
+              // 7) Ombre du ballon au sol (suit X, reste à Y home)
+              Positioned(
+                left: ballX - ballSize * 0.6,
+                top: ballHomeY + ballSize * 0.05,
+                width: ballSize * 1.2,
+                height: ballSize * 0.35,
+                child: Opacity(
+                  opacity: (1 - tBall * 0.7).clamp(0.0, 1.0),
+                  child: Container(
+                    decoration: BoxDecoration(
+                      color: Colors.black.withValues(alpha: 0.45),
+                      borderRadius: BorderRadius.circular(99),
+                    ),
+                  ),
+                ),
+              ),
+              // 8) Ballon (animé)
               Positioned(
                 left: ballX - ballSize / 2,
                 top: ballY - ballSize / 2,
@@ -577,40 +594,57 @@ class _GoalPainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final w = size.width;
     final h = size.height;
-    // Filet : grille fine en gris clair
+
+    // 1) Fond légèrement assombri à l'intérieur de la cage
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, h),
+        Paint()..color = Colors.black.withValues(alpha: 0.15));
+
+    // 2) Filet : double cross-hatching diagonal (effet maille)
     final netPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.25)
+      ..color = Colors.white.withValues(alpha: 0.40)
       ..strokeWidth = 1;
-    const cellW = 20.0;
-    const cellH = 18.0;
-    // Lignes verticales
-    for (double x = cellW; x < w; x += cellW) {
-      canvas.drawLine(Offset(x, 0), Offset(x, h), netPaint);
+    const step = 14.0;
+    // Diagonales \\
+    for (double d = -h; d < w; d += step) {
+      canvas.drawLine(Offset(d, 0), Offset(d + h, h), netPaint);
     }
-    // Lignes horizontales
-    for (double y = cellH; y < h; y += cellH) {
-      canvas.drawLine(Offset(0, y), Offset(w, y), netPaint);
+    // Diagonales //
+    for (double d = 0; d < w + h; d += step) {
+      canvas.drawLine(Offset(d, 0), Offset(d - h, h), netPaint);
     }
-    // Cadre (poteaux + barre) blanc épais
+
+    // 3) Petite ombre intérieure haute (perspective)
+    canvas.drawRect(
+      Rect.fromLTWH(0, 0, w, h * 0.35),
+      Paint()
+        ..shader = LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Colors.black.withValues(alpha: 0.25),
+            Colors.transparent,
+          ],
+        ).createShader(Rect.fromLTWH(0, 0, w, h * 0.35)),
+    );
+
+    // 4) Poteaux + barre — blancs épais avec léger relief
     final framePaint = Paint()
       ..color = Colors.white
-      ..strokeWidth = 5
-      ..style = PaintingStyle.stroke;
-    // 2 poteaux + barre transversale
-    canvas.drawLine(Offset(2, 0), Offset(2, h), framePaint);
-    canvas.drawLine(Offset(w - 2, 0), Offset(w - 2, h), framePaint);
-    canvas.drawLine(Offset(0, 2), Offset(w, 2), framePaint);
-    // Petit dégradé d'ombre intérieur
-    final shadowPaint = Paint()
-      ..shader = LinearGradient(
-        begin: Alignment.topCenter,
-        end: Alignment.bottomCenter,
-        colors: [
-          Colors.black.withValues(alpha: 0.18),
-          Colors.transparent,
-        ],
-      ).createShader(Rect.fromLTWH(0, 0, w, h));
-    canvas.drawRect(Rect.fromLTWH(0, 0, w, h * 0.5), shadowPaint);
+      ..style = PaintingStyle.fill;
+    const postW = 7.0;
+    // Poteau gauche
+    canvas.drawRect(Rect.fromLTWH(0, 0, postW, h), framePaint);
+    // Poteau droit
+    canvas.drawRect(Rect.fromLTWH(w - postW, 0, postW, h), framePaint);
+    // Barre transversale
+    canvas.drawRect(Rect.fromLTWH(0, 0, w, postW), framePaint);
+
+    // Ombre intérieure sur les poteaux (côté droit du gauche + gauche du droit)
+    final shadeP = Paint()..color = Colors.black.withValues(alpha: 0.20);
+    canvas.drawRect(Rect.fromLTWH(postW, 0, 2, h), shadeP);
+    canvas.drawRect(Rect.fromLTWH(w - postW - 2, 0, 2, h), shadeP);
+    // Ombre sous la barre
+    canvas.drawRect(Rect.fromLTWH(0, postW, w, 2), shadeP);
   }
 
   @override
@@ -713,112 +747,287 @@ class _KeeperFigure extends StatelessWidget {
   const _KeeperFigure({required this.diving});
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Bras écartés (rectangle horizontal)
-        Positioned(
-          top: 14,
-          child: Container(
-            width: 44,
-            height: 6,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1AB6C8),
-              borderRadius: BorderRadius.circular(3),
+    // Proportions agrandies + détails (gants jaunes, jersey rayé, casquette)
+    return LayoutBuilder(builder: (_, c) {
+      final w = c.maxWidth;
+      final h = c.maxHeight;
+      final unit = h / 100; // unité relative
+      return Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          // Ombre au sol (ellipse sombre derrière les pieds)
+          Positioned(
+            bottom: 0,
+            child: Container(
+              width: w * 0.7,
+              height: unit * 5,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(99),
+              ),
             ),
           ),
-        ),
-        // Tête
-        Positioned(
-          top: 0,
-          child: Container(
-            width: 14, height: 14,
-            decoration: const BoxDecoration(
-              color: Color(0xFFE2B48E),
-              shape: BoxShape.circle,
+          // Bras grand écart avec gants jaunes au bout
+          Positioned(
+            top: unit * 28,
+            child: SizedBox(
+              width: w,
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Container(
+                    width: w * 0.18, height: unit * 6,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD500),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: Colors.black, width: 1),
+                    ),
+                  ),
+                  Container(
+                    width: w * 0.18, height: unit * 6,
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFD500),
+                      borderRadius: BorderRadius.circular(99),
+                      border: Border.all(color: Colors.black, width: 1),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
-        ),
-        // Maillot (corps cyan)
-        Positioned(
-          top: 12,
-          child: Container(
-            width: 22, height: 26,
-            decoration: BoxDecoration(
-              color: const Color(0xFF1AB6C8),
-              borderRadius: BorderRadius.circular(4),
+          // Bras cyan (entre gants et épaules)
+          Positioned(
+            top: unit * 28,
+            child: Container(
+              width: w * 0.78,
+              height: unit * 5,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1AB6C8),
+                borderRadius: BorderRadius.circular(99),
+              ),
             ),
           ),
-        ),
-        // Short noir
-        Positioned(
-          top: 36,
-          child: Container(
-            width: 22, height: 12,
-            color: Colors.black,
+          // Tête
+          Positioned(
+            top: unit * 6,
+            child: Container(
+              width: w * 0.30, height: unit * 22,
+              decoration: const BoxDecoration(
+                color: Color(0xFFE2B48E),
+                shape: BoxShape.circle,
+              ),
+            ),
           ),
-        ),
-        // Jambes
-        Positioned(
-          top: 46,
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 6, height: 12, color: const Color(0xFFE2B48E)),
-            const SizedBox(width: 4),
-            Container(width: 6, height: 12, color: const Color(0xFFE2B48E)),
-          ]),
-        ),
-      ],
-    );
+          // Casquette / cheveux foncés
+          Positioned(
+            top: unit * 4,
+            child: Container(
+              width: w * 0.32, height: unit * 10,
+              decoration: const BoxDecoration(
+                color: Color(0xFF1E1E1E),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(99),
+                  topRight: Radius.circular(99),
+                ),
+              ),
+            ),
+          ),
+          // Maillot (corps cyan) avec rayure blanche centrale
+          Positioned(
+            top: unit * 26,
+            child: Container(
+              width: w * 0.52, height: unit * 32,
+              decoration: BoxDecoration(
+                color: const Color(0xFF1AB6C8),
+                borderRadius: BorderRadius.circular(6),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.4)),
+              ),
+              child: Center(
+                child: Container(
+                  width: 4, height: unit * 20,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
+              ),
+            ),
+          ),
+          // Short noir
+          Positioned(
+            top: unit * 58,
+            child: Container(
+              width: w * 0.48, height: unit * 16,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(4),
+                  bottomRight: Radius.circular(4),
+                ),
+              ),
+            ),
+          ),
+          // Jambes (couleur peau) + chaussettes/chaussures
+          Positioned(
+            top: unit * 74,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: w * 0.13, height: unit * 14, color: const Color(0xFFE2B48E)),
+              SizedBox(width: w * 0.06),
+              Container(width: w * 0.13, height: unit * 14, color: const Color(0xFFE2B48E)),
+            ]),
+          ),
+          // Chaussures noires
+          Positioned(
+            top: unit * 88,
+            child: Row(mainAxisSize: MainAxisSize.min, children: [
+              Container(width: w * 0.14, height: unit * 6,
+                decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(3))),
+              SizedBox(width: w * 0.04),
+              Container(width: w * 0.14, height: unit * 6,
+                decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(3))),
+            ]),
+          ),
+        ],
+      );
+    });
   }
 }
 
 class _PlayerFigure extends StatelessWidget {
-  const _PlayerFigure();
+  final bool kicking;
+  const _PlayerFigure({this.kicking = false});
   @override
   Widget build(BuildContext context) {
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Tête
-        Positioned(
-          top: 0,
-          child: Container(
-            width: 14, height: 14,
-            decoration: const BoxDecoration(
-              color: Color(0xFF7C5A3E),
-              shape: BoxShape.circle,
+    return LayoutBuilder(builder: (_, c) {
+      final w = c.maxWidth;
+      final h = c.maxHeight;
+      final unit = h / 100;
+      return Stack(
+        alignment: Alignment.topCenter,
+        children: [
+          // Ombre au sol
+          Positioned(
+            bottom: 0,
+            child: Container(
+              width: w * 0.85,
+              height: unit * 5,
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(99),
+              ),
             ),
           ),
-        ),
-        // Maillot noir
-        Positioned(
-          top: 12,
-          child: Container(
-            width: 24, height: 28,
-            decoration: BoxDecoration(
-              color: Colors.black,
-              borderRadius: BorderRadius.circular(4),
+          // Tête
+          Positioned(
+            top: unit * 2,
+            child: Container(
+              width: w * 0.30, height: unit * 18,
+              decoration: const BoxDecoration(
+                color: Color(0xFF7C5A3E),
+                shape: BoxShape.circle,
+              ),
             ),
           ),
-        ),
-        // Short blanc
-        Positioned(
-          top: 38,
-          child: Container(
-            width: 24, height: 14,
-            color: Colors.white,
+          // Cheveux noirs
+          Positioned(
+            top: unit * 0,
+            child: Container(
+              width: w * 0.32, height: unit * 9,
+              decoration: const BoxDecoration(
+                color: Color(0xFF0A0A0A),
+                borderRadius: BorderRadius.only(
+                  topLeft: Radius.circular(99),
+                  topRight: Radius.circular(99),
+                ),
+              ),
+            ),
           ),
-        ),
-        // Jambes
-        Positioned(
-          top: 50,
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(width: 6, height: 14, color: const Color(0xFF7C5A3E)),
-            const SizedBox(width: 4),
-            Container(width: 6, height: 14, color: const Color(0xFF7C5A3E)),
-          ]),
-        ),
-      ],
-    );
+          // Maillot noir (de dos) avec col blanc
+          Positioned(
+            top: unit * 18,
+            child: Container(
+              width: w * 0.56, height: unit * 34,
+              decoration: BoxDecoration(
+                color: Colors.black,
+                borderRadius: BorderRadius.circular(6),
+              ),
+            ),
+          ),
+          // Numéro 10 blanc dans le dos
+          Positioned(
+            top: unit * 26,
+            child: Text('10',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: unit * 14,
+                  fontWeight: FontWeight.w900,
+                )),
+          ),
+          // Short blanc
+          Positioned(
+            top: unit * 52,
+            child: Container(
+              width: w * 0.52, height: unit * 16,
+              decoration: BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.only(
+                  bottomLeft: Radius.circular(4),
+                  bottomRight: Radius.circular(4),
+                ),
+                border: Border.all(color: Colors.black.withValues(alpha: 0.3)),
+              ),
+            ),
+          ),
+          // Jambes : si kicking -> une jambe levée vers l'avant
+          if (!kicking) ...[
+            Positioned(
+              top: unit * 68,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: w * 0.15, height: unit * 18, color: const Color(0xFF7C5A3E)),
+                SizedBox(width: w * 0.06),
+                Container(width: w * 0.15, height: unit * 18, color: const Color(0xFF7C5A3E)),
+              ]),
+            ),
+            Positioned(
+              top: unit * 86,
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(width: w * 0.16, height: unit * 7,
+                  decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(3))),
+                SizedBox(width: w * 0.04),
+                Container(width: w * 0.16, height: unit * 7,
+                  decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
+                    borderRadius: BorderRadius.circular(3))),
+              ]),
+            ),
+          ] else ...[
+            // Jambe d'appui (gauche)
+            Positioned(
+              top: unit * 68,
+              left: w * 0.18,
+              child: Container(width: w * 0.15, height: unit * 25,
+                color: const Color(0xFF7C5A3E)),
+            ),
+            // Jambe de frappe (droite, oblique vers l'avant)
+            Positioned(
+              top: unit * 70,
+              right: w * 0.05,
+              child: Transform.rotate(
+                angle: -0.5,
+                child: Container(width: w * 0.16, height: unit * 26,
+                  color: const Color(0xFF7C5A3E)),
+              ),
+            ),
+            // Chaussure d'appui
+            Positioned(
+              top: unit * 92,
+              left: w * 0.16,
+              child: Container(width: w * 0.18, height: unit * 7,
+                decoration: BoxDecoration(color: const Color(0xFF1A1A1A),
+                  borderRadius: BorderRadius.circular(3))),
+            ),
+          ],
+        ],
+      );
+    });
   }
 }
