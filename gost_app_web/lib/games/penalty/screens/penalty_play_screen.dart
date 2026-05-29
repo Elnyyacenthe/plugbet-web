@@ -398,8 +398,10 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
       _showBanner = false;
     });
 
-    // Son de frappe (reused : déplacement pion)
-    try { AudioService.instance.playPawnMove(); } catch (_) {}
+    // Son de frappe : playDiceRoll (volume full 80% + son distinct des
+    // sons de but/arrêt) au lieu de playPawnMove (qui joue à 48%, presque
+    // inaudible sur téléphone).
+    try { AudioService.instance.playDiceRoll(); } catch (_) {}
 
     final res = await prov.takeShot(dir);
     if (!mounted || res == null) {
