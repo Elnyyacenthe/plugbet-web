@@ -22,7 +22,7 @@ import 'package:provider/provider.dart';
 import '../../../theme/app_theme.dart';
 import '../../../providers/wallet_provider.dart';
 import '../../../widgets/network_lost_overlay.dart';
-import '../../../ludo/services/audio_service.dart';
+import '../audio/penalty_audio.dart';
 import '../models/penalty_models.dart';
 import '../providers/penalty_provider.dart';
 import 'penalty_bet_screen.dart';
@@ -53,14 +53,14 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
     );
     // Ambiance foule en boucle pendant tout le round (bg_music.mp3 via
     // FlameAudio.bgm = loop automatique).
-    try { AudioService.instance.startBackgroundMusic(); } catch (_) {}
+    PenaltyAudio.startAmbient();
   }
 
   @override
   void dispose() {
     _shotCtrl.dispose();
     _bannerTimer?.cancel();
-    try { AudioService.instance.stopBackgroundMusic(); } catch (_) {}
+    PenaltyAudio.stopAmbient();
     super.dispose();
   }
 
@@ -406,7 +406,7 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
     // Son de frappe : playDiceRoll (volume full 80% + son distinct des
     // sons de but/arrêt) au lieu de playPawnMove (qui joue à 48%, presque
     // inaudible sur téléphone).
-    try { AudioService.instance.playDiceRoll(); } catch (_) {}
+    PenaltyAudio.playKick();
 
     final res = await prov.takeShot(dir);
     if (!mounted || res == null) {
@@ -428,9 +428,9 @@ class _PenaltyPlayScreenState extends State<PenaltyPlayScreen>
     // Son de résultat
     try {
       if (res.isGoal) {
-        AudioService.instance.playWin();
+        PenaltyAudio.playGoal();
       } else {
-        AudioService.instance.playCapture();
+        PenaltyAudio.playSave();
       }
     } catch (_) {}
 
