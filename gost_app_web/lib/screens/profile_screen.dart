@@ -1530,11 +1530,67 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
+  Widget _operatorSelector({
+    required String? selected,
+    required void Function(String op) onPick,
+  }) {
+    Widget tile(String value, String label, Color color) {
+      final isSelected = selected == value;
+      return Expanded(
+        child: GestureDetector(
+          onTap: () => onPick(value),
+          child: Container(
+            margin: EdgeInsets.symmetric(horizontal: 4),
+            padding: EdgeInsets.symmetric(vertical: 10),
+            decoration: BoxDecoration(
+              color: isSelected
+                  ? color.withValues(alpha: 0.18)
+                  : AppColors.bgElevated,
+              borderRadius: BorderRadius.circular(10),
+              border: Border.all(
+                color: isSelected ? color : AppColors.divider,
+                width: isSelected ? 2 : 1,
+              ),
+            ),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Icon(
+                  isSelected
+                      ? Icons.radio_button_checked
+                      : Icons.radio_button_unchecked,
+                  size: 16,
+                  color: isSelected ? color : AppColors.textMuted,
+                ),
+                SizedBox(width: 6),
+                Text(label,
+                    style: TextStyle(
+                        color: isSelected ? color : AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Padding(
+      padding: EdgeInsets.symmetric(horizontal: 0),
+      child: Row(children: [
+        tile('MTN_MONEY', 'MTN', AppColors.neonYellow),
+        tile('ORANGE_MONEY', 'Orange', AppColors.neonOrange),
+      ]),
+    );
+  }
+
   void _showDepositDialog() {
     final amountCtrl = TextEditingController();
     final phoneCtrl = TextEditingController();
     String? error;
     bool loading = false;
+    String? selectedOperator; // 'MTN_MONEY' | 'ORANGE_MONEY'
+    bool operatorOverridden = false;
 
     showDialog(
       context: context,
@@ -1597,6 +1653,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                   controller: phoneCtrl,
                   keyboardType: TextInputType.phone,
                   style: TextStyle(color: AppColors.textPrimary),
+                  onChanged: (v) {
+                    if (operatorOverridden) return;
+                    final op = _kpayService.detectOperator(v);
+                    if (op != selectedOperator) {
+                      setS(() => selectedOperator = op);
+                    }
+                  },
                   decoration: InputDecoration(
                     labelText: 'Numéro Mobile Money',
                     hintText: '237658895572',
@@ -1611,6 +1674,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderSide: BorderSide(color: AppColors.divider),
                     ),
                   ),
+                ),
+                SizedBox(height: 12),
+                _operatorSelector(
+                  selected: selectedOperator,
+                  onPick: (op) => setS(() {
+                    selectedOperator = op;
+                    operatorOverridden = true;
+                  }),
                 ),
                 SizedBox(height: 12),
                 Container(
@@ -1664,6 +1735,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                         return;
                       }
 
+                      if (selectedOperator == null) {
+                        setS(() => error =
+                            'Choisis ton opérateur (MTN ou Orange).');
+                        return;
+                      }
+
                       setS(() {
                         loading = true;
                         error = null;
@@ -1674,6 +1751,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                       final result = await _kpayService.initiateDeposit(
                         payer: cleanedPhone,
                         amount: amount,
+                        paymentMethod: selectedOperator!,
                       );
 
                       if (!ctx.mounted) return;
@@ -1734,6 +1812,8 @@ class _ProfileScreenState extends State<ProfileScreen>
     final phoneCtrl = TextEditingController();
     String? error;
     bool loading = false;
+    String? selectedOperator;
+    bool operatorOverridden = false;
 
     showDialog(
       context: context,
@@ -1817,6 +1897,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                   controller: phoneCtrl,
                   keyboardType: TextInputType.phone,
                   style: TextStyle(color: AppColors.textPrimary),
+                  onChanged: (v) {
+                    if (operatorOverridden) return;
+                    final op = _kpayService.detectOperator(v);
+                    if (op != selectedOperator) {
+                      setS(() => selectedOperator = op);
+                    }
+                  },
                   decoration: InputDecoration(
                     labelText: 'Numéro de réception',
                     hintText: '237658895572',
@@ -1831,6 +1918,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderSide: BorderSide(color: AppColors.divider),
                     ),
                   ),
+                ),
+                SizedBox(height: 12),
+                _operatorSelector(
+                  selected: selectedOperator,
+                  onPick: (op) => setS(() {
+                    selectedOperator = op;
+                    operatorOverridden = true;
+                  }),
                 ),
                 SizedBox(height: 12),
                 Container(
@@ -1913,6 +2008,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                         return;
                       }
 
+                      if (selectedOperator == null) {
+                        setS(() => error =
+                            'Choisis ton opérateur (MTN ou Orange).');
+                        return;
+                      }
+
                       setS(() {
                         loading = true;
                         error = null;
@@ -1929,6 +2030,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                           await _kpayService.initiateWithdrawal(
                         receiver: cleanedPhone,
                         amount: amount,
+                        paymentMethod: selectedOperator!,
                       );
 
                       // Sync le wallet provider (le debit a deja modifie user_profiles)

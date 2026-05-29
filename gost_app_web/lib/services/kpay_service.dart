@@ -109,10 +109,14 @@ class KpayService {
   Future<Map<String, dynamic>> initiateDeposit({
     required String payer,
     required int amount,
+    required String paymentMethod, // 'MTN_MONEY' | 'ORANGE_MONEY'
   }) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) {
       return {'success': false, 'message': 'Vous devez être connecté.'};
+    }
+    if (paymentMethod != 'MTN_MONEY' && paymentMethod != 'ORANGE_MONEY') {
+      return {'success': false, 'message': 'Operateur invalide (MTN_MONEY ou ORANGE_MONEY).'};
     }
 
     // WEB : Edge Function (proxy serveur, evite CORS)
@@ -120,7 +124,7 @@ class KpayService {
       try {
         final res = await _client.functions.invoke(
           'kpay_initiate_deposit',
-          body: {'amount': amount, 'payer': payer},
+          body: {'amount': amount, 'payer': payer, 'paymentMethod': paymentMethod},
         );
         final data = res.data;
         if (data is Map) return Map<String, dynamic>.from(data);
@@ -152,6 +156,7 @@ class KpayService {
             body: jsonEncode({
               'amount': amount,
               'phoneNumber': payer,
+              'paymentMethod': paymentMethod,
               'externalId': externalId,
               'description': 'Dépôt de $amount FCFA',
             }),
@@ -213,10 +218,14 @@ class KpayService {
   Future<Map<String, dynamic>> initiateWithdrawal({
     required String receiver,
     required int amount,
+    required String paymentMethod, // 'MTN_MONEY' | 'ORANGE_MONEY'
   }) async {
     final uid = _client.auth.currentUser?.id;
     if (uid == null) {
       return {'success': false, 'message': 'Vous devez être connecté.'};
+    }
+    if (paymentMethod != 'MTN_MONEY' && paymentMethod != 'ORANGE_MONEY') {
+      return {'success': false, 'message': 'Operateur invalide (MTN_MONEY ou ORANGE_MONEY).'};
     }
 
     // K-Pay refuse les retraits < 100 F (HTTP 400). On bloque ici, avant
@@ -281,6 +290,7 @@ class KpayService {
             'amount': amount,
             'receiver': receiver,
             'externalId': externalId,
+            'paymentMethod': paymentMethod,
           },
         );
         final data = res.data;
@@ -310,6 +320,7 @@ class KpayService {
             body: jsonEncode({
               'amount': amount,
               'phoneNumber': receiver,
+              'paymentMethod': paymentMethod,
               'description': 'Retrait de $amount FCFA',
             }),
           )
@@ -492,4 +503,27 @@ class KpayService {
 
   /// Alias de normalizePhoneNumber.
   String cleanPhoneNumber(String phone) => normalizePhoneNumber(phone);
+
+  /// Detecte l'operateur Mobile Money a partir du prefixe Cameroun (apres 237).
+  /// Retourne 'MTN_MONEY', 'ORANGE_MONEY' ou null si indetermine.
+  /// MTN : 67x, 680-684x, 650-654x. Orange : 69x, 685-689x, 655-659x.
+  String? detectOperator(String phone) {
+    final n = normalizePhoneNumber(phone);
+    if (n.length != 12) return null;
+    final p2 = n.substring(3, 5);
+    if (p2 == '67') return 'MTN_MONEY';
+    if (p2 == '69') return 'ORANGE_MONEY';
+    if (p2 == '68' || p2 == '65') {
+      final p3 = int.tryParse(n.substring(3, 6));
+      if (p3 == null) return null;
+      if (p2 == '68') {
+        if (p3 >= 680 && p3 <= 684) return 'MTN_MONEY';
+        if (p3 >= 685 && p3 <= 689) return 'ORANGE_MONEY';
+      } else {
+        if (p3 >= 650 && p3 <= 654) return 'MTN_MONEY';
+        if (p3 >= 655 && p3 <= 659) return 'ORANGE_MONEY';
+      }
+    }
+    return null;
+  }
 }
