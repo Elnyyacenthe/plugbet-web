@@ -15,6 +15,7 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
   bool _loading = false;
 
   RealtimeChannel? _channel;
+  RealtimeChannel? _kpayChannel;
 
   int get coins => _coins;
   String get username => _username;
@@ -28,6 +29,7 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
     await refresh();
     _subscribeRealtime();
+    _subscribeKpayRealtime();
   }
 
   /// Au retour de l'app (resume) : re-fetch le solde + re-abonnement
@@ -40,6 +42,9 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
       refresh();
       if (_channel == null) {
         _subscribeRealtime();
+      }
+      if (_kpayChannel == null) {
+        _subscribeKpayRealtime();
       }
     }
   }
@@ -54,12 +59,24 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
     }
   }
 
-  /// Recharge le solde depuis Supabase
+  /// Recharge le solde depuis Supabase.
+  /// Source primaire : RPC `wallet_balance` (lit wallet_ledger = source de
+  /// verite V2). Fallback : user_profiles.coins.
+  /// Le username vient toujours de user_profiles.
   Future<void> refresh() async {
     _loading = true;
     _safeNotify();
+    int? ledgerBalance;
+    try {
+      final r = await _client.rpc('wallet_balance');
+      if (r is int) {
+        ledgerBalance = r;
+      } else if (r is num) {
+        ledgerBalance = r.toInt();
+      }
+    } catch (_) {/* fallback user_profiles ci-dessous */}
     final profile = await _service.getProfile();
-    _coins = profile?['coins'] as int? ?? 0;
+    _coins = ledgerBalance ?? (profile?['coins'] as int? ?? 0);
     _username = profile?['username'] as String? ?? '';
     _loading = false;
     _safeNotify();
@@ -96,11 +113,43 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
         .subscribe();
   }
 
+  /// Abonnement realtime sur kpay_transactions du user : des qu'un depot
+  /// passe PENDING -> SUCCESS (ou retrait -> FAILED + refund), on
+  /// rafraichit le solde. Couvre le cas ou le user_profiles UPDATE est
+  /// rate (socket realtime tombee pendant l'attente du paiement).
+  void _subscribeKpayRealtime() {
+    final uid = _service.currentUserId;
+    if (uid == null) return;
+    _kpayChannel = _client
+        .channel('wallet_kpay_$uid')
+        .onPostgresChanges(
+          event: PostgresChangeEvent.update,
+          schema: 'public',
+          table: 'kpay_transactions',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'user_id',
+            value: uid,
+          ),
+          callback: (payload) {
+            final newStatus = payload.newRecord['status'] as String?;
+            // Toute transition hors PENDING => le solde a peut-etre change
+            if (newStatus != null && newStatus != 'PENDING') {
+              refresh();
+            }
+          },
+        )
+        .subscribe();
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     if (_channel != null) {
       _client.removeChannel(_channel!);
+    }
+    if (_kpayChannel != null) {
+      _client.removeChannel(_kpayChannel!);
     }
     super.dispose();
   }
