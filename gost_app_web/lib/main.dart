@@ -14,7 +14,7 @@ import 'services/live_score_manager.dart';
 import 'providers/matches_provider.dart';
 import 'providers/favorites_provider.dart';
 import 'screens/splash_screen.dart';
-import 'screens/home_screen.dart';
+import 'screens/betting_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/settings_screen.dart';
@@ -455,7 +455,7 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     return _cachedScreens.putIfAbsent(index, () {
       switch (index) {
         case 0:
-          return HomeScreen(scaffoldKey: _scaffoldKey);
+          return const BettingScreen();
         case 1:
           return const GamesScreen();
         case 2:
@@ -692,9 +692,14 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
           },
           items: [
             BottomNavigationBarItem(
-              icon: const Icon(Icons.sports_soccer_outlined),
-              activeIcon: const Icon(Icons.sports_soccer),
-              label: t.tabMatches,
+              icon: const Icon(Icons.bolt_outlined),
+              activeIcon: ShaderMask(
+                shaderCallback: (bounds) => LinearGradient(
+                  colors: [AppColors.neonYellow, AppColors.neonGreen],
+                ).createShader(bounds),
+                child: const Icon(Icons.bolt, color: Colors.white),
+              ),
+              label: 'Paris',
             ),
             BottomNavigationBarItem(
               icon: Icon(Icons.sports_esports_outlined),
