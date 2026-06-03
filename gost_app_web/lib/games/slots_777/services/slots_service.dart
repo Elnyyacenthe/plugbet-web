@@ -75,7 +75,7 @@ class SlotsService {
       final res = await _client.rpc('slots_spin', params: {
         'p_bet': bet,
         'p_request_id': requestId,
-      });
+      }).timeout(const Duration(seconds: 15));
       if (res is! Map) throw StateError('INVALID_RESPONSE');
 
       final data = Map<String, dynamic>.from(res);
@@ -110,7 +110,7 @@ class SlotsService {
 
       return result;
     } on PostgrestException catch (e) {
-      _log.warn('spin RPC error: ${e.message}');
+      _log.warn('spin RPC error: ${e.message} code=${e.code}');
       if (e.message.contains('INSUFFICIENT_FUNDS')) {
         throw StateError('INSUFFICIENT_FUNDS');
       }
@@ -120,7 +120,16 @@ class SlotsService {
       if (e.message.contains('INVALID_BET')) {
         throw ArgumentError('BET_NOT_ALLOWED');
       }
+      // RPC inexistante (SQL migration pas executee) -> message clair
+      if (e.code == 'PGRST202' ||
+          e.message.toLowerCase().contains('not found') ||
+          e.message.toLowerCase().contains('does not exist')) {
+        throw StateError('RPC_NOT_DEPLOYED');
+      }
       rethrow;
+    } on TimeoutException {
+      _log.warn('spin RPC timeout (>15s)');
+      throw StateError('TIMEOUT');
     }
   }
 

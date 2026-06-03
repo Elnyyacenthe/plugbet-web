@@ -240,7 +240,7 @@ class _SlotsScreenState extends State<SlotsScreen>
           ),
         ),
         Text(
-          'Jackpot 7-7-7 · RTP ~78%',
+          'Jackpot 7-7-7',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.55),
             fontSize: 11,

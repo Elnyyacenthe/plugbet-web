@@ -78,6 +78,12 @@ class SlotsProvider extends ChangeNotifier {
         case 'NOT_AUTH':
           _error = 'Connecte-toi pour jouer';
           break;
+        case 'RPC_NOT_DEPLOYED':
+          _error = 'Slots indisponible (migration SQL a executer)';
+          break;
+        case 'TIMEOUT':
+          _error = 'Reseau trop lent, reessaie';
+          break;
         default:
           _error = 'Erreur : ${e.message}';
       }
