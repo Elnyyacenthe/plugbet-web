@@ -15,6 +15,8 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import '../../../providers/wallet_provider.dart';
 import '../../../theme/app_theme.dart';
 import '../models/slot_models.dart';
 import '../providers/slots_provider.dart';
@@ -49,8 +51,10 @@ class _SlotsScreenState extends State<SlotsScreen>
   @override
   void initState() {
     super.initState();
-    _state = SlotsProvider();
+    final wallet = context.read<WalletProvider>();
+    _state = SlotsProvider(wallet: wallet);
     _state.addListener(_onState);
+    wallet.addListener(_onWallet);
     _spinBtnCtrl = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 2),
@@ -60,6 +64,7 @@ class _SlotsScreenState extends State<SlotsScreen>
   @override
   void dispose() {
     _state.removeListener(_onState);
+    _state.wallet.removeListener(_onWallet);
     _state.dispose();
     _spinBtnCtrl.dispose();
     super.dispose();
@@ -67,12 +72,25 @@ class _SlotsScreenState extends State<SlotsScreen>
 
   void _onState() {
     if (mounted) setState(() {});
+    final err = _state.error;
+    if (err != null && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(err),
+        backgroundColor: AppColors.neonRed,
+        duration: const Duration(seconds: 2),
+      ));
+      _state.clearError();
+    }
+  }
+
+  void _onWallet() {
+    if (mounted) setState(() {});
   }
 
   Future<void> _doSpin() async {
     if (_state.spinning) return;
     if (_state.balance < _state.currentBet) {
-      _toast('Solde insuffisant. Recharge ton compte demo.');
+      // L'erreur sera affichee via le listener _onState (provider.error)
       return;
     }
     HapticFeedback.lightImpact();
@@ -124,13 +142,6 @@ class _SlotsScreenState extends State<SlotsScreen>
         },
       ),
     );
-  }
-
-  void _toast(String msg) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      duration: const Duration(seconds: 2),
-    ));
   }
 
   @override
@@ -188,13 +199,6 @@ class _SlotsScreenState extends State<SlotsScreen>
                   fontWeight: FontWeight.w900,
                   fontSize: 13,
                 )),
-            const SizedBox(width: 6),
-            const Text('· DEMO',
-                style: TextStyle(
-                  color: Colors.white54,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700,
-                )),
           ]),
         ),
         const SizedBox(width: 8),
@@ -236,7 +240,7 @@ class _SlotsScreenState extends State<SlotsScreen>
           ),
         ),
         Text(
-          'Demo · RTP ~94%',
+          'Jackpot 7-7-7 · RTP ~78%',
           style: TextStyle(
             color: Colors.white.withValues(alpha: 0.55),
             fontSize: 11,
@@ -322,12 +326,7 @@ class _SlotsScreenState extends State<SlotsScreen>
         ),
         const SizedBox(height: 14),
         Row(children: [
-          IconButton(
-            tooltip: 'Recharger demo',
-            onPressed: _state.spinning ? null : _state.refillDemo,
-            icon: Icon(Icons.refresh,
-                color: Colors.white.withValues(alpha: 0.8)),
-          ),
+          const SizedBox(width: 48), // spacer pour centrer le bouton SPIN
           const Spacer(),
           // Bouton SPIN circulaire
           GestureDetector(

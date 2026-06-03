@@ -32,16 +32,17 @@ enum SlotSymbol {
 
 /// Poids relatifs par rouleau (somme = 32 stops virtuels, classique).
 /// Plus une valeur est haute, plus le symbole apparait souvent.
-/// Tuner ces nombres pour ajuster le RTP (Return To Player).
+/// Difficulte calibree ~78% RTP (house edge ~22%).
+/// CES VALEURS DOIVENT MATCHER EXACTEMENT slots_spin() SQL.
 const Map<SlotSymbol, int> kReelWeights = {
-  SlotSymbol.cherry: 8,
+  SlotSymbol.cherry: 7,
   SlotSymbol.lemon : 6,
   SlotSymbol.orange: 5,
   SlotSymbol.grape : 4,
   SlotSymbol.bell  : 3,
   SlotSymbol.bar   : 3,
   SlotSymbol.seven : 1,
-  SlotSymbol.blank : 2,
+  SlotSymbol.blank : 3,
 }; // total = 32
 
 /// Multiplicateurs de gain par combinaison.
@@ -60,10 +61,11 @@ class Paytable {
 
   /// Exactement 2 symboles identiques (les 2 autres peuvent etre n'importe quoi).
   /// Seuls les symboles ici declenchent un mini-gain pair.
+  /// Calibration "rude" : 2-of-a-kind reduit pour baisser le RTP de 90% -> 78%.
   static const Map<SlotSymbol, int> twoOfAKind = {
-    SlotSymbol.seven : 20,
-    SlotSymbol.bar   : 5,
-    SlotSymbol.bell  : 3,
+    SlotSymbol.seven : 18,
+    SlotSymbol.bar   : 4,
+    SlotSymbol.bell  : 2,
     SlotSymbol.cherry: 2,
   };
 

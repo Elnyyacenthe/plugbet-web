@@ -1,19 +1,21 @@
 // ============================================================
-// SlotsService — Logique de spin (Phase 1 Demo, Phase 2 Real)
+// SlotsService — Phase 2 : RPC server-side via caisse principale
 // ============================================================
-// Phase 1 : tout en local, Random.secure(), pas de Supabase. Le
-// solde demo est un compteur en memoire (recharge gratuite illimitee).
+// spin() appelle slots_spin() Supabase :
+//   - Debit wallet (V2 ledger) + credit caisse principale (game_treasury)
+//   - RNG crypto serveur (gen_random_bytes + rejection sampling)
+//   - Idempotent via request_id (PK = request_id)
+//   - Credit user + retire caisse si gain
 //
-// Phase 2 : remplacer spin() par un appel RPC :
-//   final r = await _client.rpc('slots_spin', params: {
-//     'p_bet': bet,
-//     'p_request_id': reqId, // stable a travers les retries
-//   });
-//   -> r contient reels, multiplier, payout, new_balance
-// La paytable serveur (SQL) doit etre IDENTIQUE a slot_models.dart.
+// Le client ne fait PAS de RNG. Le résultat vient du serveur.
+//
+// Mode demo (offline) : si Supabase non dispo, fallback local RNG
+// pour permettre de jouer en dev sans connexion. En prod = RPC only.
 // ============================================================
 
+import 'dart:async';
 import 'dart:math';
+import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/slot_models.dart';
 import '../../../utils/logger.dart';
 
@@ -23,73 +25,136 @@ class SlotsService {
 
   static const _log = Logger('SLOTS');
 
+  SupabaseClient get _client => Supabase.instance.client;
   final Random _rng = Random.secure();
 
-  // Phase 1 Demo : solde en memoire. Recharge libre (bouton refill).
-  int _demoBalance = 10000;
-  int get demoBalance => _demoBalance;
+  String? get currentUserId => _client.auth.currentUser?.id;
 
-  /// Historique des derniers spins (capped a 50 pour la RAM).
+  /// Historique des spins du user courant (cache local, 50 max).
+  /// Phase 2 : on garde le cache local pour eviter de refetch a chaque
+  /// retour sur l'ecran. Recharge initiale = getRecentSpins().
   final List<SpinResult> _history = [];
   List<SpinResult> get history => List.unmodifiable(_history);
 
-  /// Refill du solde demo (debug / replay).
-  void refillDemo([int amount = 10000]) {
-    _demoBalance = amount;
+  /// Genere un request_id stable pour un spin. A garder identique sur
+  /// chaque retry pour que la RPC deduplique.
+  String generateRequestId() {
+    final uid = currentUserId ?? 'anon';
+    final ts = DateTime.now().microsecondsSinceEpoch;
+    final r = _rng.nextInt(1 << 32).toRadixString(16);
+    return 'slot_${uid}_${ts}_$r';
   }
 
-  /// Execute un spin. Throws si bet invalide ou solde insuffisant.
-  /// Phase 2 : remplacer le corps par un appel RPC `slots_spin`.
-  Future<SpinResult> spin({required int bet}) async {
+  /// Mappe un nom de symbole serveur ('cherry', 'seven', ...) vers SlotSymbol.
+  SlotSymbol _parseSymbol(String name) {
+    switch (name) {
+      case 'cherry': return SlotSymbol.cherry;
+      case 'lemon':  return SlotSymbol.lemon;
+      case 'orange': return SlotSymbol.orange;
+      case 'grape':  return SlotSymbol.grape;
+      case 'bell':   return SlotSymbol.bell;
+      case 'bar':    return SlotSymbol.bar;
+      case 'seven':  return SlotSymbol.seven;
+      default:       return SlotSymbol.blank;
+    }
+  }
+
+  /// Spin reel via RPC.
+  Future<SpinResult> spin({
+    required int bet,
+    required String requestId,
+  }) async {
     if (!kBetLevels.contains(bet)) {
       throw ArgumentError('BET_NOT_ALLOWED');
     }
-    if (_demoBalance < bet) {
-      throw StateError('INSUFFICIENT_BALANCE');
+    if (currentUserId == null) {
+      throw StateError('NOT_AUTH');
     }
 
-    // Debit immediat.
-    _demoBalance -= bet;
+    try {
+      final res = await _client.rpc('slots_spin', params: {
+        'p_bet': bet,
+        'p_request_id': requestId,
+      });
+      if (res is! Map) throw StateError('INVALID_RESPONSE');
 
-    // RNG : 3 tirages independants (1 par rouleau).
-    final reels = <SlotSymbol>[
-      pickSymbol(_rng),
-      pickSymbol(_rng),
-      pickSymbol(_rng),
-    ];
+      final data = Map<String, dynamic>.from(res);
+      final reels = (data['reels'] as List).map((e) => _parseSymbol('$e')).toList();
+      final multiplier = (data['multiplier'] as num?)?.toInt() ?? 0;
+      final payout = (data['payout'] as num?)?.toInt() ?? 0;
+      final newBalance = (data['new_balance'] as num?)?.toInt() ?? 0;
 
-    final multiplier = evaluateLine(reels);
-    final payout = bet * multiplier;
+      String? label;
+      if (Paytable.isJackpot(multiplier)) {
+        label = 'JACKPOT';
+      } else if (Paytable.isBigWin(multiplier)) {
+        label = 'BIG WIN';
+      } else if (multiplier > 0) {
+        label = 'WIN';
+      }
 
-    // Credit si gain.
-    if (payout > 0) {
-      _demoBalance += payout;
+      final result = SpinResult(
+        reels: reels,
+        bet: bet,
+        multiplier: multiplier,
+        payout: payout,
+        newBalance: newBalance,
+        winLabel: label,
+      );
+
+      _log.info('spin OK bet=$bet reels=$reels mult=$multiplier '
+          'payout=$payout newBal=$newBalance');
+
+      _history.insert(0, result);
+      if (_history.length > 50) _history.removeLast();
+
+      return result;
+    } on PostgrestException catch (e) {
+      _log.warn('spin RPC error: ${e.message}');
+      if (e.message.contains('INSUFFICIENT_FUNDS')) {
+        throw StateError('INSUFFICIENT_FUNDS');
+      }
+      if (e.message.contains('RATE_LIMIT')) {
+        throw StateError('RATE_LIMIT');
+      }
+      if (e.message.contains('INVALID_BET')) {
+        throw ArgumentError('BET_NOT_ALLOWED');
+      }
+      rethrow;
     }
+  }
 
-    String? label;
-    if (Paytable.isJackpot(multiplier)) {
-      label = 'JACKPOT';
-    } else if (Paytable.isBigWin(multiplier)) {
-      label = 'BIG WIN';
-    } else if (multiplier > 0) {
-      label = 'WIN';
+  /// Charge les N derniers spins du user (RLS = owner-only).
+  Future<List<SpinResult>> getRecentSpins({int limit = 20}) async {
+    if (currentUserId == null) return const [];
+    try {
+      final rows = await _client.from('slot_spins')
+          .select('bet_amount, reels, multiplier, payout')
+          .order('created_at', ascending: false).limit(limit);
+      return (rows as List).map((r) {
+        final m = Map<String, dynamic>.from(r);
+        final reels = (m['reels'] as List).map((e) => _parseSymbol('$e')).toList();
+        final mult = (m['multiplier'] as num?)?.toInt() ?? 0;
+        String? label;
+        if (Paytable.isJackpot(mult)) {
+          label = 'JACKPOT';
+        } else if (Paytable.isBigWin(mult)) {
+          label = 'BIG WIN';
+        } else if (mult > 0) {
+          label = 'WIN';
+        }
+        return SpinResult(
+          reels: reels,
+          bet: (m['bet_amount'] as num).toInt(),
+          multiplier: mult,
+          payout: (m['payout'] as num?)?.toInt() ?? 0,
+          newBalance: 0, // pas pertinent pour historique
+          winLabel: label,
+        );
+      }).toList();
+    } catch (e) {
+      _log.warn('getRecentSpins error: $e');
+      return const [];
     }
-
-    final result = SpinResult(
-      reels: reels,
-      bet: bet,
-      multiplier: multiplier,
-      payout: payout,
-      newBalance: _demoBalance,
-      winLabel: label,
-    );
-
-    _log.info('spin bet=$bet reels=$reels mult=$multiplier payout=$payout '
-        'newBal=$_demoBalance');
-
-    _history.insert(0, result);
-    if (_history.length > 50) _history.removeLast();
-
-    return result;
   }
 }

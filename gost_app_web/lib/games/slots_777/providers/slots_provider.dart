@@ -1,17 +1,21 @@
 // ============================================================
-// SlotsProvider — State management (Phase 1 sans Provider/Riverpod)
+// SlotsProvider — State management Phase 2 (real money)
 // ============================================================
-// ChangeNotifier simple. L'ecran s'enregistre comme listener via
-// AnimatedBuilder/ListenableBuilder. Pas de Provider package requis
-// (cf le projet utilise deja Provider, on peut migrer plus tard).
+// Plus de demoBalance : le solde affiche vient de WalletProvider.
+// L'ecran injecte WalletProvider via constructeur ; apres chaque
+// spin, on appelle wallet.refresh() pour resync.
 // ============================================================
 
 import 'package:flutter/foundation.dart';
+import '../../../providers/wallet_provider.dart';
 import '../models/slot_models.dart';
 import '../services/slots_service.dart';
 
 class SlotsProvider extends ChangeNotifier {
+  final WalletProvider wallet;
   final SlotsService _svc = SlotsService.instance;
+
+  SlotsProvider({required this.wallet});
 
   int _currentBet = kBetLevels[2]; // 100 par defaut
   int get currentBet => _currentBet;
@@ -22,7 +26,10 @@ class SlotsProvider extends ChangeNotifier {
   SpinResult? _lastResult;
   SpinResult? get lastResult => _lastResult;
 
-  int get balance => _svc.demoBalance;
+  String? _error;
+  String? get error => _error;
+
+  int get balance => wallet.coins;
   List<SpinResult> get history => _svc.history;
 
   void setBet(int bet) {
@@ -32,26 +39,55 @@ class SlotsProvider extends ChangeNotifier {
     notifyListeners();
   }
 
+  void clearError() {
+    if (_error != null) {
+      _error = null;
+      notifyListeners();
+    }
+  }
+
+  /// Lance un spin. Retourne le SpinResult ou null si echec.
+  /// Stocke un message d'erreur dans [error] pour affichage UI.
   Future<SpinResult?> spin() async {
     if (_spinning) return null;
-    if (balance < _currentBet) return null;
+    if (balance < _currentBet) {
+      _error = 'Solde insuffisant';
+      notifyListeners();
+      return null;
+    }
 
     _spinning = true;
+    _error = null;
     notifyListeners();
+
+    final reqId = _svc.generateRequestId();
     try {
-      final r = await _svc.spin(bet: _currentBet);
+      final r = await _svc.spin(bet: _currentBet, requestId: reqId);
       _lastResult = r;
+      // Resync le wallet provider (le RPC a deja modifie le ledger)
+      await wallet.refresh();
       return r;
-    } catch (_) {
+    } on StateError catch (e) {
+      switch (e.message) {
+        case 'INSUFFICIENT_FUNDS':
+          _error = 'Solde insuffisant';
+          break;
+        case 'RATE_LIMIT':
+          _error = 'Patiente une seconde...';
+          break;
+        case 'NOT_AUTH':
+          _error = 'Connecte-toi pour jouer';
+          break;
+        default:
+          _error = 'Erreur : ${e.message}';
+      }
+      return null;
+    } catch (e) {
+      _error = 'Erreur reseau';
       return null;
     } finally {
       _spinning = false;
       notifyListeners();
     }
-  }
-
-  void refillDemo() {
-    _svc.refillDemo();
-    notifyListeners();
   }
 }
