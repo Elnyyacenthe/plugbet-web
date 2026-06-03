@@ -16,6 +16,7 @@ import '../games/aviator/screens/aviator_screen.dart';
 import '../games/blackjack/screens/blackjack_screen.dart';
 import '../games/roulette/screens/roulette_screen.dart';
 import '../games/coinflip/screens/coinflip_screen.dart';
+import '../games/slots_777/screens/slots_screen.dart';
 import '../games/apple_fortune/screens/apple_fortune_screen.dart';
 import '../games/mines/screens/mines_screen.dart';
 import '../games/penalty/screens/penalty_bet_screen.dart';
@@ -150,6 +151,17 @@ class GamesScreen extends StatelessWidget {
         imageAsset: 'assets/games/penalty_shooters_2.png',
         color: const Color(0xFF00C853),
         builder: (_) => const PenaltyBetScreen(),
+      ),
+      // ── Big Win 777 — machine a sous (Phase 1 DEMO) ────────
+      // 3 rouleaux, 1 ligne centrale. RNG client demo. Mises 10-1000.
+      // Jackpot 7-7-7 = ×500. Phase 2 : RPC server-side + wallet.
+      _Game(
+        title: 'Big Win 777',
+        subtitle: 'Machine à sous • Demo',
+        icon: Icons.casino_outlined,
+        imageAsset: 'assets/games/penalty_shooters_2.png',
+        color: const Color(0xFFFFD600),
+        builder: (_) => const SlotsScreen(),
       ),
     ];
 
