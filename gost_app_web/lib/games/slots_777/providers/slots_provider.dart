@@ -60,8 +60,10 @@ class SlotsProvider extends ChangeNotifier {
     _error = null;
     notifyListeners();
 
-    final reqId = _svc.generateRequestId();
     try {
+      // generateRequestId() est dans le try : si elle throw (cas edge web),
+      // le finally remet spinning a false au lieu de bloquer le bouton.
+      final reqId = _svc.generateRequestId();
       final r = await _svc.spin(bet: _currentBet, requestId: reqId);
       _lastResult = r;
       // Resync le wallet provider (le RPC a deja modifie le ledger)

@@ -38,10 +38,16 @@ class SlotsService {
 
   /// Genere un request_id stable pour un spin. A garder identique sur
   /// chaque retry pour que la RPC deduplique.
+  ///
+  /// IMPORTANT : on n'utilise PAS `1 << 32` ici car sur Flutter Web
+  /// (compilation JS), les shifts sont limites a 32-bit signed donc
+  /// `1 << 32 == 0` et `nextInt(0)` throw RangeError. Le throw remontait
+  /// hors du try/catch du provider et bloquait `_spinning = true` -> le
+  /// bouton SPIN restait grise. On utilise 0x7FFFFFFF qui est safe natif+web.
   String generateRequestId() {
     final uid = currentUserId ?? 'anon';
     final ts = DateTime.now().microsecondsSinceEpoch;
-    final r = _rng.nextInt(1 << 32).toRadixString(16);
+    final r = _rng.nextInt(0x7FFFFFFF).toRadixString(16);
     return 'slot_${uid}_${ts}_$r';
   }
 
