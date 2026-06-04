@@ -152,14 +152,14 @@ class GamesScreen extends StatelessWidget {
         color: const Color(0xFF00C853),
         builder: (_) => const PenaltyBetScreen(),
       ),
-      // ── Big Win 777 — machine a sous (Phase 1 DEMO) ────────
-      // 3 rouleaux, 1 ligne centrale. RNG client demo. Mises 10-1000.
-      // Jackpot 7-7-7 = ×500. Phase 2 : RPC server-side + wallet.
+      // ── Big Win 777 — machine a sous (server-RNG + caisse) ─
+      // 3 rouleaux, 1 ligne centrale. RNG serveur. Mises libres 10-1000.
+      // Jackpot 7-7-7 = ×500. Debit/credit via _ledger_post + caisse.
       _Game(
         title: 'Big Win 777',
-        subtitle: 'Machine à sous • Demo',
+        subtitle: 'Machine à sous • Mise libre 10-1000',
         icon: Icons.casino_outlined,
-        imageAsset: 'assets/games/penalty_shooters_2.png',
+        imageAsset: 'assets/games/big_win_777.webp',
         color: const Color(0xFFFFD600),
         builder: (_) => const SlotsScreen(),
       ),
