@@ -111,7 +111,7 @@ begin
   end if;
 
   -- Debit
-  perform wallet_apply_delta(
+  perform _ledger_post(
     v_uid, -p_bet, 'bet',
     'slots_bet:' || p_request_id,
     'slots_777', p_request_id,
@@ -171,7 +171,7 @@ begin
 
   -- Credit payout
   if v_payout > 0 then
-    perform wallet_apply_delta(
+    perform _ledger_post(
       v_uid, v_payout, 'win',
       'slots_payout:' || p_request_id,
       'slots_777', p_request_id,
