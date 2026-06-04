@@ -91,6 +91,17 @@ class WheelService {
       if (msg.contains('BET_TOO_LOW_ON_TILE')) throw StateError('BET_TOO_LOW_ON_TILE');
       if (msg.contains('BET_TOO_HIGH_ON_TILE')) throw StateError('BET_TOO_HIGH_ON_TILE');
       if (msg.contains('NOT_AUTH')) throw StateError('NOT_AUTH');
+      // 'new row for relation wallet_ledger violates check constraint':
+      // le solde lu cote client/UI ne matche pas le solde reel cote
+      // wallet_ledger (drift) OU race avec autre RPC. On NE traduit PAS
+      // en 'Solde insuffisant' (trompeur si l'utilisateur a l'argent en
+      // UI). On lance un code dedie -> le provider refresh le wallet
+      // et affiche un message clair.
+      if (msg.contains('violates check constraint') &&
+          (msg.toLowerCase().contains('wallet_ledger') ||
+              msg.toLowerCase().contains('balance_after'))) {
+        throw StateError('BALANCE_DESYNC');
+      }
       // RPC pas deployee
       if (e.code == 'PGRST202' ||
           (msg.toLowerCase().contains('wheel_spin') &&

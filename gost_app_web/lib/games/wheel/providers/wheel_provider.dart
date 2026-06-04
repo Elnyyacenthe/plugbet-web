@@ -156,6 +156,12 @@ class WheelProvider extends ChangeNotifier {
         case 'BET_TOO_HIGH_ON_TILE': _error = 'Mise max $kMaxBetPerTile FCFA par tuile'; break;
         case 'TIMEOUT': _error = 'Reseau trop lent, reessaie'; break;
         case 'RPC_NOT_DEPLOYED': _error = 'Roue indisponible (migration SQL a executer)'; break;
+        case 'BALANCE_DESYNC':
+          _error = 'Solde desynchronise, rafraichi en cours...';
+          // Force un refresh du wallet pour resync l'UI avec le vrai
+          // solde du ledger. Le solde affiche va se mettre a jour.
+          await wallet.refresh();
+          break;
         default:
           _error = e.message.startsWith('RPC_ERROR:')
               ? e.message.substring(11).trim()

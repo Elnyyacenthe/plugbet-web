@@ -86,6 +86,10 @@ class SlotsProvider extends ChangeNotifier {
         case 'TIMEOUT':
           _error = 'Reseau trop lent, reessaie';
           break;
+        case 'BALANCE_DESYNC':
+          _error = 'Solde desynchronise, rafraichi en cours...';
+          await wallet.refresh();
+          break;
         default:
           // 'RPC_ERROR: <vrai message>' ou autre StateError -> on
           // expose le vrai message pour debug.

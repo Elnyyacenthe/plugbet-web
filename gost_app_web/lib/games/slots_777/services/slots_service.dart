@@ -126,6 +126,15 @@ class SlotsService {
       if (e.message.contains('INVALID_BET')) {
         throw ArgumentError('BET_NOT_ALLOWED');
       }
+      // 'violates check constraint wallet_ledger' : desync entre
+      // wallet_balance affiche en UI et la realite ledger. Code dedie
+      // -> le provider doit refresh le wallet et donner un message clair.
+      final lower = e.message.toLowerCase();
+      if (lower.contains('violates check constraint') &&
+          (lower.contains('wallet_ledger') ||
+              lower.contains('balance_after'))) {
+        throw StateError('BALANCE_DESYNC');
+      }
       // RPC slots_spin inexistante (SQL migration pas executee).
       // On verifie de maniere stricte pour ne pas faussement matcher
       // 'wallet_apply_delta does not exist' ou autres dependances.
