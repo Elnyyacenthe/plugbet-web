@@ -18,7 +18,7 @@ import '../models/wheel_models.dart';
 import '../providers/wheel_provider.dart';
 import '../widgets/wheel_widget.dart';
 import '../widgets/bet_tile.dart';
-import '../widgets/chip_selector.dart';
+import '../widgets/amount_input.dart';
 
 class WheelScreen extends StatefulWidget {
   const WheelScreen({super.key});
@@ -384,12 +384,12 @@ class _WheelScreenState extends State<WheelScreen>
     return Padding(
       padding: const EdgeInsets.fromLTRB(0, 0, 12, 0),
       child: Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
-        // Chip selector
+        // Amount input (mise libre + quick chips)
         Expanded(
-          child: ChipSelector(
-            selected: _state.selectedChip,
+          child: AmountInput(
+            current: _state.currentAmount,
             disabled: _state.spinning,
-            onPick: _state.setSelectedChip,
+            onChanged: _state.setCurrentAmount,
           ),
         ),
         const SizedBox(width: 8),

@@ -16,10 +16,10 @@ class WheelProvider extends ChangeNotifier {
 
   WheelProvider({required this.wallet});
 
-  /// Jeton selectionne (denomination en FCFA). Tap une tuile pour
-  /// deposer ce jeton dessus.
-  int _selectedChip = kChipDenominations[1]; // 100 par defaut
-  int get selectedChip => _selectedChip;
+  /// Montant courant a deposer sur la prochaine tuile tap. Saisie
+  /// libre dans [kMinBetPerTile, kMaxBetPerTile].
+  int _currentAmount = 100; // 100 par defaut
+  int get currentAmount => _currentAmount;
 
   /// Mises courantes par tuile. Vide = aucun jeton pose.
   final Map<WheelTile, int> _chipsByTile = {};
@@ -50,28 +50,33 @@ class WheelProvider extends ChangeNotifier {
       totalBet <= kMaxTotalBet &&
       balance >= totalBet;
 
-  void setSelectedChip(int chip) {
-    if (!kChipDenominations.contains(chip)) return;
-    _selectedChip = chip;
+  void setCurrentAmount(int amount) {
+    if (amount < kMinBetPerTile || amount > kMaxBetPerTile) return;
+    _currentAmount = amount;
     notifyListeners();
   }
 
-  /// Tap une tuile : depose le chip selectionne dessus si valide.
+  /// Tap une tuile : depose [currentAmount] dessus si valide.
   void addChip(WheelTile tile) {
     if (_spinning) return;
+    if (_currentAmount < kMinBetPerTile) {
+      _error = 'Mise min $kMinBetPerTile FCFA';
+      notifyListeners();
+      return;
+    }
     final current = _chipsByTile[tile] ?? 0;
-    final next = current + _selectedChip;
+    final next = current + _currentAmount;
     if (next > kMaxBetPerTile) {
       _error = 'Mise max $kMaxBetPerTile FCFA par tuile';
       notifyListeners();
       return;
     }
-    if (totalBet + _selectedChip > kMaxTotalBet) {
+    if (totalBet + _currentAmount > kMaxTotalBet) {
       _error = 'Mise totale max $kMaxTotalBet FCFA';
       notifyListeners();
       return;
     }
-    if (balance < totalBet + _selectedChip) {
+    if (balance < totalBet + _currentAmount) {
       _error = 'Solde insuffisant';
       notifyListeners();
       return;

@@ -143,35 +143,8 @@ class _WheelWidgetState extends State<WheelWidget>
             );
           },
         ),
-        // Centre (logo PLUGBET)
-        Container(
-          width: widget.size * 0.28,
-          height: widget.size * 0.28,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            gradient: const RadialGradient(
-              colors: [Color(0xFFFFE082), Color(0xFFFFB300)],
-            ),
-            border: Border.all(color: const Color(0xFF7A4F00), width: 3),
-            boxShadow: [
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.4),
-                blurRadius: 10, offset: const Offset(0, 2),
-              ),
-            ],
-          ),
-          alignment: Alignment.center,
-          child: const Text(
-            'PLUGBET',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.black,
-              fontSize: 11,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1,
-            ),
-          ),
-        ),
+        // Centre (logo PLUGBET stylise)
+        _PlugbetCenter(size: widget.size * 0.34),
         // Pointeur (en haut)
         Positioned(
           top: -4,
@@ -305,6 +278,103 @@ class _WheelPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// Logo PLUGBET au centre de la roue. Effet "casino bling" :
+///   - Anneau exterieur or fonce (profondeur 3D)
+///   - Disque principal degrade or
+///   - Texte PLUGBET avec degrade or vif + outline noire + ombre neon
+///   - Sous-titre "WHEEL" en rouge neon
+class _PlugbetCenter extends StatelessWidget {
+  final double size;
+  const _PlugbetCenter({required this.size});
+
+  @override
+  Widget build(BuildContext context) {
+    final fontSize = size * 0.18;
+    return Container(
+      width: size, height: size,
+      decoration: BoxDecoration(
+        shape: BoxShape.circle,
+        gradient: const RadialGradient(
+          center: Alignment(-0.3, -0.4),
+          radius: 0.9,
+          colors: [
+            Color(0xFFFFF8E1),  // brillance haute lumiere
+            Color(0xFFFFE082),  // or clair
+            Color(0xFFFFB300),  // or moyen
+            Color(0xFF8B5A00),  // or fonce (profondeur)
+          ],
+          stops: [0, 0.25, 0.7, 1],
+        ),
+        border: Border.all(color: const Color(0xFF5A3800), width: 3),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFFFFD600).withValues(alpha: 0.6),
+            blurRadius: 18,
+          ),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 6, offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          // PLUGBET avec gradient + outline + glow
+          Stack(alignment: Alignment.center, children: [
+            // Outline noire (rendu 2 fois pour effet outline epaisse)
+            Text('PLUGBET', style: TextStyle(
+              fontSize: fontSize,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1.5,
+              foreground: Paint()
+                ..style = PaintingStyle.stroke
+                ..strokeWidth = 3.5
+                ..color = Colors.black,
+            )),
+            // Texte avec gradient or vif
+            ShaderMask(
+              shaderCallback: (rect) => const LinearGradient(
+                begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFFFFF59D),  // jaune lumineux haut
+                  Color(0xFFFFD600),  // or vif
+                  Color(0xFFFFA000),  // orange-or bas
+                ],
+                stops: [0, 0.5, 1],
+              ).createShader(rect),
+              child: Text('PLUGBET', style: TextStyle(
+                color: Colors.white,
+                fontSize: fontSize,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 1.5,
+                shadows: const [
+                  Shadow(color: Color(0xFFFF6F00), blurRadius: 6),
+                ],
+              )),
+            ),
+          ]),
+          SizedBox(height: size * 0.015),
+          // Sous-titre WHEEL en rouge neon
+          Text('WHEEL', style: TextStyle(
+            color: const Color(0xFFFF1744),
+            fontSize: fontSize * 0.55,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 2.5,
+            shadows: [
+              Shadow(
+                color: const Color(0xFFFF1744).withValues(alpha: 0.8),
+                blurRadius: 6,
+              ),
+              const Shadow(color: Colors.black, blurRadius: 2),
+            ],
+          )),
+        ],
+      ),
+    );
+  }
 }
 
 class _PointerPainter extends CustomPainter {

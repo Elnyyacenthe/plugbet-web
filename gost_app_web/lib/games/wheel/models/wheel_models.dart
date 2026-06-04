@@ -82,15 +82,16 @@ double segmentToAngleRadians(int segment) {
 
 // ── Mises ───────────────────────────────────────────────────
 
-/// Denominations des jetons (FCFA). Le joueur tap un jeton puis tap
-/// une tuile pour deposer ce montant dessus.
-const List<int> kChipDenominations = [25, 100, 500, 5000, 10000, 40000];
-
-/// Limites RPC :
+/// Limites RPC (alignees sur le constraint SQL) :
 const int kMinBetPerTile = 25;
 const int kMaxBetPerTile = 5000;
 const int kMinTotalBet = 25;
 const int kMaxTotalBet = 25000;
+
+/// Suggestions rapides (chips) sous le champ libre — comme Penalty/Slots.
+/// Le joueur peut tap un chip OU saisir n'importe quelle valeur dans
+/// [kMinBetPerTile, kMaxBetPerTile].
+const List<int> kQuickAmounts = [25, 100, 500, 1000, 5000];
 
 // ── Resultat d'un spin ──────────────────────────────────────
 
