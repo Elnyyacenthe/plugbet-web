@@ -87,7 +87,13 @@ class SlotsProvider extends ChangeNotifier {
           _error = 'Reseau trop lent, reessaie';
           break;
         default:
-          _error = 'Erreur : ${e.message}';
+          // 'RPC_ERROR: <vrai message>' ou autre StateError -> on
+          // expose le vrai message pour debug.
+          if (e.message.startsWith('RPC_ERROR:')) {
+            _error = e.message.substring(11).trim();
+          } else {
+            _error = 'Erreur : ${e.message}';
+          }
       }
       return null;
     } catch (e) {

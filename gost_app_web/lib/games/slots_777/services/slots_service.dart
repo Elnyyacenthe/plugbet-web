@@ -126,13 +126,21 @@ class SlotsService {
       if (e.message.contains('INVALID_BET')) {
         throw ArgumentError('BET_NOT_ALLOWED');
       }
-      // RPC inexistante (SQL migration pas executee) -> message clair
-      if (e.code == 'PGRST202' ||
-          e.message.toLowerCase().contains('not found') ||
-          e.message.toLowerCase().contains('does not exist')) {
+      // RPC slots_spin inexistante (SQL migration pas executee).
+      // On verifie de maniere stricte pour ne pas faussement matcher
+      // 'wallet_apply_delta does not exist' ou autres dependances.
+      final msgLower = e.message.toLowerCase();
+      final isMissingSlotsSpin = e.code == 'PGRST202' ||
+          msgLower.contains('function public.slots_spin') ||
+          (msgLower.contains('slots_spin') &&
+              (msgLower.contains('does not exist') ||
+                  msgLower.contains('not found')));
+      if (isMissingSlotsSpin) {
         throw StateError('RPC_NOT_DEPLOYED');
       }
-      rethrow;
+      // Autre erreur de dependance (wallet_apply_delta absent,
+      // game_treasury absent, etc.) -> on propage avec le vrai message.
+      throw StateError('RPC_ERROR: ${e.message}');
     } on TimeoutException {
       _log.warn('spin RPC timeout (>15s)');
       throw StateError('TIMEOUT');
