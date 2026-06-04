@@ -17,7 +17,7 @@ class SlotsProvider extends ChangeNotifier {
 
   SlotsProvider({required this.wallet});
 
-  int _currentBet = kBetLevels[2]; // 100 par defaut
+  int _currentBet = 100; // mise par defaut
   int get currentBet => _currentBet;
 
   bool _spinning = false;
@@ -33,7 +33,7 @@ class SlotsProvider extends ChangeNotifier {
   List<SpinResult> get history => _svc.history;
 
   void setBet(int bet) {
-    if (!kBetLevels.contains(bet)) return;
+    if (!isValidBet(bet)) return;
     if (_spinning) return;
     _currentBet = bet;
     notifyListeners();

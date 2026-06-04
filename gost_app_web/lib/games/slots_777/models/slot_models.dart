@@ -139,5 +139,15 @@ int evaluateLine(List<SlotSymbol> reels) {
   return best;
 }
 
-/// Niveaux de mise (FCFA). Reuse les paliers Penalty/Cora.
-const List<int> kBetLevels = [10, 50, 100, 500, 1000];
+/// Mise libre [kMinBet, kMaxBet] : le joueur peut taper n'importe
+/// quel entier dans cet intervalle (comme Penalty).
+const int kMinBet = 10;
+const int kMaxBet = 1000;
+
+/// Suggestions rapides (chips) pour eviter de tout taper a la main.
+/// Le joueur peut tap un chip OU saisir une valeur libre dans le champ.
+const List<int> kQuickBetLevels = [10, 50, 100, 500, 1000];
+
+/// True si [bet] est une mise valide. A utiliser cote client AVANT
+/// d'envoyer l'RPC.
+bool isValidBet(int bet) => bet >= kMinBet && bet <= kMaxBet;

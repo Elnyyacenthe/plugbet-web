@@ -70,7 +70,7 @@ class SlotsService {
     required int bet,
     required String requestId,
   }) async {
-    if (!kBetLevels.contains(bet)) {
+    if (!isValidBet(bet)) {
       throw ArgumentError('BET_NOT_ALLOWED');
     }
     if (currentUserId == null) {
