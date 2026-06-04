@@ -17,6 +17,7 @@ import '../games/blackjack/screens/blackjack_screen.dart';
 import '../games/roulette/screens/roulette_screen.dart';
 import '../games/coinflip/screens/coinflip_screen.dart';
 import '../games/slots_777/screens/slots_screen.dart';
+import '../games/wheel/screens/wheel_screen.dart';
 import '../games/apple_fortune/screens/apple_fortune_screen.dart';
 import '../games/mines/screens/mines_screen.dart';
 import '../games/penalty/screens/penalty_bet_screen.dart';
@@ -162,6 +163,18 @@ class GamesScreen extends StatelessWidget {
         imageAsset: 'assets/games/big_win_777.webp',
         color: const Color(0xFFFFD600),
         builder: (_) => const SlotsScreen(),
+      ),
+      // ── Plugbet Wheel — roue de la fortune (multi-mise) ────
+      // 48 segments, 6 tuiles 1/2/5/10/20/40. RNG serveur.
+      // Multi-mise : depose des FCFA sur plusieurs tuiles, payout =
+      // stake × (tile + 1) sur la tuile gagnante. Min 25, max 25000.
+      _Game(
+        title: 'Plugbet Wheel',
+        subtitle: 'Roue de la fortune • Multi-mise',
+        icon: Icons.brightness_low,
+        imageAsset: 'assets/games/wheel.png',
+        color: const Color(0xFFFFB300),
+        builder: (_) => const WheelScreen(),
       ),
     ];
 
