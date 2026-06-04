@@ -216,27 +216,55 @@ class _WheelPainter extends CustomPainter {
 
     for (int i = 0; i < kWheelSegments; i++) {
       final startAngle = -math.pi / 2 + i * segmentAngle;
+      final type = segmentType(i);
       final tileValue = segmentToTileValue(i);
 
-      // Couleur du segment selon la tuile
+      // Couleur du segment
       final Color color;
-      switch (tileValue) {
-        case 40: color = _gold; break;
-        case 20: color = _silver; break;
-        default: color = _palette[i % _palette.length];
+      switch (type) {
+        case SegmentType.multiplier2x:
+          color = const Color(0xFFE91E63); // rose vif
+          break;
+        case SegmentType.multiplier7x:
+          color = const Color(0xFF6A1B9A); // violet profond
+          break;
+        case SegmentType.money:
+          if (tileValue == 40) {
+            color = _gold;
+          } else if (tileValue == 20) {
+            color = _silver;
+          } else {
+            color = _palette[i % _palette.length];
+          }
       }
 
       final paint = Paint()..color = color..style = PaintingStyle.fill;
       final rect = Rect.fromCircle(center: center, radius: radius);
       canvas.drawArc(rect, startAngle, segmentAngle, true, paint);
 
-      // Texte du numero
+      // Texte du segment
+      final String label;
+      final Color textColor;
+      final double textSize;
+      switch (type) {
+        case SegmentType.multiplier2x:
+          label = '2x'; textColor = Colors.white; textSize = 12;
+          break;
+        case SegmentType.multiplier7x:
+          label = '7x'; textColor = Colors.white; textSize = 12;
+          break;
+        case SegmentType.money:
+          label = '$tileValue';
+          textColor = tileValue == 40 ? Colors.black : Colors.white;
+          textSize = 14;
+      }
+
       final tp = TextPainter(
         text: TextSpan(
-          text: '$tileValue',
+          text: label,
           style: TextStyle(
-            color: tileValue == 40 ? Colors.black : Colors.white,
-            fontSize: 14,
+            color: textColor,
+            fontSize: textSize,
             fontWeight: FontWeight.w900,
             shadows: const [
               Shadow(color: Colors.black54, blurRadius: 1),
@@ -246,7 +274,6 @@ class _WheelPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
       )..layout();
 
-      // Position du texte au centre de l'arc, a 70% du rayon
       final mid = startAngle + segmentAngle / 2;
       final tr = radius * 0.72;
       final tx = center.dx + tr * math.cos(mid) - tp.width / 2;

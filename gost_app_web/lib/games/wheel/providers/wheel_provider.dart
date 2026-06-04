@@ -31,6 +31,11 @@ class WheelProvider extends ChangeNotifier {
   WheelSpinResult? _lastResult;
   WheelSpinResult? get lastResult => _lastResult;
 
+  /// Free spin en attente d'utilisation. Defini quand un spin tombe
+  /// sur 2x/7x. Le provider l'utilise auto via processPendingFreeSpin().
+  WheelFreeSpin? _pendingFreeSpin;
+  WheelFreeSpin? get pendingFreeSpin => _pendingFreeSpin;
+
   String? _error;
   String? get error => _error;
 
@@ -129,6 +134,8 @@ class WheelProvider extends ChangeNotifier {
       final reqId = _svc.generateRequestId();
       final r = await _svc.spin(chipsByTile: _chipsByTile, requestId: reqId);
       _lastResult = r;
+      // Stocke un free spin si la roue est tombee sur 2x/7x.
+      _pendingFreeSpin = r.pendingFreeSpin;
       // Reset les mises apres le spin (le joueur replace pour le prochain)
       _chipsByTile.clear();
       await wallet.refresh();
@@ -151,6 +158,66 @@ class WheelProvider extends ChangeNotifier {
       }
       return null;
     } catch (e) {
+      _error = 'Erreur reseau';
+      return null;
+    } finally {
+      _spinning = false;
+      notifyListeners();
+    }
+  }
+
+  /// Execute le free spin en attente. Appele par l'ecran apres
+  /// l'animation de la roue + overlay "FREE SPIN x N!".
+  /// Si le free spin retombe sur 2x/7x, _pendingFreeSpin sera mis a
+  /// jour avec le nouveau cascade (jusqu'a cap=3).
+  Future<WheelSpinResult?> processPendingFreeSpin() async {
+    if (_spinning) return null;
+    final fs = _pendingFreeSpin;
+    if (fs == null) return null;
+
+    _spinning = true;
+    _error = null;
+    // On garde _pendingFreeSpin tant qu'il est pas consume (au cas ou
+    // l'app crashe pendant la RPC) ; on le clear apres reponse.
+    notifyListeners();
+
+    try {
+      final reqId = _svc.generateRequestId();
+      final r = await _svc.useFreeSpin(
+        freeSpinId: fs.id, requestId: reqId,
+      );
+      _lastResult = r;
+      _pendingFreeSpin = r.pendingFreeSpin;  // soit nouveau cascade, soit null
+      await wallet.refresh();
+      return r;
+    } on StateError catch (e) {
+      switch (e.message) {
+        case 'FREE_SPIN_NOT_FOUND':
+          _error = 'Tour gratuit introuvable';
+          _pendingFreeSpin = null;
+          break;
+        case 'FREE_SPIN_ALREADY_USED':
+          _error = 'Tour gratuit deja utilise';
+          _pendingFreeSpin = null;
+          break;
+        case 'FREE_SPIN_EXPIRED':
+          _error = 'Tour gratuit expire';
+          _pendingFreeSpin = null;
+          break;
+        case 'NOT_AUTH':
+          _error = 'Connecte-toi';
+          break;
+        case 'RPC_NOT_DEPLOYED':
+          _error = 'Phase 2 SQL a executer';
+          break;
+        case 'TIMEOUT':
+          _error = 'Reseau lent, reessaie';
+          break;
+        default:
+          _error = 'Erreur tour gratuit';
+      }
+      return null;
+    } catch (_) {
       _error = 'Erreur reseau';
       return null;
     } finally {

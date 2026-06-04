@@ -37,6 +37,8 @@ class _WheelScreenState extends State<WheelScreen>
   int? _displayedTargetSegment;
   int? _winningTileHighlight;
   int _lastWinDisplay = 0;
+  /// Multiplicateur courant a afficher en badge (1 si pas de free spin).
+  int _activeMultiplier = 1;
 
   bool _autoSpinActive = false;
   Timer? _autoSpinHoldTimer;
@@ -88,42 +90,138 @@ class _WheelScreenState extends State<WheelScreen>
 
     setState(() {
       _winningTileHighlight = null;
+      _activeMultiplier = 1;
     });
 
     final r = await _state.spin();
     if (r == null || !mounted) return;
 
-    // Lance l'animation de la roue vers le segment cible
+    await _animateAndHandle(r);
+  }
+
+  /// Anime la roue vers r.segment, attend la fin, gere :
+  ///   - Si segment special 2x/7x -> overlay "FREE SPIN" + auto-call
+  ///     processPendingFreeSpin (cascade jusqu'a cap=3).
+  ///   - Sinon : highlight tile, auto-spin si actif.
+  Future<void> _animateAndHandle(WheelSpinResult r) async {
     setState(() => _displayedTargetSegment = r.segment);
 
-    // A la fin de l'anim (4.2s), affiche le resultat
-    Future.delayed(const Duration(milliseconds: 4300), () {
+    await Future.delayed(const Duration(milliseconds: 4300));
+    if (!mounted) return;
+
+    setState(() {
+      _winningTileHighlight = r.isSpecial ? null : r.winningTile;
+      _lastWinDisplay = r.winnings > 0 ? r.winnings : _lastWinDisplay;
+      _activeMultiplier = r.multiplier;
+    });
+    if (r.isWin) HapticFeedback.mediumImpact();
+
+    // Si la roue est tombee sur 2x/7x, on declenche le free spin.
+    final fs = _state.pendingFreeSpin;
+    if (fs != null) {
+      HapticFeedback.heavyImpact();
+      await _showFreeSpinOverlay(fs);
+      if (!mounted) return;
+      // Reset l'animation, puis lance le free spin
+      setState(() => _displayedTargetSegment = null);
+      await Future.delayed(const Duration(milliseconds: 500));
+      if (!mounted) return;
+      final fsResult = await _state.processPendingFreeSpin();
+      if (fsResult == null || !mounted) return;
+      // Recursive : meme logique, peut cascader
+      await _animateAndHandle(fsResult);
+      return;
+    }
+
+    // Auto-spin si actif (et pas de free spin en cours)
+    if (_autoSpinActive) {
+      await Future.delayed(const Duration(milliseconds: 1200));
+      if (!mounted || !_autoSpinActive) return;
+      _state.repeatLastBets();
+      setState(() {
+        _displayedTargetSegment = null;
+        _activeMultiplier = 1;
+      });
+      _doSpin();
+    } else {
+      await Future.delayed(const Duration(milliseconds: 1500));
       if (!mounted) return;
       setState(() {
-        _winningTileHighlight = r.winningTile;
-        _lastWinDisplay = r.winnings;
+        _displayedTargetSegment = null;
+        _activeMultiplier = 1;
       });
-      if (r.isWin) {
-        HapticFeedback.mediumImpact();
-      }
-      // Auto-spin : relance apres 1.2s si toujours actif
-      if (_autoSpinActive) {
-        Future.delayed(const Duration(milliseconds: 1200), () {
-          if (!mounted || !_autoSpinActive) return;
-          // Pour rejouer en auto-spin, on doit reposer les memes mises
-          _state.repeatLastBets();
-          // Reset l'anim avant nouveau spin
-          setState(() => _displayedTargetSegment = null);
-          _doSpin();
+    }
+  }
+
+  /// Overlay "FREE SPIN ×N" anime, dismissible apres 1.8s ou au tap.
+  Future<void> _showFreeSpinOverlay(WheelFreeSpin fs) async {
+    if (!mounted) return;
+    await showDialog(
+      context: context,
+      barrierDismissible: true,
+      barrierColor: Colors.black.withValues(alpha: 0.7),
+      builder: (ctx) {
+        Future.delayed(const Duration(milliseconds: 1800), () {
+          // ignore: use_build_context_synchronously
+          if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
         });
-      } else {
-        // Reset l'anim apres delai pour permettre un nouveau spin manuel
-        Future.delayed(const Duration(milliseconds: 1500), () {
-          if (!mounted) return;
-          setState(() => _displayedTargetSegment = null);
-        });
-      }
-    });
+        return GestureDetector(
+          onTap: () => Navigator.of(ctx).pop(),
+          child: Center(
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Text(
+                '🎁',
+                style: TextStyle(
+                  fontSize: 70,
+                  shadows: [
+                    Shadow(color: AppColors.neonYellow, blurRadius: 24),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'FREE SPIN',
+                style: TextStyle(
+                  color: AppColors.neonYellow,
+                  fontSize: 36,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 2,
+                  shadows: [
+                    Shadow(color: AppColors.neonYellow, blurRadius: 16),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 10),
+                decoration: BoxDecoration(
+                  color: AppColors.neonGreen,
+                  borderRadius: BorderRadius.circular(14),
+                ),
+                child: Text(
+                  '× ${fs.multiplier}',
+                  style: const TextStyle(
+                    color: Colors.black,
+                    fontSize: 32,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ),
+              const SizedBox(height: 12),
+              Text(
+                fs.cascadeDepth > 1 ? 'Cascade ${fs.cascadeDepth}/3' : 'Tour gratuit',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.8),
+                  fontSize: 13,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1,
+                ),
+              ),
+            ]),
+          ),
+        );
+      },
+    );
   }
 
   void _startSpinHold() {
@@ -186,8 +284,35 @@ class _WheelScreenState extends State<WheelScreen>
         const Spacer(),
         _miniStat('Balance', '${_state.balance}', AppColors.neonGreen),
         const SizedBox(width: 10),
-        _miniStat('Win', '$_lastWinDisplay', AppColors.neonYellow),
-        const SizedBox(width: 10),
+        if (_activeMultiplier > 1) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE91E63), Color(0xFF6A1B9A)],
+              ),
+              borderRadius: BorderRadius.circular(10),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xFFE91E63).withValues(alpha: 0.6),
+                  blurRadius: 10,
+                ),
+              ],
+            ),
+            child: Text(
+              '× $_activeMultiplier',
+              style: const TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                fontSize: 14,
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+        ] else ...[
+          _miniStat('Win', '$_lastWinDisplay', AppColors.neonYellow),
+          const SizedBox(width: 10),
+        ],
         _miniStat('Bet', '${_state.totalBet}', AppColors.neonOrange),
         const SizedBox(width: 6),
         IconButton(

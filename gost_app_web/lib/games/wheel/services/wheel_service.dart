@@ -71,37 +71,11 @@ class WheelService {
         'p_bets': betsJson,
         'p_request_id': requestId,
       }).timeout(const Duration(seconds: 15));
-      if (res is! Map) throw StateError('INVALID_RESPONSE');
+      final result = _parseSpinResult(res);
 
-      final data = Map<String, dynamic>.from(res);
-      final segment = (data['segment'] as num).toInt();
-      final winningTile = (data['winning_tile'] as num).toInt();
-      final winnings = (data['winnings'] as num?)?.toInt() ?? 0;
-      final totalBet = (data['total_bet'] as num).toInt();
-      final newBalance = (data['new_balance'] as num).toInt();
-
-      // Reparse les bets retournes par le serveur (echo)
-      final Map<int, int> serverBets = {};
-      final rawBets = data['bets'];
-      if (rawBets is Map) {
-        rawBets.forEach((k, v) {
-          final tile = int.tryParse('$k');
-          final stake = (v as num?)?.toInt() ?? 0;
-          if (tile != null && stake > 0) serverBets[tile] = stake;
-        });
-      }
-
-      final result = WheelSpinResult(
-        segment: segment,
-        winningTile: winningTile,
-        winnings: winnings,
-        totalBet: totalBet,
-        newBalance: newBalance,
-        bets: serverBets,
-      );
-
-      _log.info('spin OK seg=$segment tile=$winningTile '
-          'totalBet=$totalBet winnings=$winnings');
+      _log.info('spin OK seg=${result.segment} tile=${result.winningTile} '
+          'mult=${result.multiplier} winnings=${result.winnings} '
+          'fs=${result.pendingFreeSpin?.id ?? "-"}');
 
       _history.insert(0, result);
       if (_history.length > 50) _history.removeLast();
@@ -129,12 +103,95 @@ class WheelService {
     }
   }
 
+  /// Utilise un free spin en attente. Idempotent via [requestId].
+  /// Throws StateError parlants si free spin invalide/utilise/expire.
+  Future<WheelSpinResult> useFreeSpin({
+    required String freeSpinId,
+    required String requestId,
+  }) async {
+    if (currentUserId == null) throw StateError('NOT_AUTH');
+    try {
+      final res = await _client.rpc('wheel_use_free_spin', params: {
+        'p_free_spin_id': freeSpinId,
+        'p_request_id': requestId,
+      }).timeout(const Duration(seconds: 15));
+      final result = _parseSpinResult(res);
+      _log.info('free spin OK fs=$freeSpinId seg=${result.segment} '
+          'tile=${result.winningTile} mult=${result.multiplier} '
+          'winnings=${result.winnings} nextFs=${result.pendingFreeSpin?.id ?? "-"}');
+      _history.insert(0, result);
+      if (_history.length > 50) _history.removeLast();
+      return result;
+    } on PostgrestException catch (e) {
+      _log.warn('useFreeSpin RPC error: ${e.message}');
+      final msg = e.message;
+      if (msg.contains('FREE_SPIN_NOT_FOUND')) throw StateError('FREE_SPIN_NOT_FOUND');
+      if (msg.contains('FREE_SPIN_ALREADY_USED')) throw StateError('FREE_SPIN_ALREADY_USED');
+      if (msg.contains('FREE_SPIN_EXPIRED')) throw StateError('FREE_SPIN_EXPIRED');
+      if (msg.contains('NOT_AUTH')) throw StateError('NOT_AUTH');
+      if (e.code == 'PGRST202') throw StateError('RPC_NOT_DEPLOYED');
+      throw StateError('RPC_ERROR: $msg');
+    } on TimeoutException {
+      throw StateError('TIMEOUT');
+    }
+  }
+
+  /// Parse la reponse JSON d'un spin (wheel_spin ou wheel_use_free_spin)
+  /// en WheelSpinResult. Memo : format identique pour les 2 RPCs.
+  WheelSpinResult _parseSpinResult(dynamic res) {
+    if (res is! Map) throw StateError('INVALID_RESPONSE');
+    final data = Map<String, dynamic>.from(res);
+
+    // Bets (echo serveur)
+    final Map<int, int> serverBets = {};
+    final rawBets = data['bets'];
+    if (rawBets is Map) {
+      rawBets.forEach((k, v) {
+        final tile = int.tryParse('$k');
+        final stake = (v as num?)?.toInt() ?? 0;
+        if (tile != null && stake > 0) serverBets[tile] = stake;
+      });
+    }
+
+    // Free spin pending
+    WheelFreeSpin? pendingFs;
+    final rawFs = data['free_spin'];
+    if (rawFs is Map) {
+      final fsMap = Map<String, dynamic>.from(rawFs);
+      final Map<int, int> fsBets = {};
+      if (fsMap['bets'] is Map) {
+        (fsMap['bets'] as Map).forEach((k, v) {
+          final tile = int.tryParse('$k');
+          final stake = (v as num?)?.toInt() ?? 0;
+          if (tile != null && stake > 0) fsBets[tile] = stake;
+        });
+      }
+      pendingFs = WheelFreeSpin(
+        id: '${fsMap['id']}',
+        multiplier: (fsMap['multiplier'] as num).toInt(),
+        bets: fsBets,
+        cascadeDepth: (fsMap['cascade_depth'] as num?)?.toInt() ?? 1,
+      );
+    }
+
+    return WheelSpinResult(
+      segment: (data['segment'] as num).toInt(),
+      winningTile: (data['winning_tile'] as num).toInt(),
+      multiplier: (data['multiplier'] as num?)?.toInt() ?? 1,
+      winnings: (data['winnings'] as num?)?.toInt() ?? 0,
+      totalBet: (data['total_bet'] as num?)?.toInt() ?? 0,
+      newBalance: (data['new_balance'] as num).toInt(),
+      bets: serverBets,
+      pendingFreeSpin: pendingFs,
+    );
+  }
+
   /// Charge les N derniers spins (RLS = owner-only).
   Future<List<WheelSpinResult>> getRecentSpins({int limit = 20}) async {
     if (currentUserId == null) return const [];
     try {
       final rows = await _client.from('wheel_spins')
-          .select('bets, total_bet, segment, winning_tile, winnings')
+          .select('bets, total_bet, segment, winning_tile, winnings, multiplier')
           .order('created_at', ascending: false).limit(limit);
       return (rows as List).map((r) {
         final m = Map<String, dynamic>.from(r);
@@ -149,6 +206,7 @@ class WheelService {
         return WheelSpinResult(
           segment: (m['segment'] as num).toInt(),
           winningTile: (m['winning_tile'] as num).toInt(),
+          multiplier: (m['multiplier'] as num?)?.toInt() ?? 1,
           winnings: (m['winnings'] as num?)?.toInt() ?? 0,
           totalBet: (m['total_bet'] as num).toInt(),
           newBalance: 0, // pas pertinent pour historique
