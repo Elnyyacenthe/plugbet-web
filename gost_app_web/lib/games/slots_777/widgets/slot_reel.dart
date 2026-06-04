@@ -57,15 +57,25 @@ class _SlotReelState extends State<SlotReel>
   void didUpdateWidget(covariant SlotReel old) {
     super.didUpdateWidget(old);
     if (widget.spinning && !old.spinning) {
+      // Nouveau spin : regenerer le band + relancer l'anim
       _band = _generateBand(widget.target);
       _ctrl.reset();
       _start();
-    }
-    if (widget.target != old.target && !widget.spinning) {
-      // Si la cible change hors spin, juste re-affiche
-      _band = _generateBand(widget.target);
-      _ctrl.value = 1.0;
-      setState(() {});
+    } else if (widget.target != old.target) {
+      // Le parent a recu un nouveau resultat -> remplace le DERNIER tile
+      // du band avec le nouveau target. Sans ce remplacement, le scroll
+      // se termine sur l'ancien target et l'utilisateur voit un symbole
+      // qui ne correspond pas au resultat du serveur.
+      if (_band.isNotEmpty) {
+        final newBand = List<SlotSymbol>.from(_band);
+        newBand[newBand.length - 1] = widget.target;
+        _band = newBand;
+      }
+      if (!widget.spinning) {
+        // Spin termine : force la position finale.
+        _ctrl.value = 1.0;
+        setState(() {});
+      }
     }
   }
 
@@ -110,17 +120,19 @@ class _SlotReelState extends State<SlotReel>
         child: AnimatedBuilder(
           animation: _anim,
           builder: (_, __) {
-            // offset Y : on commence en haut (offset negatif) et on glisse
-            // jusqu'a target (position _spinTiles, donc -spinTiles * h)
+            // offset Y : a anim=0, dy=0 -> tile 0 (random) visible en haut.
+            // A anim=1, dy=-totalDist -> Column remontee de totalDist, le
+            // DERNIER tile (target en position _spinTiles) est visible.
             final totalDist = _spinTiles * widget.tileHeight;
             final dy = -totalDist * _anim.value;
 
-            // Si pas spinning : affiche juste target
+            // Pas en cours d'animation : affiche directement le target
+            // (couvre le cas initial avant tout spin).
             if (!widget.spinning && _ctrl.value == 0) {
               return _tile(widget.target);
             }
             return Transform.translate(
-              offset: Offset(0, dy + (_spinTiles * widget.tileHeight)),
+              offset: Offset(0, dy),
               child: Column(
                 children: _band.map(_tile).toList(),
               ),

@@ -45,6 +45,9 @@ class _SlotsScreenState extends State<SlotsScreen>
   ];
   // True quand un rouleau particulier est en train de tourner.
   List<bool> _spinning = const [false, false, false];
+  // Token incremente a chaque spin. Les Future.delayed verifient leur
+  // token contre _spinToken : si different -> spin obsolete, ignore.
+  int _spinToken = 0;
 
   bool _overlayShown = false;
 
@@ -88,15 +91,22 @@ class _SlotsScreenState extends State<SlotsScreen>
   }
 
   Future<void> _doSpin() async {
+    // Empeche un 2e spin tant que :
+    //  - la RPC du spin precedent est en cours (_state.spinning)
+    //  - OU les rouleaux du spin precedent tournent encore (_spinning)
     if (_state.spinning) return;
+    if (_spinning.any((b) => b)) return;
     if (_state.balance < _state.currentBet) {
       // L'erreur sera affichee via le listener _onState (provider.error)
       return;
     }
     HapticFeedback.lightImpact();
 
+    // Token pour ignorer les delayed callbacks d'un spin obsolete.
+    final myToken = ++_spinToken;
     setState(() => _spinning = const [true, true, true]);
     final result = await _state.spin();
+    if (myToken != _spinToken || !mounted) return;
     if (result == null) {
       setState(() => _spinning = const [false, false, false]);
       return;
@@ -106,15 +116,15 @@ class _SlotsScreenState extends State<SlotsScreen>
     setState(() => _displayed = result.reels);
     // Reel 1 stoppe a 1.5s, reel 2 a 1.8s, reel 3 a 2.1s
     Future.delayed(const Duration(milliseconds: 1500), () {
-      if (!mounted) return;
+      if (!mounted || myToken != _spinToken) return;
       setState(() => _spinning = [false, _spinning[1], _spinning[2]]);
     });
     Future.delayed(const Duration(milliseconds: 1800), () {
-      if (!mounted) return;
+      if (!mounted || myToken != _spinToken) return;
       setState(() => _spinning = [false, false, _spinning[2]]);
     });
     Future.delayed(const Duration(milliseconds: 2100), () {
-      if (!mounted) return;
+      if (!mounted || myToken != _spinToken) return;
       setState(() => _spinning = const [false, false, false]);
       if (result.isWin) {
         if (result.isJackpot) {
@@ -130,6 +140,10 @@ class _SlotsScreenState extends State<SlotsScreen>
   void _showOverlay(result) {
     if (_overlayShown) return;
     _overlayShown = true;
+    // whenComplete : reset le flag QUEL QUE SOIT le mode de fermeture
+    // (tap WinOverlay, barrier dismiss, auto-close 3s, back button...).
+    // Sans ca, un dismiss par barrier laissait _overlayShown=true et
+    // bloquait l'overlay des gains suivants.
     showDialog(
       context: context,
       barrierDismissible: true,
@@ -138,10 +152,11 @@ class _SlotsScreenState extends State<SlotsScreen>
         result: result,
         onDismiss: () {
           if (Navigator.of(ctx).canPop()) Navigator.of(ctx).pop();
-          _overlayShown = false;
         },
       ),
-    );
+    ).whenComplete(() {
+      _overlayShown = false;
+    });
   }
 
   @override
@@ -315,13 +330,21 @@ class _SlotsScreenState extends State<SlotsScreen>
   }
 
   Widget _buildBottomControls() {
-    final canSpin = !_state.spinning && _state.balance >= _state.currentBet;
+    // Le bouton SPIN reste GRISE tant qu'au moins UN rouleau tourne.
+    // Sans ca, l'utilisateur peut tap SPIN des que la RPC repond
+    // (~500ms), avant la fin de l'animation cascade (2.1s), ce qui
+    // declenchait la race condition #3 (delayed callbacks du spin
+    // precedent qui resettent les reels du nouveau spin).
+    final reelsBusy = _spinning.any((b) => b);
+    final canSpin = !_state.spinning &&
+        !reelsBusy &&
+        _state.balance >= _state.currentBet;
     return Padding(
       padding: const EdgeInsets.fromLTRB(12, 6, 12, 16),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         BetSelector(
           current: _state.currentBet,
-          disabled: _state.spinning,
+          disabled: _state.spinning || reelsBusy,
           onChanged: _state.setBet,
         ),
         const SizedBox(height: 14),
