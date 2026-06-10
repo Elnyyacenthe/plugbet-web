@@ -3,7 +3,16 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Plugbet - Politique de confidentialite</title>
+  <meta name="theme-color" content="#040810">
+  <title>Politique de confidentialité — Plugbet Cameroun</title>
+  <meta name="description" content="Politique de confidentialité Plugbet : données collectées, stockage Supabase sécurisé, partage, droits utilisateurs. Cameroun.">
+  <link rel="canonical" href="https://plugbetx.com/privacy.html">
+  <meta name="robots" content="index, follow">
+  <meta property="og:type" content="article">
+  <meta property="og:title" content="Politique de confidentialité — Plugbet">
+  <meta property="og:url" content="https://plugbetx.com/privacy.html">
+  <meta property="og:locale" content="fr_CM">
+  <link rel="icon" type="image/png" href="favicon.png"/>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { font-family: -apple-system, sans-serif; background: #040810; color: #F0F2F5; padding: 40px 24px; }
@@ -14,28 +23,6 @@
     a { color: #00E676; }
     .back { display: inline-block; margin-bottom: 24px; color: #448AFF; text-decoration: none; font-weight: 700; }
   </style>
-  <script>
-    // Clear cache a chaque chargement (actif jusqu'au 2026-05-21)
-    (function() {
-      var DEADLINE = '2026-05-21';
-      if (new Date().toISOString().slice(0, 10) >= DEADLINE) return;
-      try {
-        if ('serviceWorker' in navigator && sessionStorage.getItem('plugbet_sw_cleared') !== '1') {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            if (regs.length > 0) {
-              sessionStorage.setItem('plugbet_sw_cleared', '1');
-              window.location.replace('/clear-cache.html');
-            }
-          }).catch(function(){});
-        }
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
-          }).catch(function(){});
-        }
-      } catch (e) {}
-    })();
-  </script>
 </head>
 <body>
   <div class="container">

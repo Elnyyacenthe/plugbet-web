@@ -3,7 +3,36 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Plugbet - Chat & Bet</title>
+  <meta name="theme-color" content="#040810">
+
+  <!-- ===== SEO core ===== -->
+  <title>Plugbet — Scores foot, Fantasy League & Jeux en FCFA Cameroun</title>
+  <meta name="description" content="Plugbet : scores foot en direct, Fantasy Premier League et 8 jeux multijoueurs avec mise en FCFA. Mobile Money Cameroun. Web et Android.">
+  <link rel="canonical" href="https://plugbetx.com/">
+  <meta name="author" content="Plugbet">
+  <meta name="robots" content="index, follow, max-image-preview:large">
+
+  <!-- ===== Open Graph (Facebook, WhatsApp, LinkedIn) ===== -->
+  <meta property="og:type" content="website">
+  <meta property="og:url" content="https://plugbetx.com/">
+  <meta property="og:title" content="Plugbet — Scores foot, Fantasy &amp; Jeux multijoueurs en FCFA">
+  <meta property="og:description" content="Scores en direct, Fantasy Premier League, 8 jeux multi avec mise Mobile Money. Web + Android.">
+  <meta property="og:image" content="https://plugbetx.com/og-image.jpg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta property="og:locale" content="fr_CM">
+  <meta property="og:site_name" content="Plugbet">
+
+  <!-- ===== Twitter Card ===== -->
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="Plugbet — Scores foot, Fantasy &amp; Jeux en FCFA">
+  <meta name="twitter:description" content="Scores live, FPL, 8 jeux multijoueurs avec Mobile Money.">
+  <meta name="twitter:image" content="https://plugbetx.com/og-image.jpg">
+
+  <!-- ===== Icons ===== -->
+  <link rel="icon" type="image/png" href="favicon.png"/>
+  <link rel="apple-touch-icon" href="app/icons/Icon-192.png">
+
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     :root {
@@ -89,52 +118,52 @@
     }
   </style>
 
-  <!-- Preload Flutter assets : le navigateur commence a telecharger
-       pendant que l'utilisateur regarde la landing page, pour que
-       l'ouverture de /app/ soit quasi instantanee une fois cliquee. -->
-  <link rel="preload" href="app/flutter_bootstrap.js" as="script" crossorigin>
-  <link rel="preload" href="app/main.dart.js" as="script" crossorigin>
-  <link rel="preload" href="app/canvaskit/canvaskit.wasm" as="fetch" type="application/wasm" crossorigin>
-  <link rel="preload" href="app/canvaskit/canvaskit.js" as="script" crossorigin>
-  <link rel="preload" href="app/assets/FontManifest.json" as="fetch" crossorigin>
-  <link rel="prefetch" href="app/index.html">
-  <link rel="prefetch" href="app/flutter_service_worker.js">
+  <!-- SEO/perf : preconnect uniquement (le preload du bundle Flutter 5,5 Mo
+       ruinait LCP/FCP des visiteurs venant de Google). Le bundle est
+       prefetched de maniere differee (cf. script en bas) seulement quand
+       l'utilisateur signale l'intention d'ouvrir /app/. -->
   <link rel="preconnect" href="https://dqzrociaaztlezwlgzwh.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://dqzrociaaztlezwlgzwh.supabase.co">
 
-  <script>
-    // ============================================================
-    // CLEAR CACHE A CHAQUE CHARGEMENT (actif jusqu'au 2026-05-21)
-    // ============================================================
-    (function() {
-      var DEADLINE = '2026-05-21';
-      if (new Date().toISOString().slice(0, 10) >= DEADLINE) return;
-      try {
-        // 1. SW present + premiere fois cette session -> redirect clear-cache.html
-        if ('serviceWorker' in navigator && sessionStorage.getItem('plugbet_sw_cleared') !== '1') {
-          navigator.serviceWorker.getRegistrations().then(function(regs) {
-            if (regs.length > 0) {
-              sessionStorage.setItem('plugbet_sw_cleared', '1');
-              window.location.replace('/clear-cache.html');
-            }
-          }).catch(function(){});
-        }
-        // 2. Toujours : caches.delete() en background, a chaque load
-        if ('caches' in window) {
-          caches.keys().then(function(keys) {
-            keys.forEach(function(k) { caches.delete(k).catch(function(){}); });
-          }).catch(function(){});
-        }
-      } catch (e) {}
-    })();
+  <!-- ===== Schema.org / JSON-LD (Organization + WebSite + MobileApplication) ===== -->
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@graph": [
+      {
+        "@type": "Organization",
+        "@id": "https://plugbetx.com/#org",
+        "name": "Plugbet",
+        "url": "https://plugbetx.com/",
+        "logo": "https://plugbetx.com/favicon.png"
+      },
+      {
+        "@type": "WebSite",
+        "@id": "https://plugbetx.com/#website",
+        "url": "https://plugbetx.com/",
+        "name": "Plugbet",
+        "inLanguage": "fr-CM",
+        "publisher": { "@id": "https://plugbetx.com/#org" }
+      },
+      {
+        "@type": "MobileApplication",
+        "name": "Plugbet — Chat & Bet",
+        "operatingSystem": "ANDROID, WEB",
+        "applicationCategory": "GameApplication",
+        "downloadUrl": "https://plugbetx.com/plugbet.apk",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "XAF" }
+      }
+    ]
+  }
   </script>
 </head>
 <body>
 
   <nav>
     <div class="nav-inner">
-      <a href="#" class="logo">
+      <a href="/" class="logo" aria-label="Plugbet - Accueil">
         <span class="logo-text">Plugbet</span>
-        <span class="logo-sub">Chat & Bet</span>
+        <span class="logo-sub">Chat &amp; Bet</span>
       </a>
       <div class="nav-links">
         <a href="#features">Fonctionnalites</a>
@@ -236,17 +265,18 @@
 
   <footer>
     <div class="footer-links">
-      <a href="#">Accueil</a>
+      <a href="/">Accueil</a>
       <a href="#features">Fonctionnalites</a>
       <a href="#games">Jeux</a>
       <a href="#download">Telecharger</a>
-      <a href="privacy.html">Confidentialite</a>
-      <a href="terms.html">Conditions</a>
+      <a href="/privacy.html">Confidentialite</a>
+      <a href="/terms.html">Conditions</a>
     </div>
     <p class="footer-copy">&copy; 2026 Plugbet — Chat & Bet. Tous droits reserves.</p>
   </footer>
 
   <script>
+    // Scroll doux sur les ancres internes
     document.querySelectorAll('a[href^="#"]').forEach(a => {
       a.addEventListener('click', e => {
         e.preventDefault();
@@ -254,6 +284,41 @@
         if (t) t.scrollIntoView({ behavior: 'smooth' });
       });
     });
+
+    // Prefetch differe du bundle Flutter : declenche seulement quand
+    // l'utilisateur signale l'intention d'ouvrir l'app (hover/touch sur
+    // un lien vers /app/, ou scroll dans la section "Telecharger"). Evite
+    // de plomber LCP/FCP des visiteurs SEO qui n'iront jamais sur /app/.
+    (function () {
+      let done = false;
+      const prefetchApp = () => {
+        if (done) return; done = true;
+        const assets = [
+          'app/flutter_bootstrap.js',
+          'app/main.dart.js',
+          'app/canvaskit/canvaskit.js',
+          'app/canvaskit/canvaskit.wasm'
+        ];
+        assets.forEach(href => {
+          const l = document.createElement('link');
+          l.rel = 'prefetch'; l.href = href; l.crossOrigin = 'anonymous';
+          document.head.appendChild(l);
+        });
+      };
+      // Trigger 1 : intention de cliquer (hover/touch) un CTA vers /app/
+      document.querySelectorAll('a[href="app/"], a[href$="/app/"]').forEach(a => {
+        a.addEventListener('mouseenter', prefetchApp, { once: true });
+        a.addEventListener('touchstart', prefetchApp, { once: true, passive: true });
+      });
+      // Trigger 2 : visiteur arrive a la section "Telecharger" (interesse)
+      const dl = document.getElementById('download');
+      if (dl && 'IntersectionObserver' in window) {
+        const io = new IntersectionObserver(entries => {
+          entries.forEach(e => { if (e.isIntersecting) { prefetchApp(); io.disconnect(); } });
+        }, { rootMargin: '200px' });
+        io.observe(dl);
+      }
+    })();
   </script>
 </body>
 </html>

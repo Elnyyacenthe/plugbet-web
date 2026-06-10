@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+Disallow: /app/
+Disallow: /clear-cache.html
+Disallow: /*.apk$
+
+# La SPA Flutter sous /app/ ne contient pas de contenu indexable
+# (rendue cote client). On dirige les crawlers vers les pages
+# statiques uniquement et on leur fournit le sitemap.
+
+Sitemap: https://plugbetx.com/sitemap.xml
