@@ -8,8 +8,15 @@ import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
 
+/// Callback de progression : recoit une valeur entre 0.0 et 1.0.
+/// La barre s'anime de maniere lisse vers cette valeur via animateTo.
+typedef SplashProgress = void Function(double value);
+
 class SplashScreen extends StatefulWidget {
-  final Future<void> Function() onInit;
+  /// `onInit` recoit un callback `progress` a appeler aux differentes etapes
+  /// du preload. La barre suit EXACTEMENT ces valeurs - quand la barre est
+  /// pleine, l'app est vraiment prete et navigue immediatement.
+  final Future<void> Function(SplashProgress progress) onInit;
   final VoidCallback onReady;
 
   const SplashScreen({
@@ -38,7 +45,7 @@ class _SplashScreenState extends State<SplashScreen>
   late Animation<double> _glow;
 
   bool _initDone = false;
-  bool _animDone = false;
+  double _targetProgress = 0.0;
 
   // Messages rotatifs style 1xBet (resolus a chaque build via l10n)
   int _messageIndex = 0;
@@ -93,10 +100,12 @@ class _SplashScreenState extends State<SplashScreen>
       CurvedAnimation(parent: _textController, curve: Curves.easeOutCubic),
     );
 
-    // Barre de progression (piloté manuellement)
+    // Barre de progression : pilotee EXACTEMENT par le callback onInit.
+    // Pas d'autoplay temporise - la barre suit le vrai chargement.
     _progressController = AnimationController(
       vsync: this,
-      duration: const Duration(milliseconds: 6000),
+      duration: const Duration(milliseconds: 1),
+      value: 0.0,
     );
     _progressValue = CurvedAnimation(
       parent: _progressController,
@@ -125,39 +134,43 @@ class _SplashScreenState extends State<SplashScreen>
     }
   }
 
+  void _setProgress(double value) {
+    final clamped = value.clamp(0.0, 1.0);
+    if (clamped <= _targetProgress) return; // ne recule jamais
+    _targetProgress = clamped;
+    if (!mounted) return;
+    // Animation rapide (200ms) vers la nouvelle valeur pour suivre le reseau
+    _progressController.animateTo(
+      clamped,
+      duration: const Duration(milliseconds: 200),
+      curve: Curves.easeOutCubic,
+    );
+  }
+
   Future<void> _startSequence() async {
-    // 1. Logo entry
+    // Logo + texte demarrent ensemble (animation cosmetique seulement,
+    // elle n'attend RIEN - la navigation depend uniquement de la barre).
     _logoController.forward();
-    _progressController.forward();
-
-    await Future.delayed(const Duration(milliseconds: 300));
-
-    // 2. Texte
     _textController.forward();
 
-    // 3. Lancer l'init reelle en parallele
-    widget.onInit().then((_) {
-      _initDone = true;
-      _tryNavigate();
-    }).catchError((_) {
-      _initDone = true;
-      _tryNavigate();
-    });
-
-    // 4. Duree minimum du splash pour laisser l'animation respirer
-    await Future.delayed(const Duration(milliseconds: 2200));
-    _animDone = true;
+    // Lance l'init reelle immediatement. Le callback `progress` synchronise
+    // la barre avec le vrai chargement reseau. Des que la barre touche 1.0,
+    // on navigue - aucun delai artificiel.
+    try {
+      await widget.onInit(_setProgress);
+    } catch (_) {/* swallow */}
+    if (!mounted) return;
+    _setProgress(1.0);
+    _initDone = true;
     _tryNavigate();
   }
 
   Future<void> _tryNavigate() async {
-    if (_initDone && _animDone && mounted) {
-      // Fade out final
-      _progressController.animateTo(1.0,
-          duration: const Duration(milliseconds: 300));
-      await Future.delayed(const Duration(milliseconds: 350));
-      if (mounted) widget.onReady();
-    }
+    if (!_initDone || !mounted) return;
+    // Laisse 220ms a la barre pour atteindre visuellement 100% (sa derniere
+    // animation) puis navigue immediatement.
+    await Future.delayed(const Duration(milliseconds: 220));
+    if (mounted) widget.onReady();
   }
 
   @override

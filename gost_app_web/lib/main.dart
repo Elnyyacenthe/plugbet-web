@@ -15,6 +15,10 @@ import 'providers/matches_provider.dart';
 import 'providers/favorites_provider.dart';
 import 'screens/splash_screen.dart';
 import 'screens/betting_screen.dart';
+import 'services/statpal_service.dart';
+import 'services/statpal_disk_cache.dart';
+import 'services/team_logo_service.dart';
+import 'services/virtual_match_service.dart';
 import 'screens/profile_screen.dart';
 import 'screens/chat_screen.dart';
 import 'screens/settings_screen.dart';
@@ -128,6 +132,13 @@ void main() async {
   await HiveService.initHive();
   final hiveService = HiveService();
   await hiveService.openBoxes();
+
+  // --- 1.b Cache disque StatPal : hydrate les caches memoire AVANT le
+  //         warmup reseau. Stale-while-revalidate : si on a des donnees
+  //         du run precedent, on les affiche immediatement et le splash
+  //         peut quitter vite. Le warmup reseau les rafraichira en BG.
+  await StatpalDiskCache.instance.init();
+  StatpalService.instance.hydrateFromDisk();
 
   // --- 2. Initialiser Supabase (timeout court pour ne pas bloquer le démarrage) ---
   try {
@@ -319,6 +330,33 @@ class _AppEntry extends StatefulWidget {
   State<_AppEntry> createState() => _AppEntryState();
 }
 
+/// Prefetch des logos des matchs deja en cache (fire-and-forget).
+/// Utilise depuis le splash (chemin rapide ET chemin lent).
+void _prefetchLogosBg(StatpalService statpal) {
+  Future.microtask(() async {
+    try {
+      final logoSvc = TeamLogoService.instance;
+      final lists = [
+        await statpal.getLiveMatches(sport: Sport.soccer),
+        await statpal.getTodayMatches(sport: Sport.soccer),
+        await statpal.getLiveMatches(sport: Sport.basketball),
+        await statpal.getTodayMatches(sport: Sport.basketball),
+      ];
+      final seen = <String>{};
+      for (final list in lists) {
+        for (final m in list) {
+          if (seen.add('${m.sport.name}:${m.homeName}')) {
+            logoSvc.prefetch(m.homeName, m.sport);
+          }
+          if (seen.add('${m.sport.name}:${m.awayName}')) {
+            logoSvc.prefetch(m.awayName, m.sport);
+          }
+        }
+      }
+    } catch (_) {/* best-effort */}
+  });
+}
+
 class _AppEntryState extends State<_AppEntry> {
   bool _showSplash = true;
 
@@ -326,23 +364,75 @@ class _AppEntryState extends State<_AppEntry> {
   Widget build(BuildContext context) {
     if (_showSplash) {
       return SplashScreen(
-        onInit: () async {
-          // Attend que les matchs soient reellement charges (pas juste le cache)
-          // Timeout max 8s pour ne jamais bloquer l'utilisateur
-          final provider = context.read<MatchesProvider>();
+        onInit: (progress) async {
           final sw = Stopwatch()..start();
-          while (sw.elapsedMilliseconds < 8000) {
-            // Conditions de sortie :
-            // - loaded et on a des matchs (cache+API OK)
-            // - offline (on a ce qu'on peut avoir)
-            // - error (on affiche l'erreur)
-            final s = provider.state;
-            final hasData = provider.allMatches.isNotEmpty;
-            if (s == LoadingState.loaded && hasData) break;
-            if (s == LoadingState.offline) break;
-            if (s == LoadingState.error) break;
-            await Future.delayed(const Duration(milliseconds: 250));
+          final provider = context.read<MatchesProvider>();
+          final statpal = StatpalService.instance;
+          final hasDiskCache = statpal.hasDiskCache;
+          debugPrint('[Splash] start - hasDiskCache=$hasDiskCache');
+
+          // ── CHEMIN RAPIDE (deuxieme demarrage et suivants) ──
+          // Si on a deja des donnees du run precedent, le splash quitte
+          // en ~500ms : on attend uniquement Supabase MatchesProvider
+          // (data locale Hive), et le warmup reseau StatPal tourne en BG.
+          if (hasDiskCache) {
+            progress(0.40);
+            // Attente courte de MatchesProvider Supabase (Hive instantane)
+            final pSw = Stopwatch()..start();
+            while (pSw.elapsedMilliseconds < 1500) {
+              if (provider.state == LoadingState.loaded ||
+                  provider.allMatches.isNotEmpty ||
+                  provider.state == LoadingState.offline) {
+                break;
+              }
+              await Future.delayed(const Duration(milliseconds: 100));
+            }
+            progress(0.80);
+            // Refresh reseau en BACKGROUND - on ne bloque PAS le splash
+            unawaited(VirtualMatchService.instance.start());
+            unawaited(statpal.warmupFast().then((_) {
+              unawaited(statpal.warmupFull());
+              _prefetchLogosBg(statpal);
+            }).catchError((_) {/* best-effort */}));
+            progress(0.95);
+            debugPrint('[Splash] FAST PATH ready in ${sw.elapsedMilliseconds}ms');
+            return;
           }
+
+          // ── CHEMIN LENT (1er demarrage / cache vide) ──
+          // Budget barre : matches=0.30, statpal=0.40, logos=0.25.
+          final matchesFuture = () async {
+            final pSw = Stopwatch()..start();
+            while (pSw.elapsedMilliseconds < 8000) {
+              final s = provider.state;
+              final hasData = provider.allMatches.isNotEmpty;
+              if (s == LoadingState.loaded && hasData) break;
+              if (s == LoadingState.offline) break;
+              if (s == LoadingState.error) break;
+              await Future.delayed(const Duration(milliseconds: 200));
+            }
+            progress(0.35);
+            debugPrint('[Splash] MatchesProvider ready in ${pSw.elapsedMilliseconds}ms');
+          }();
+
+          unawaited(VirtualMatchService.instance.start());
+
+          // warmupFast = juste ~4 calls HTTP (live+daily quick mode des 2
+          // sports). Les ligues featured continuent en background apres.
+          final statpalFuture = statpal.warmupFast().then((_) async {
+            progress(0.70);
+            debugPrint('[Splash] warmupFast done in ${sw.elapsedMilliseconds}ms');
+            unawaited(statpal.warmupFull());
+            _prefetchLogosBg(statpal);
+            // Timeout court : on ne bloque pas pour les logos
+            await TeamLogoService.instance.waitForPending(
+                timeout: const Duration(seconds: 2));
+            progress(0.95);
+          }).catchError((_) {/* warmup best-effort */});
+
+          await Future.wait([matchesFuture, statpalFuture])
+              .timeout(const Duration(seconds: 9), onTimeout: () => const []);
+          debugPrint('[Splash] COLD PATH ready in ${sw.elapsedMilliseconds}ms');
         },
         onReady: () {
           if (mounted) {

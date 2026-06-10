@@ -1,20 +1,50 @@
 // ============================================================
-// BettingMatchCard — Card de match pour l'onglet Paris
+// BettingMatchCard — Card de match style live-score
 // ============================================================
-// Reutilise le style visuel de MatchCard (gradient, neon, radius 14)
-// + ajoute des "tuiles cotes" 1X2 / OU 2.5 / BTTS + bouton Parier.
-// 100% responsive, aucun overflow.
+// Layout horizontal :
+//   ⭐ ⚽ Turkish Cup            🔴 LIVE 38'
+//   [👕] Alanyaspor    1 — 0    Fatih Karag. [👕]
+//                   1ère mi-temps
+//   1X2  [1 1.62]   [X 3.90]   [2 4.60]   →
+//
+// Interactions :
+// - Tap sur le corps de la carte (hors cotes/etoile) -> ecran detail
+// - Tap simple sur une cote                          -> pari simple
+// - Long press sur une cote                          -> combine (haptic)
 // ============================================================
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import '../theme/app_theme.dart';
 import '../services/statpal_service.dart';
+import 'bet_team_crest.dart';
 
 class BettingMatchCard extends StatelessWidget {
   final BettingMatch match;
-  final VoidCallback? onBet;
+  final VoidCallback? onTapCard;                // -> detail screen
+  final void Function(String market)? onTapOdds; // pari simple
+  final void Function(String market)? onLongPressOdds; // combine
+  final VoidCallback? onToggleFavorite;
+  final bool isFavorite;
+  final String? selectedMarket;
+  /// Si true, l'utilisateur peut voir le bouton "voir plus de marches".
+  final bool showMoreHint;
+  /// True quand le prefetch des cotes est en cours pour cette ligue.
+  /// Affiche un skeleton au lieu de "Cotes indisponibles".
+  final bool oddsLoading;
 
-  const BettingMatchCard({super.key, required this.match, this.onBet});
+  const BettingMatchCard({
+    super.key,
+    required this.match,
+    this.onTapCard,
+    this.onTapOdds,
+    this.onLongPressOdds,
+    this.onToggleFavorite,
+    this.isFavorite = false,
+    this.selectedMarket,
+    this.showMoreHint = true,
+    this.oddsLoading = false,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -23,69 +53,98 @@ class BettingMatchCard extends StatelessWidget {
     final isSmall = w < 360;
 
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: EdgeInsets.symmetric(horizontal: isSmall ? 10 : 14, vertical: 12),
+      margin: const EdgeInsets.only(bottom: 10),
       decoration: BoxDecoration(
-        gradient: isLive ? AppColors.liveGradient : AppColors.cardGradient,
+        color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(
           color: isLive
               ? AppColors.neonRed.withValues(alpha: 0.35)
-              : AppColors.divider.withValues(alpha: 0.6),
-          width: isLive ? 0.8 : 0.5,
+              : AppColors.divider.withValues(alpha: 0.5),
+          width: isLive ? 1 : 0.5,
         ),
         boxShadow: [
           BoxShadow(
             color: isLive
-                ? AppColors.neonRed.withValues(alpha: 0.15)
-                : Colors.black.withValues(alpha: 0.08),
-            blurRadius: 6, offset: const Offset(0, 2),
+                ? AppColors.neonRed.withValues(alpha: 0.10)
+                : Colors.black.withValues(alpha: 0.06),
+            blurRadius: 5, offset: const Offset(0, 2),
           ),
         ],
       ),
-      child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-        _buildHeader(isLive, isSmall),
-        const SizedBox(height: 10),
-        _buildTeamsRow(isSmall),
-        const SizedBox(height: 12),
-        _buildOdds(isSmall),
-        const SizedBox(height: 10),
-        _buildCta(),
-      ]),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          onTap: onTapCard,
+          borderRadius: BorderRadius.circular(14),
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+                isSmall ? 12 : 14, 12, isSmall ? 12 : 14, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                _buildHeader(isLive, isSmall),
+                const SizedBox(height: 12),
+                _buildScoreRow(isSmall),
+                if (isLive) ...[
+                  const SizedBox(height: 4),
+                  _buildStatusLine(),
+                ],
+                const SizedBox(height: 12),
+                _buildOddsRow(isSmall),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 
   Widget _buildHeader(bool isLive, bool isSmall) {
     return Row(children: [
+      InkWell(
+        onTap: onToggleFavorite,
+        borderRadius: BorderRadius.circular(20),
+        child: Padding(
+          padding: const EdgeInsets.all(2),
+          child: Icon(
+            isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+            size: 18,
+            color: isFavorite ? AppColors.neonYellow : AppColors.textMuted,
+          ),
+        ),
+      ),
+      const SizedBox(width: 6),
+      Icon(_sportIcon(), size: 13, color: AppColors.textMuted),
+      const SizedBox(width: 6),
       Expanded(
         child: Text(match.league,
             overflow: TextOverflow.ellipsis,
             style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: isSmall ? 10 : 11,
-              fontWeight: FontWeight.w600,
+              color: AppColors.textPrimary,
+              fontSize: isSmall ? 11 : 12,
+              fontWeight: FontWeight.w700,
             )),
       ),
+      const SizedBox(width: 6),
       if (isLive)
         Container(
-          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
           decoration: BoxDecoration(
             color: AppColors.neonRed,
-            borderRadius: BorderRadius.circular(10),
+            borderRadius: BorderRadius.circular(4),
           ),
           child: Row(mainAxisSize: MainAxisSize.min, children: [
-            Container(
-              width: 6, height: 6,
-              decoration: const BoxDecoration(
-                  color: Colors.white, shape: BoxShape.circle),
-            ),
-            const SizedBox(width: 5),
+            const Icon(Icons.fiber_manual_record, size: 6, color: Colors.white),
+            const SizedBox(width: 3),
             Text("LIVE ${match.minute ?? 0}'",
                 style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 10,
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: 0.5)),
+                  color: Colors.white,
+                  fontSize: 9,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 0.4,
+                )),
           ]),
         )
       else
@@ -93,171 +152,303 @@ class BettingMatchCard extends StatelessWidget {
             style: TextStyle(
               color: AppColors.textMuted,
               fontSize: isSmall ? 10 : 11,
-              fontWeight: FontWeight.w700,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.3,
             )),
     ]);
   }
 
-  Widget _buildTeamsRow(bool isSmall) {
-    final crest = isSmall ? 28.0 : 34.0;
-    return Row(children: [
-      _crest(match.homeLogo, crest),
-      const SizedBox(width: 10),
-      Expanded(
-        child: Text(match.homeName,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: isSmall ? 13 : 14,
-              fontWeight: FontWeight.w800,
-            )),
-      ),
-      const SizedBox(width: 8),
-      _score(isSmall),
-      const SizedBox(width: 8),
-      Expanded(
-        child: Text(match.awayName,
-            textAlign: TextAlign.right,
-            overflow: TextOverflow.ellipsis,
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: isSmall ? 13 : 14,
-              fontWeight: FontWeight.w800,
-            )),
-      ),
-      const SizedBox(width: 10),
-      _crest(match.awayLogo, crest),
-    ]);
-  }
-
-  Widget _crest(String? url, double size) {
-    if (url != null && url.isNotEmpty) {
-      return SizedBox(
-        width: size, height: size,
-        child: ClipOval(
-          child: Image.network(url, fit: BoxFit.cover,
-              errorBuilder: (_, __, ___) => _placeholderCrest(size)),
-        ),
-      );
+  IconData _sportIcon() {
+    switch (match.sport) {
+      case Sport.basketball: return Icons.sports_basketball;
+      case Sport.soccer:     return Icons.sports_soccer;
     }
-    return _placeholderCrest(size);
   }
 
-  Widget _placeholderCrest(double size) => Container(
-        width: size, height: size,
+  /// True quand le match est termine (scores presents, plus live).
+  bool get _isFinished =>
+      !match.isLive &&
+      match.homeScore != null &&
+      match.awayScore != null;
+
+  int get _winner {
+    if (!_isFinished) return 0;
+    final h = match.homeScore!, a = match.awayScore!;
+    if (h > a) return 1;
+    if (a > h) return 2;
+    return 0; // nul
+  }
+
+  Widget _buildScoreRow(bool isSmall) {
+    final size = isSmall ? 30.0 : 34.0;
+    final winner = _winner;
+    final isFinished = _isFinished;
+
+    Color teamColor(bool isHome) {
+      if (!isFinished) return AppColors.textPrimary;
+      final w = winner;
+      if (w == 0) return AppColors.textPrimary;
+      if ((w == 1 && isHome) || (w == 2 && !isHome)) {
+        return AppColors.neonGreen;
+      }
+      return AppColors.textMuted;
+    }
+
+    return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
+      BetTeamCrest(
+        name: match.homeName, logoUrl: match.homeLogo,
+        sport: match.sport, size: size),
+      const SizedBox(width: 10),
+      Expanded(
+        child: Row(children: [
+          if (isFinished && winner == 1)
+            Padding(
+              padding: const EdgeInsets.only(right: 4),
+              child: Icon(Icons.check_circle_rounded,
+                  size: 14, color: AppColors.neonGreen),
+            ),
+          Flexible(
+            child: Text(match.homeName,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: teamColor(true),
+                  fontSize: isSmall ? 13 : 14,
+                  fontWeight: FontWeight.w800,
+                )),
+          ),
+        ]),
+      ),
+      const SizedBox(width: 8),
+      _scoreOrTime(isSmall),
+      const SizedBox(width: 8),
+      Expanded(
+        child: Row(mainAxisAlignment: MainAxisAlignment.end, children: [
+          Flexible(
+            child: Text(match.awayName,
+                textAlign: TextAlign.right,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: teamColor(false),
+                  fontSize: isSmall ? 13 : 14,
+                  fontWeight: FontWeight.w800,
+                )),
+          ),
+          if (isFinished && winner == 2)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: Icon(Icons.check_circle_rounded,
+                  size: 14, color: AppColors.neonGreen),
+            ),
+        ]),
+      ),
+      const SizedBox(width: 10),
+      BetTeamCrest(
+        name: match.awayName, logoUrl: match.awayLogo,
+        sport: match.sport, size: size),
+    ]);
+  }
+
+  Widget _scoreOrTime(bool isSmall) {
+    // Affiche le score si dispo (live OU termine). Sinon "VS".
+    if (match.homeScore != null && match.awayScore != null) {
+      final isFinished = _isFinished;
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
         decoration: BoxDecoration(
           color: AppColors.bgElevated,
-          shape: BoxShape.circle,
-          border: Border.all(color: AppColors.divider, width: 1),
+          borderRadius: BorderRadius.circular(8),
         ),
-        child: Icon(Icons.sports_soccer,
-            size: size * 0.55, color: AppColors.textMuted),
+        child: Text('${match.homeScore} — ${match.awayScore}',
+            style: TextStyle(
+              color: isFinished
+                  ? AppColors.textPrimary
+                  : AppColors.neonYellow,
+              fontSize: isSmall ? 16 : 18,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
+            )),
       );
-
-  Widget _score(bool isSmall) {
-    if (match.isLive && match.homeScore != null) {
-      return Text('${match.homeScore} - ${match.awayScore}',
-          style: TextStyle(
-            color: AppColors.neonYellow,
-            fontSize: isSmall ? 16 : 18,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 1,
-          ));
     }
     return Text('VS',
         style: TextStyle(
           color: AppColors.textMuted,
           fontSize: isSmall ? 11 : 12,
-          fontWeight: FontWeight.w800,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 1,
         ));
   }
 
-  Widget _buildOdds(bool isSmall) {
-    final o = match.odds;
-    if (o == null) return const SizedBox.shrink();
-    return Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-      // 1X2
-      _marketLabel('Vainqueur'),
-      Row(children: [
-        Expanded(child: _oddsTile('1', o.home, isSmall)),
-        const SizedBox(width: 6),
-        Expanded(child: _oddsTile('X', o.draw, isSmall)),
-        const SizedBox(width: 6),
-        Expanded(child: _oddsTile('2', o.away, isSmall)),
-      ]),
-      const SizedBox(height: 8),
-      // OU 2.5 + BTTS sur 2 lignes pour eviter overflow sur petits ecrans
-      Row(children: [
-        Expanded(child: _oddsTile('+2.5', o.over25, isSmall, secondary: true)),
-        const SizedBox(width: 6),
-        Expanded(child: _oddsTile('-2.5', o.under25, isSmall, secondary: true)),
-        const SizedBox(width: 6),
-        Expanded(child: _oddsTile('BTTS Oui', o.bttsYes, isSmall, secondary: true)),
-        const SizedBox(width: 6),
-        Expanded(child: _oddsTile('BTTS Non', o.bttsNo, isSmall, secondary: true)),
-      ]),
-    ]);
-  }
-
-  Widget _marketLabel(String t) => Padding(
-        padding: const EdgeInsets.only(bottom: 6),
-        child: Text(t,
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 10,
-              fontWeight: FontWeight.w700,
-              letterSpacing: 0.4,
-            )),
-      );
-
-  Widget _oddsTile(String label, double? value, bool isSmall,
-      {bool secondary = false}) {
-    final disabled = value == null;
-    return Container(
-      padding: EdgeInsets.symmetric(vertical: isSmall ? 6 : 8, horizontal: 4),
-      decoration: BoxDecoration(
-        color: disabled
-            ? AppColors.bgElevated.withValues(alpha: 0.4)
-            : AppColors.bgElevated,
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(
-          color: AppColors.divider.withValues(alpha: 0.5),
-          width: 0.5,
-        ),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text(label,
-            style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: secondary ? 9 : 10,
-              fontWeight: FontWeight.w700,
-            )),
-        const SizedBox(height: 2),
-        Text(disabled ? '-' : value.toStringAsFixed(2),
-            style: TextStyle(
-              color: disabled ? AppColors.textMuted : AppColors.neonGreen,
-              fontSize: secondary ? 11 : 13,
-              fontWeight: FontWeight.w900,
-            )),
-      ]),
+  Widget _buildStatusLine() {
+    final m = match.minute ?? 0;
+    final label = match.sport == Sport.basketball
+        ? _statusBasketball(m)
+        : _statusSoccer(m);
+    return Center(
+      child: Text(label,
+          style: TextStyle(
+            color: AppColors.textMuted,
+            fontSize: 10,
+            fontWeight: FontWeight.w600,
+          )),
     );
   }
 
-  Widget _buildCta() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton.icon(
-        onPressed: onBet,
-        icon: const Icon(Icons.bolt, size: 16),
-        label: const Text('Parier',
-            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 0.5)),
-        style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.neonGreen,
-          foregroundColor: Colors.black,
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-          elevation: 0,
+  String _statusSoccer(int m) {
+    if (m <= 0) return 'Coup d\'envoi';
+    if (m <= 45) return '1ère mi-temps';
+    if (m <= 60) return 'Mi-temps';
+    if (m <= 90) return '2e mi-temps';
+    return 'Prolongations';
+  }
+
+  String _statusBasketball(int m) {
+    if (m <= 0) return 'Début';
+    if (m <= 12) return '1er quart-temps';
+    if (m <= 24) return '2e quart-temps';
+    if (m <= 36) return '3e quart-temps';
+    if (m <= 48) return '4e quart-temps';
+    return 'Prolongations';
+  }
+
+  Widget _buildOddsRow(bool isSmall) {
+    final o = match.odds;
+    final unavail = o == null;
+    final hasDraw = match.hasDrawMarket;
+
+    if (unavail && oddsLoading) {
+      return _buildOddsSkeleton(hasDraw, isSmall);
+    }
+
+    if (unavail) {
+      return Row(children: [
+        Text(hasDraw ? '1X2' : 'Moneyline',
+            style: TextStyle(
+              color: AppColors.textMuted,
+              fontSize: 10,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.5,
+            )),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text('Cotes indisponibles',
+              style: TextStyle(
+                color: AppColors.textMuted.withValues(alpha: 0.7),
+                fontSize: 11,
+                fontWeight: FontWeight.w600,
+              )),
+        ),
+        if (showMoreHint)
+          Icon(Icons.chevron_right_rounded,
+              size: 18, color: AppColors.textMuted),
+      ]);
+    }
+
+    return Row(children: [
+      Expanded(child: _oddsTile('1', o.home, 'home', isSmall)),
+      const SizedBox(width: 6),
+      if (hasDraw) ...[
+        Expanded(child: _oddsTile('X', o.draw, 'draw', isSmall)),
+        const SizedBox(width: 6),
+      ],
+      Expanded(child: _oddsTile('2', o.away, 'away', isSmall)),
+      if (showMoreHint) ...[
+        const SizedBox(width: 6),
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          child: Icon(Icons.chevron_right_rounded,
+              size: 16, color: AppColors.textMuted),
+        ),
+      ],
+    ]);
+  }
+
+  /// Skeleton 3 (ou 2) tiles avec un spinner subtil pendant le prefetch.
+  Widget _buildOddsSkeleton(bool hasDraw, bool isSmall) {
+    Widget tile() => Container(
+          padding: EdgeInsets.symmetric(
+              vertical: isSmall ? 8 : 10, horizontal: 6),
+          decoration: BoxDecoration(
+            color: AppColors.bgElevated.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: AppColors.divider.withValues(alpha: 0.3),
+              width: 0.5,
+            ),
+          ),
+          alignment: Alignment.center,
+          child: SizedBox(
+            width: 12, height: 12,
+            child: CircularProgressIndicator(
+                strokeWidth: 1.4, color: AppColors.textMuted),
+          ),
+        );
+    return Row(children: [
+      Expanded(child: tile()),
+      const SizedBox(width: 6),
+      if (hasDraw) ...[
+        Expanded(child: tile()),
+        const SizedBox(width: 6),
+      ],
+      Expanded(child: tile()),
+    ]);
+  }
+
+  Widget _oddsTile(String label, double? value, String marketCode, bool isSmall) {
+    final disabled = value == null;
+    final selected = selectedMarket == marketCode;
+    return GestureDetector(
+      onTap: disabled ? null : () => onTapOdds?.call(marketCode),
+      onLongPress: disabled ? null : () {
+        HapticFeedback.mediumImpact();
+        onLongPressOdds?.call(marketCode);
+      },
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 150),
+        padding: EdgeInsets.symmetric(
+          vertical: isSmall ? 8 : 10,
+          horizontal: 6,
+        ),
+        decoration: BoxDecoration(
+          color: disabled
+              ? AppColors.bgElevated.withValues(alpha: 0.4)
+              : selected
+                  ? AppColors.neonGreen.withValues(alpha: 0.18)
+                  : AppColors.bgElevated,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: disabled
+                ? AppColors.divider.withValues(alpha: 0.3)
+                : selected
+                    ? AppColors.neonGreen
+                    : AppColors.divider.withValues(alpha: 0.4),
+            width: selected ? 1.4 : 0.6,
+          ),
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text(label,
+                style: TextStyle(
+                  color: selected
+                      ? AppColors.neonGreen
+                      : AppColors.textMuted,
+                  fontSize: isSmall ? 11 : 12,
+                  fontWeight: FontWeight.w800,
+                )),
+            const SizedBox(width: 6),
+            Text(
+              disabled ? '-' : value.toStringAsFixed(2),
+              style: TextStyle(
+                color: disabled
+                    ? AppColors.textMuted
+                    : selected
+                        ? AppColors.neonGreen
+                        : AppColors.textPrimary,
+                fontSize: isSmall ? 12 : 13,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ],
         ),
       ),
     );

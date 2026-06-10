@@ -20,6 +20,7 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/painting.dart';
 import 'package:hive/hive.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -178,11 +179,13 @@ class TeamLogoService extends ChangeNotifier {
       // Hydrate le cache memoire depuis le disque
       final now = DateTime.now().millisecondsSinceEpoch;
       const negTtlMs = _negTtlDays * 24 * 3600 * 1000;
+      final urlsToPrecache = <String>[];
       for (final k in _box!.keys) {
         if (k == _versionKey) continue;
         final v = _box!.get(k);
         if (v is String && v.isNotEmpty) {
           _cache[k.toString()] = v;
+          urlsToPrecache.add(v);
         } else if (v is Map) {
           // entree negative {ts: ..., url: null}
           final ts = (v['ts'] as int?) ?? 0;
@@ -195,9 +198,56 @@ class TeamLogoService extends ChangeNotifier {
       }
       _log.info('hydrated ${_cache.length} cached logos');
       notifyListeners();
+      // PERF Web : precharge les images binaires dans le ImageCache Flutter
+      // au boot. Cote mobile c'est instantane (CachedNetworkImage a deja
+      // l'image sur disque). Cote Web : declenche le fetch HTTP dans le
+      // browser cache (utilise les ETag/cache-control) AVANT que l'UI ne
+      // mounte les widgets BetTeamCrest -> affichage instantane au mount.
+      _precacheUrls(urlsToPrecache);
     } catch (e) {
       _log.warn('hive init error: $e');
     }
+  }
+
+  /// Precharge un batch d'URL dans le ImageCache global Flutter.
+  /// Pas de BuildContext requis : on utilise NetworkImage.resolve().
+  /// Cote Web : fait fetch HTTP en parallele (cap=8) -> mise en cache
+  /// memoire du browser + Flutter image stream.
+  /// Sur mobile : cache CachedNetworkImage prend deja le relais via cache disque.
+  void _precacheUrls(List<String> urls) {
+    if (urls.isEmpty) return;
+    const cap = 8;
+    var i = 0;
+    var active = 0;
+    final sw = Stopwatch()..start();
+    var done = 0;
+    void next() {
+      while (active < cap && i < urls.length) {
+        final u = urls[i++];
+        active++;
+        final stream = NetworkImage(u).resolve(ImageConfiguration.empty);
+        late ImageStreamListener listener;
+        listener = ImageStreamListener(
+          (_, __) {
+            active--;
+            done++;
+            stream.removeListener(listener);
+            if (i >= urls.length && active == 0) {
+              _log.info(
+                  'precached $done/${urls.length} logos in ${sw.elapsedMilliseconds}ms');
+            }
+            next();
+          },
+          onError: (_, __) {
+            active--;
+            stream.removeListener(listener);
+            next();
+          },
+        );
+        stream.addListener(listener);
+      }
+    }
+    next();
   }
 
   bool isResolved(String name, Sport sport) =>
@@ -242,6 +292,9 @@ class TeamLogoService extends ChangeNotifier {
           try {
             if (res.url != null && res.url!.isNotEmpty) {
               await _box?.put(p.key, res.url);
+              // PERF Web : declenche le precache image en background.
+              // Au prochain mount BetTeamCrest, l'image sera deja en RAM.
+              _precacheUrls([res.url!]);
             } else {
               await _box?.put(p.key, {
                 'ts': DateTime.now().millisecondsSinceEpoch,
