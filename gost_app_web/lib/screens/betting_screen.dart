@@ -26,6 +26,7 @@ import 'betting_match_detail_screen.dart';
 import 'virtual_matches_screen.dart';
 import 'bets_history_screen.dart';
 import '../utils/market_labels.dart';
+import '../utils/bet_slip_feedback.dart';
 
 class BettingScreen extends StatefulWidget {
   const BettingScreen({super.key});
@@ -151,10 +152,35 @@ class _BettingScreenState extends State<BettingScreen>
       unawaited(_prefetchOdds(_sport));
       _prefetchLogos();
       _startPolling();
+      // ── REFRESH AUTO apres 6s ──
+      // Au cold start, getTodayMatches peut retourner du cache disque ou
+      // une partie incomplete (ex: WC 2026 fetched en BG via warmupFull).
+      // On relance un refresh apres que le warmup ait pu finir pour
+      // garantir que la WC + les featured leagues apparaissent.
+      _scheduleBackgroundRefresh();
     } catch (e) {
       if (!mounted) return;
       setState(() => _error = '$e');
     }
+  }
+
+  /// Force un refresh des matchs apres delai, pour ramasser ce que le
+  /// warmupFull a fetch en arriere-plan (notamment la Coupe du monde).
+  void _scheduleBackgroundRefresh() {
+    Future.delayed(const Duration(seconds: 6), () async {
+      if (!mounted) return;
+      try {
+        final list = await _svc.getTodayMatches(sport: _sport);
+        if (!mounted) return;
+        // Ne replace que si on a strictement PLUS de matchs (sinon, on
+        // suppose que rien n'a change et on evite un setState inutile).
+        final current = _today[_sport] ?? const <BettingMatch>[];
+        if (list.length > current.length) {
+          setState(() => _today[_sport] = list);
+          unawaited(_prefetchOdds(_sport));
+        }
+      } catch (_) {/* silencieux */}
+    });
   }
 
   /// Lance la resolution des logos en background pour tous les matchs charges.
@@ -371,17 +397,8 @@ class _BettingScreenState extends State<BettingScreen>
     final sel = _buildSelection(m, market);
     if (sel == null) return;
     HapticFeedback.mediumImpact();
-    BetSlipController.instance.toggle(sel);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.bgElevated,
-        duration: const Duration(milliseconds: 1200),
-        content: Text(
-          'Ajouté au combiné — ${sel.marketLabel}',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
-        ),
-      ),
-    );
+    final r = BetSlipController.instance.toggle(sel);
+    BetSlipFeedback.show(context, r, sel);
   }
 
   /// Tap sur le corps de la card -> ecran detail avec tous les marches.
@@ -413,8 +430,13 @@ class _BettingScreenState extends State<BettingScreen>
       if (_filter == _Filter.live) return m.isLive;
 
       if (_selectedDate != null) {
-        final d = _dateOnly(m.startTime);
-        if (d != _selectedDate) return false;
+        // Tolerance timezone : si le match est tard dans la journee UTC,
+        // il peut apparaitre J ou J+1 selon le fuseau. On accepte les 2.
+        final dLocal = _dateOnly(m.startTime);
+        final dLocalPlus1 = dLocal.add(const Duration(days: 1));
+        if (dLocal != _selectedDate && dLocalPlus1 != _selectedDate) {
+          return false;
+        }
       }
       return true;
     });
@@ -845,7 +867,7 @@ class _BettingScreenState extends State<BettingScreen>
                               color: AppColors.neonPurple,
                               borderRadius: BorderRadius.circular(4),
                             ),
-                            child: const Text('VIRTUEL',
+                            child: const Text('FLASH',
                                 style: TextStyle(
                                   color: Colors.white,
                                   fontSize: 9,
@@ -855,7 +877,7 @@ class _BettingScreenState extends State<BettingScreen>
                           ),
                           const SizedBox(width: 6),
                           Expanded(
-                            child: Text('Matchs simulés',
+                            child: Text('Matchs Flash',
                                 overflow: TextOverflow.ellipsis,
                                 style: TextStyle(
                                   color: AppColors.textPrimary,

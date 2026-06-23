@@ -499,6 +499,19 @@ class StatpalService {
   /// Permet d'afficher les matchs futurs des grands evenements meme
   /// s'ils n'ont aucun match aujourd'hui.
   /// Liste curee depuis StatPal /soccer/leagues (1005 ligues totales) :
+  /// Ligues TOUJOURS chargees en quickMode (au splash) car StatPal
+  /// /soccer/matches/daily ne les expose pas systematiquement. La WC 2026
+  /// par exemple a 72 matchs dans /leagues/2889/matches mais 0 dans le
+  /// daily endpoint. Pour ne pas bloquer le splash on se limite a 6 ligues.
+  static const _kQuickModePriorityLeagues = <String>[
+    '2889',   // World Cup 2026 (le + important sur la periode actuelle)
+    '2974',   // Brazil Serie A (en cours, pas en intersaison)
+    '3037',   // Premier League (au cas ou)
+    '3201',   // Saudi Pro League (en cours ete)
+    '2988',   // Cameroun Elite One (audience Plugbet)
+    '20900',  // FIFA Club World Cup Play-In (recent)
+  ];
+
   static const _featuredSoccerLeagueIds = <String>[
     // ── International majeur ──
     '2889',   // World Cup 2026 (11.06 - 28.06.2026)
@@ -806,9 +819,35 @@ class StatpalService {
       return const <BettingMatch>[];
     }
 
-    // ── QUICK MODE : retourne juste les matchs du jour, pas de 33+ calls
-    //    supplementaires. Le pipeline complet tournera plus tard via
-    //    _fetchDaily(sport, quickMode: false) en background.
+    // ── QUICK MODE : retourne les matchs du jour + une LISTE COURTE de
+    //    ligues prioritaires (Coupe du monde + top 5 europe) car StatPal
+    //    /matches/daily ne couvre pas certaines ligues majeures (ex: CdM
+    //    2026 absente du daily mais 72 matchs dans /leagues/2889/matches).
+    //    Le warmupFull complet (23 ligues) tourne ensuite en background.
+    if (quickMode && sport == Sport.soccer) {
+      // 6 calls supplementaires max => splash reste rapide (~600ms)
+      const priorityLeagues = _kQuickModePriorityLeagues;
+      final results = await Future.wait(
+        priorityLeagues.map((lid) => getLeagueAllMatches(lid, sport: sport)),
+      );
+      final cutoff = DateTime.now().subtract(const Duration(days: 1));
+      final byId = <String, BettingMatch>{};
+      for (final m in today) {
+        byId[m.id] = m;
+      }
+      for (final list in results) {
+        for (final m in list) {
+          if (m.startTime.isBefore(cutoff)) continue;
+          byId.putIfAbsent(m.id, () => m);
+        }
+      }
+      final combined = byId.values.toList()
+        ..sort((a, b) => a.startTime.compareTo(b.startTime));
+      _dailyCache[sport] = combined;
+      _dailyCacheAt[sport] = DateTime.now();
+      StatpalDiskCache.instance.saveDaily(sport, combined);
+      return combined;
+    }
     if (quickMode) {
       _dailyCache[sport] = today;
       _dailyCacheAt[sport] = DateTime.now();

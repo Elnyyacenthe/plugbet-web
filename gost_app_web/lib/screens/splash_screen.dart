@@ -7,6 +7,7 @@ import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
+import '../app_version.dart';
 
 /// Callback de progression : recoit une valeur entre 0.0 et 1.0.
 /// La barre s'anime de maniere lisse vers cette valeur via animateTo.
@@ -517,7 +518,7 @@ class _SplashScreenState extends State<SplashScreen>
                     ),
                     const SizedBox(height: 4),
                     Text(
-                      'v1.0 • Sports & Games',
+                      'v$kAppVersion • Sports & Games',
                       style: TextStyle(
                         fontSize: 9,
                         color: Colors.white.withValues(alpha: 0.2),

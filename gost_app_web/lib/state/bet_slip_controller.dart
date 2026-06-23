@@ -14,6 +14,36 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum BetMode { simple, combine }
 
+/// Politique en cas de cote modifiee pendant que le panier est ouvert.
+/// Aligne sur la pratique 1xBet/Bet365 :
+/// - askConfirm  : on demande confirmation avant submit (defaut)
+/// - acceptAll   : on accepte automatiquement tous les changements
+/// - acceptUp    : on accepte si la cote monte, on demande si elle baisse
+/// - refuseDown  : on refuse net si la cote baisse (pas de confirm)
+enum OddsChangePolicy { askConfirm, acceptAll, acceptUp, refuseDown }
+
+/// Type de resultat d'un toggle() pour que l'UI puisse afficher un feedback adapte.
+enum ToggleKind { added, removed, replaced }
+
+/// Resultat d'un toggle() : permet a l'UI de savoir si la selection
+/// a ete ajoutee, retiree ou si elle a remplace une autre selection
+/// du meme match (regle pro : 1 market par match dans un combine).
+class ToggleResult {
+  final ToggleKind kind;
+  /// Selection remplacee (uniquement si kind == replaced).
+  /// Permet d'afficher "X retire" puis "Y ajoute" dans un seul message.
+  final BetSelection? previous;
+  const ToggleResult._(this.kind, [this.previous]);
+  static const ToggleResult added = ToggleResult._(ToggleKind.added);
+  static const ToggleResult removed = ToggleResult._(ToggleKind.removed);
+  static ToggleResult replaced(BetSelection prev) =>
+      ToggleResult._(ToggleKind.replaced, prev);
+
+  bool get wasAdded    => kind == ToggleKind.added;
+  bool get wasRemoved  => kind == ToggleKind.removed;
+  bool get wasReplaced => kind == ToggleKind.replaced;
+}
+
 /// Resultat d'un placement de pari.
 class BetResult {
   final bool success;
@@ -50,6 +80,14 @@ class BetSelection {
   final DateTime kickoff;
   final bool isLive;
   final bool isVirtual;       // true = match virtuel (badge VIRT dans panier)
+  // Champs d'enrichissement pour l'UI style 1xBet (tous optionnels)
+  final String? competition;  // "Coupe du monde 2026. Phase de groupes."
+  final String? sportName;    // 'soccer' | 'basketball' | 'tennis' | etc.
+  final int? homeScore;       // score actuel (live uniquement)
+  final int? awayScore;
+  final int? minute;          // minute de jeu (live uniquement)
+  // Tracking du changement de cote (pour fleche up/down dans le panier)
+  final double? previousOdds; // null = cote inchangee, sinon = ancienne valeur
 
   const BetSelection({
     required this.matchId,
@@ -60,8 +98,47 @@ class BetSelection {
     required this.kickoff,
     required this.isLive,
     this.isVirtual = false,
+    this.competition,
+    this.sportName,
+    this.homeScore,
+    this.awayScore,
+    this.minute,
+    this.previousOdds,
   });
+
+  BetSelection copyWith({
+    String? matchLabel,
+    String? marketLabel,
+    double? odds,
+    bool? isLive,
+    String? competition,
+    String? sportName,
+    int? homeScore,
+    int? awayScore,
+    int? minute,
+    Object? previousOdds = _sentinel,  // pour explicitement passer null
+  }) => BetSelection(
+    matchId: matchId,
+    matchLabel: matchLabel ?? this.matchLabel,
+    marketCode: marketCode,
+    marketLabel: marketLabel ?? this.marketLabel,
+    odds: odds ?? this.odds,
+    kickoff: kickoff,
+    isLive: isLive ?? this.isLive,
+    isVirtual: isVirtual,
+    competition: competition ?? this.competition,
+    sportName: sportName ?? this.sportName,
+    homeScore: homeScore ?? this.homeScore,
+    awayScore: awayScore ?? this.awayScore,
+    minute: minute ?? this.minute,
+    previousOdds: previousOdds == _sentinel
+        ? this.previousOdds
+        : previousOdds as double?,
+  );
 }
+
+// Sentinel pour distinguer "passer null explicitement" vs "ne pas passer"
+const Object _sentinel = Object();
 
 class BetSlipController extends ChangeNotifier {
   BetSlipController._();
@@ -70,11 +147,106 @@ class BetSlipController extends ChangeNotifier {
   final List<BetSelection> _items = [];
   int _stake = 1000;          // XAF (FCFA). Min 100, Max 1 000 000.
   BetMode _mode = BetMode.combine;
+  OddsChangePolicy _oddsPolicy = OddsChangePolicy.askConfirm;
 
   List<BetSelection> get items => List.unmodifiable(_items);
   int get count => _items.length;
   int get stake => _stake;
   BetMode get mode => _mode;
+  OddsChangePolicy get oddsPolicy => _oddsPolicy;
+
+  /// True si au moins une selection a une cote modifiee non acquittee
+  /// (previousOdds != null). L'UI peut afficher une banniere de confirmation.
+  bool get hasOddsChanges =>
+      _items.any((s) => s.previousOdds != null && s.previousOdds != s.odds);
+
+  void setOddsPolicy(OddsChangePolicy p) {
+    if (p == _oddsPolicy) return;
+    _oddsPolicy = p;
+    notifyListeners();
+  }
+
+  /// Met a jour la cote d'une selection apres polling reseau.
+  /// Si la nouvelle cote est differente de l'ancienne :
+  ///   - on stocke l'ancienne dans previousOdds (pour fleche up/down UI)
+  ///   - on remplace par la nouvelle
+  /// Si elle est identique, on ne fait rien (et on garde previousOdds nul).
+  /// Retourne true si une mise a jour a eu lieu.
+  bool updateOdds({
+    required String matchId,
+    required String marketCode,
+    required double newOdds,
+    String? newMarketLabel,
+    int? homeScore,
+    int? awayScore,
+    int? minute,
+    bool? isLive,
+  }) {
+    final idx = _items.indexWhere(
+        (e) => e.matchId == matchId && e.marketCode == marketCode);
+    if (idx < 0) return false;
+    final current = _items[idx];
+    final scoreChanged = (homeScore != null && homeScore != current.homeScore) ||
+        (awayScore != null && awayScore != current.awayScore) ||
+        (minute != null && minute != current.minute);
+    final oddsChanged = (newOdds - current.odds).abs() > 0.001;
+    if (!oddsChanged && !scoreChanged) return false;
+    _items[idx] = current.copyWith(
+      odds: newOdds,
+      marketLabel: newMarketLabel,
+      homeScore: homeScore,
+      awayScore: awayScore,
+      minute: minute,
+      isLive: isLive,
+      // Stocke l'ancienne cote uniquement si vraiment changee
+      previousOdds: oddsChanged
+          ? (current.previousOdds ?? current.odds)
+          : current.previousOdds,
+    );
+    notifyListeners();
+    return oddsChanged;
+  }
+
+  /// Acquitter les changements de cote (apres confirmation utilisateur ou
+  /// apres submission acceptee). Reset tous les previousOdds.
+  void ackOddsChanges() {
+    bool any = false;
+    for (var i = 0; i < _items.length; i++) {
+      if (_items[i].previousOdds != null) {
+        _items[i] = _items[i].copyWith(previousOdds: null);
+        any = true;
+      }
+    }
+    if (any) notifyListeners();
+  }
+
+  /// Decide si le panier doit demander confirmation avant submit
+  /// en fonction de la policy + des changements de cote.
+  /// Retourne :
+  ///   null     -> submit OK directement
+  ///   'ask'    -> demander confirmation
+  ///   'refuse' -> refuser (baisse de cote avec policy refuseDown)
+  String? checkOddsChangePolicy() {
+    if (!hasOddsChanges) return null;
+    // Compte les hausses vs baisses
+    bool anyDown = false;
+    for (final s in _items) {
+      if (s.previousOdds != null && s.odds < s.previousOdds!) {
+        anyDown = true;
+        break;
+      }
+    }
+    switch (_oddsPolicy) {
+      case OddsChangePolicy.acceptAll:
+        return null;
+      case OddsChangePolicy.acceptUp:
+        return anyDown ? 'ask' : null;
+      case OddsChangePolicy.refuseDown:
+        return anyDown ? 'refuse' : null;
+      case OddsChangePolicy.askConfirm:
+        return 'ask';
+    }
+  }
 
   /// Y a-t-il deja une selection pour ce match ?
   bool hasMatch(String matchId) =>
@@ -90,20 +262,29 @@ class BetSlipController extends ChangeNotifier {
 
   /// Toggle d'une cote :
   /// - meme match + meme marche -> retire la selection
-  /// - meme match + autre marche -> remplace
+  /// - meme match + autre marche -> REMPLACE (regle pro : 1 market par match
+  ///   dans un combine, sinon les evenements ne sont pas independants et le
+  ///   bookmaker ne paye pas ce genre de tickets). Retourne `replaced` pour
+  ///   que l'UI puisse afficher un toast/snackbar explicite.
   /// - nouveau match -> ajoute
-  void toggle(BetSelection s) {
+  ToggleResult toggle(BetSelection s) {
     final idx = _items.indexWhere((e) => e.matchId == s.matchId);
     if (idx >= 0) {
       if (_items[idx].marketCode == s.marketCode) {
         _items.removeAt(idx);
+        notifyListeners();
+        return ToggleResult.removed;
       } else {
+        final previous = _items[idx];
         _items[idx] = s;
+        notifyListeners();
+        return ToggleResult.replaced(previous);
       }
     } else {
       _items.add(s);
+      notifyListeners();
+      return ToggleResult.added;
     }
-    notifyListeners();
   }
 
   void remove(String matchId) {

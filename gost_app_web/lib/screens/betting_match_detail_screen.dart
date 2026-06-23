@@ -24,6 +24,7 @@ import '../state/bet_slip_controller.dart';
 import '../widgets/bet_slip.dart';
 import '../widgets/bet_team_crest.dart';
 import '../widgets/team_profile_sheet.dart';
+import '../utils/bet_slip_feedback.dart';
 import '../utils/market_labels.dart';
 
 class BettingMatchDetailScreen extends StatefulWidget {
@@ -120,17 +121,8 @@ class _BettingMatchDetailScreenState extends State<BettingMatchDetailScreen> {
   void _onLongPressOdd(String code, double value) {
     HapticFeedback.mediumImpact();
     final sel = _buildSelection(code, value);
-    BetSlipController.instance.toggle(sel);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.bgElevated,
-        duration: const Duration(milliseconds: 1200),
-        content: Text(
-          'Ajouté au combiné — ${sel.marketLabel}',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
-        ),
-      ),
-    );
+    final r = BetSlipController.instance.toggle(sel);
+    BetSlipFeedback.show(context, r, sel);
   }
 
   @override
@@ -1022,17 +1014,8 @@ class _ExtraMarketSection extends StatelessWidget {
       kickoff: kickoff,
       isLive: isLive,
     );
-    BetSlipController.instance.toggle(sel);
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        backgroundColor: AppColors.bgElevated,
-        duration: const Duration(milliseconds: 1200),
-        content: Text(
-          'Ajouté au combiné — ${sel.marketLabel}',
-          style: TextStyle(color: AppColors.textPrimary, fontSize: 12),
-        ),
-      ),
-    );
+    final r = BetSlipController.instance.toggle(sel);
+    BetSlipFeedback.show(context, r, sel);
   }
 
   @override

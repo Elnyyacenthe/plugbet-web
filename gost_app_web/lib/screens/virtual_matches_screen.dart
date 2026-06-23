@@ -20,6 +20,7 @@ import '../services/statpal_service.dart' show Sport;
 import '../widgets/betting_match_card.dart';
 import '../widgets/bet_slip.dart';
 import '../utils/market_labels.dart';
+import '../utils/bet_slip_feedback.dart';
 
 class VirtualMatchesScreen extends StatefulWidget {
   const VirtualMatchesScreen({super.key});
@@ -85,8 +86,8 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
     if (v.state == VirtualState.finished) return;
     HapticFeedback.mediumImpact();
     final sel = _buildSelection(v, code);
-    BetSlipController.instance.toggle(sel);
-    _toast('Ajouté au combiné — ${sel.marketLabel}');
+    final r = BetSlipController.instance.toggle(sel);
+    BetSlipFeedback.show(context, r, sel);
   }
 
   void _toast(String msg) {
@@ -112,7 +113,7 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
           Icon(Icons.flash_on_rounded,
               color: AppColors.neonPurple, size: 22),
           const SizedBox(width: 8),
-          Text('Matchs virtuels',
+          Text('Matchs Flash',
               style: TextStyle(
                 color: AppColors.textPrimary,
                 fontSize: 16,
@@ -227,7 +228,7 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
                   : Icons.sports_soccer,
               size: 48, color: AppColors.textMuted),
           const SizedBox(height: 12),
-          Text('Aucun match virtuel en cours',
+          Text('Aucun match Flash en cours',
               textAlign: TextAlign.center,
               style: TextStyle(
                 color: AppColors.textMuted,
@@ -264,7 +265,7 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
               color: AppColors.neonPurple,
               borderRadius: BorderRadius.circular(4),
             ),
-            child: const Text('VIRTUEL',
+            child: const Text('FLASH',
                 style: TextStyle(
                   color: Colors.white,
                   fontSize: 10,

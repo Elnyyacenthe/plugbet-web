@@ -17,6 +17,7 @@ import 'screens/splash_screen.dart';
 import 'screens/betting_screen.dart';
 import 'services/statpal_service.dart';
 import 'services/statpal_disk_cache.dart';
+import 'services/bet_slip_odds_refresher.dart';
 import 'services/team_logo_service.dart';
 import 'services/virtual_match_service.dart';
 import 'screens/profile_screen.dart';
@@ -139,6 +140,9 @@ void main() async {
   //         peut quitter vite. Le warmup reseau les rafraichira en BG.
   await StatpalDiskCache.instance.init();
   StatpalService.instance.hydrateFromDisk();
+  // Polling auto des cotes du panier (style 1xBet : si une cote bouge,
+  // affichage fleche up/down + confirmation avant submit selon policy).
+  BetSlipOddsRefresher.instance.attach();
 
   // --- 2. Initialiser Supabase (timeout court pour ne pas bloquer le démarrage) ---
   try {

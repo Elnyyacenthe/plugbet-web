@@ -371,13 +371,17 @@ class _SettingsScreenState extends State<SettingsScreen> {
                 _linkRow(t.settingsTerms, Icons.description_outlined, () => _showInfoDialog(
                   t.settingsTerms,
                   '1. En utilisant Plugbet, vous acceptez ces conditions.\n\n'
-                  '2. Les FCFA sont une monnaie virtuelle sans valeur réelle. '
-                  'Aucun échange contre de l\'argent réel n\'est possible.\n\n'
-                  '3. Tout comportement abusif (triche, multi-comptes, exploitation de bugs) '
-                  'peut entraîner la suspension du compte.\n\n'
-                  '4. Plugbet se réserve le droit de modifier les règles, les gains '
+                  '2. Les paris sont effectués en FCFA réels (dépôts et retraits '
+                  'via Mobile Money). Les gains sont créditables et retirables '
+                  'selon les règles en vigueur.\n\n'
+                  '3. Tout comportement abusif (triche, multi-comptes, exploitation de bugs, '
+                  'fraude au paiement) peut entraîner la suspension du compte et la '
+                  'confiscation du solde.\n\n'
+                  '4. Plugbet se réserve le droit de modifier les règles, les cotes '
                   'et les fonctionnalités à tout moment.\n\n'
-                  '5. L\'application est fournie « en l\'état » sans garantie.\n\n'
+                  '5. L\'utilisation de l\'application est réservée aux personnes '
+                  'majeures (18 ans et plus). Le jeu peut être addictif — jouez avec '
+                  'modération.\n\n'
                   '6. Pour toute question, contactez-nous via le Support.',
                 )),
               ])),

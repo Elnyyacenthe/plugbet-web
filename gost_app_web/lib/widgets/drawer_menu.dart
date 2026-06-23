@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../theme/app_theme.dart';
+import '../app_version.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/player_provider.dart';
@@ -210,7 +211,7 @@ class AppDrawer extends StatelessWidget {
                   top: BorderSide(color: AppColors.divider, width: 0.5),
                 ),
               ),
-              child: Text('v1.0.0',
+              child: Text('v$kAppVersion',
                   style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
             ),
           ],
