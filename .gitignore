@@ -2,3 +2,16 @@
 .claude/
 node_modules/
 .vscode/settings.json
+
+# === Cleanup 2026-06-12 ===
+# Docs/audits internes
+AUDIT_*.md
+# Pages HTML temporaires/utilitaires
+clear-cache.html
+og-image.html
+# Flutter ephemeral cache (linux/macos symlinks)
+**/ephemeral/.plugin_symlinks/
+# Dart tool cache
+**/.dart_tool/
+**/.flutter-plugins
+**/.flutter-plugins-dependencies
