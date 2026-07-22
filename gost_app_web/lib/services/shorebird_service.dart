@@ -2,7 +2,9 @@
 // Shorebird — OTA code push service
 // 2 modes : silencieux (fond) ou avec dialog "Redemarrer maintenant ?"
 // ============================================================
+import 'dart:io';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
@@ -33,11 +35,6 @@ class ShorebirdService {
     }
   }
 
-  /// Alias web : pas de "cold start auto-apply" possible sur web
-  /// (Shorebird OTA n'existe pas, le rechargement passe par le navigateur).
-  /// On expose la meme API que mobile pour eviter de diverger main.dart.
-  Future<void> autoApplyOnColdStart() => checkForUpdate();
-
   /// Verifie et telecharge silencieusement un nouveau patch.
   /// Le patch sera applique au prochain redemarrage de l'app.
   Future<void> checkForUpdate() async {
@@ -65,6 +62,61 @@ class ShorebirdService {
       }
     } catch (e, s) {
       _log.error('checkForUpdate', e, s);
+    }
+  }
+
+  /// Ferme l'app proprement pour que le patch s'applique au prochain
+  /// cold start (Shorebird charge la nouvelle version Dart au demarrage).
+  /// Android : SystemNavigator.pop() ferme l'activity. Backup exit(0).
+  Future<void> _restartApp(BuildContext ctx) async {
+    Navigator.pop(ctx);
+    try {
+      // Petite pause pour que le dialog se ferme proprement
+      await Future.delayed(const Duration(milliseconds: 300));
+      if (Platform.isAndroid) {
+        await SystemNavigator.pop();
+        // Backup : si SystemNavigator.pop ne ferme pas (rare), force exit
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+      exit(0);
+    } catch (e, s) {
+      _log.error('_restartApp', e, s);
+    }
+  }
+
+  /// Verifie au demarrage si un patch est dispo / pret.
+  /// - Si dispo : telecharge en background (silencieux)
+  /// - Si pret : flag _patchReady = true, dialog s'affichera depuis Home
+  /// Ne FERME JAMAIS l'app automatiquement (eviter bug en cours de jeu).
+  /// L'user choisit Redemarrer / Patienter via le dialog.
+  Future<void> autoApplyOnColdStart() async {
+    if (!isAvailable) {
+      _log.info('Shorebird indisponible (debug ou build non patchable)');
+      return;
+    }
+    try {
+      final status = await _updater.checkForUpdate();
+      switch (status) {
+        case UpdateStatus.restartRequired:
+          // Patch deja telecharge dans une session anterieure.
+          // Le dialog s'affichera depuis Home pour proposer le restart.
+          _patchReady = true;
+          _log.info('Patch pret -> dialog sera propose');
+          break;
+        case UpdateStatus.outdated:
+          _log.info('Patch dispo -> telechargement background...');
+          await _updater.update();
+          _patchReady = true;
+          _log.info('Patch telecharge -> dialog sera propose au prochain ecran d accueil');
+          break;
+        case UpdateStatus.upToDate:
+          _log.info('App a jour');
+          break;
+        case UpdateStatus.unavailable:
+          break;
+      }
+    } catch (e, s) {
+      _log.error('autoApplyOnColdStart', e, s);
     }
   }
 
@@ -105,12 +157,7 @@ class ShorebirdService {
             child: Text(t.updateLater, style: TextStyle(color: AppColors.textMuted)),
           ),
           ElevatedButton(
-            onPressed: () {
-              Navigator.pop(ctx);
-              // Le patch s'applique au prochain redemarrage —
-              // on ne peut pas killer l'app proprement depuis Dart.
-              // L'utilisateur doit fermer/rouvrir manuellement.
-            },
+            onPressed: () => _restartApp(ctx),
             style: ElevatedButton.styleFrom(
               backgroundColor: AppColors.neonGreen,
               foregroundColor: Colors.black,

@@ -14,6 +14,7 @@ import '../widgets/fortune_board.dart';
 import '../widgets/bet_panel.dart';
 import '../widgets/result_overlay.dart';
 import '../../../widgets/network_lost_overlay.dart';
+import '../../../services/audio_service.dart';
 
 class AppleFortuneScreen extends StatefulWidget {
   const AppleFortuneScreen({super.key});
@@ -46,8 +47,20 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
   @override
   void initState() {
     super.initState();
+    _initAudio();
     _updateMultipliers();
     _tryRecoverSession();
+  }
+
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('apple_fortune');
+    AudioService.instance.startBackgroundMusic();
+  }
+
+  @override
+  void dispose() {
+    AudioService.instance.stopBackgroundMusic();
+    super.dispose();
   }
 
   void _updateMultipliers() {
@@ -91,6 +104,8 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
       _showError('Impossible de lancer la partie. Vérifiez votre solde.');
       return;
     }
+
+    AudioService.instance.playSpin();
 
     // Refresh wallet after deduction
     if (mounted) {
@@ -137,6 +152,7 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
       final nextRow = result['current_row'] as int;
 
       HapticFeedback.mediumImpact();
+      AudioService.instance.playSafe();
 
       setState(() {
         _session = AppleFortuneSession(
@@ -166,6 +182,7 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
     } else {
       // Lost
       HapticFeedback.heavyImpact();
+      AudioService.instance.playLose();
 
       setState(() {
         _session = AppleFortuneSession(
@@ -223,6 +240,7 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
     final multiplier = (result['multiplier'] as num).toDouble();
 
     HapticFeedback.heavyImpact();
+    AudioService.instance.playWin();
 
     setState(() {
       _loading = false;
@@ -279,12 +297,14 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        backgroundColor: AppColors.bgBlueNight,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
         title: Text(
           'Apple of Fortune',
           style: TextStyle(
             color: AppColors.textPrimary,
-            fontWeight: FontWeight.w800,
+            fontWeight: FontWeight.w900,
+            letterSpacing: 1,
           ),
         ),
         centerTitle: true,
@@ -300,30 +320,88 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Row(
-              children: [
-                Icon(Icons.monetization_on,
-                    color: AppColors.neonYellow, size: 18),
-                const SizedBox(width: 4),
-                Text(
-                  '${wallet.coins}',
-                  style: TextStyle(
-                    color: AppColors.neonYellow,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
+            padding: const EdgeInsets.only(right: 14, top: 8, bottom: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                gradient: LinearGradient(colors: [
+                  AppColors.neonYellow.withValues(alpha: 0.18),
+                  AppColors.neonYellow.withValues(alpha: 0.06),
+                ]),
+                border: Border.all(
+                    color: AppColors.neonYellow.withValues(alpha: 0.45)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonYellow.withValues(alpha: 0.2),
+                    blurRadius: 10,
                   ),
-                ),
-              ],
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.monetization_on,
+                      color: AppColors.neonYellow, size: 17),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${wallet.coins}',
+                    style: TextStyle(
+                      color: AppColors.neonYellow,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 15,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
       ),
       body: Stack(
         children: [
+          // Fond dégradé + halos néon d'ambiance
+          Positioned.fill(
+            child: Container(
+              decoration: BoxDecoration(gradient: AppColors.bgGradient),
+            ),
+          ),
+          Positioned(
+            top: -70,
+            right: -60,
+            child: IgnorePointer(
+              child: Container(
+                width: 240,
+                height: 240,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    AppColors.neonGreen.withValues(alpha: 0.18),
+                    AppColors.neonGreen.withValues(alpha: 0.0),
+                  ]),
+                ),
+              ),
+            ),
+          ),
+          Positioned(
+            bottom: 60,
+            left: -70,
+            child: IgnorePointer(
+              child: Container(
+                width: 260,
+                height: 260,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    AppColors.neonRed.withValues(alpha: 0.14),
+                    AppColors.neonRed.withValues(alpha: 0.0),
+                  ]),
+                ),
+              ),
+            ),
+          ),
           // Main content
-          Container(
-            decoration: BoxDecoration(gradient: AppColors.bgGradient),
+          SafeArea(
             child: Column(
               children: [
                 // Game area
@@ -333,9 +411,8 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
                         horizontal: 10, vertical: 12),
                     child: FortuneBoard(
                       session: _session,
-                      columns: _isPlaying
-                          ? _session!.columns
-                          : _difficulty.columns,
+                      columns:
+                          _isPlaying ? _session!.columns : _difficulty.columns,
                       totalRows: _isPlaying
                           ? _session!.totalRows
                           : _difficulty.totalRows,
@@ -353,10 +430,8 @@ class _AppleFortuneScreenState extends State<AppleFortuneScreen> {
                   betAmount: _betAmount,
                   isPlaying: _isPlaying,
                   canCashOut: _session?.canCashOut ?? false,
-                  currentPotentialWin:
-                      _session?.currentPotentialWin ?? 0,
-                  currentMultiplier:
-                      _session?.currentMultiplier ?? 1.0,
+                  currentPotentialWin: _session?.currentPotentialWin ?? 0,
+                  currentMultiplier: _session?.currentMultiplier ?? 1.0,
                   loading: _loading,
                   onBetChanged: (v) => setState(() => _betAmount = v),
                   onStart: _startGame,

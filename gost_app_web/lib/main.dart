@@ -20,10 +20,8 @@ import 'services/statpal_disk_cache.dart';
 import 'services/bet_slip_odds_refresher.dart';
 import 'services/team_logo_service.dart';
 import 'services/virtual_match_service.dart';
-import 'screens/profile_screen.dart';
-import 'screens/chat_screen.dart';
-import 'screens/settings_screen.dart';
-import 'screens/games_screen.dart';
+import 'screens/bets_history_screen.dart';
+import 'state/bet_slip_controller.dart';
 import 'providers/messaging_provider.dart';
 import 'providers/wallet_provider.dart';
 import 'providers/theme_provider.dart';
@@ -34,7 +32,7 @@ import 'widgets/drawer_menu.dart';
 import 'ludo/providers/ludo_provider.dart';
 import 'games/_hub/providers/games_hub_provider.dart';
 import 'games/penalty/providers/penalty_provider.dart';
-import 'ludo/services/audio_service.dart';
+import 'services/audio_service.dart';
 import 'services/notification_service.dart';
 import 'services/push_service.dart';
 import 'services/shorebird_service.dart';
@@ -56,6 +54,16 @@ import 'games/checkers/models/checkers_models.dart' as cm;
 import 'ludo_v2/services/ludo_service.dart';
 import 'ludo_v2/screens/ludo_game_screen.dart';
 import 'ludo_v2/providers/ludo_game_provider.dart';
+import 'theme/app_icons.dart';
+import 'widgets/main_bottom_nav.dart';
+import 'screens/favorites_screen.dart';
+import 'screens/coupon_screen.dart';
+import 'screens/menu_screen.dart';
+import 'screens/signup_screen.dart';
+import 'screens/profile_screen.dart';
+import 'services/profile_service.dart';
+import 'services/bonus_service.dart';
+import 'providers/promo_provider.dart';
 
 const _kSentryDsn =
     'https://f10a9712b7438fab360076484226c011@o4511224905007104.ingest.us.sentry.io/4511224914313216';
@@ -175,7 +183,8 @@ void main() async {
   });
 
   // --- 3. Services API Football ---
-  const defaultApiKey = 'd15a7ed3db45d031275651a2fc70f7456b42f02f88f740f2086fcf9b716eeab7';
+  const defaultApiKey =
+      'd15a7ed3db45d031275651a2fc70f7456b42f02f88f740f2086fcf9b716eeab7';
   final apiSportsService = ApiSportsService(
     apiKey: hiveService.getApiSportsKey() ?? defaultApiKey,
   );
@@ -277,6 +286,10 @@ class PlugbetApp extends StatelessWidget {
         ChangeNotifierProvider(
           lazy: true,
           create: (_) => FplProvider(),
+        ),
+        ChangeNotifierProvider(
+          lazy: true,
+          create: (_) => PromoProvider()..loadPromotions(),
         ),
       ],
       child: Consumer2<ThemeProvider, LocaleProvider>(
@@ -399,7 +412,8 @@ class _AppEntryState extends State<_AppEntry> {
               _prefetchLogosBg(statpal);
             }).catchError((_) {/* best-effort */}));
             progress(0.95);
-            debugPrint('[Splash] FAST PATH ready in ${sw.elapsedMilliseconds}ms');
+            debugPrint(
+                '[Splash] FAST PATH ready in ${sw.elapsedMilliseconds}ms');
             return;
           }
 
@@ -416,7 +430,8 @@ class _AppEntryState extends State<_AppEntry> {
               await Future.delayed(const Duration(milliseconds: 200));
             }
             progress(0.35);
-            debugPrint('[Splash] MatchesProvider ready in ${pSw.elapsedMilliseconds}ms');
+            debugPrint(
+                '[Splash] MatchesProvider ready in ${pSw.elapsedMilliseconds}ms');
           }();
 
           unawaited(VirtualMatchService.instance.start());
@@ -425,12 +440,13 @@ class _AppEntryState extends State<_AppEntry> {
           // sports). Les ligues featured continuent en background apres.
           final statpalFuture = statpal.warmupFast().then((_) async {
             progress(0.70);
-            debugPrint('[Splash] warmupFast done in ${sw.elapsedMilliseconds}ms');
+            debugPrint(
+                '[Splash] warmupFast done in ${sw.elapsedMilliseconds}ms');
             unawaited(statpal.warmupFull());
             _prefetchLogosBg(statpal);
             // Timeout court : on ne bloque pas pour les logos
-            await TeamLogoService.instance.waitForPending(
-                timeout: const Duration(seconds: 2));
+            await TeamLogoService.instance
+                .waitForPending(timeout: const Duration(seconds: 2));
             progress(0.95);
           }).catchError((_) {/* warmup best-effort */});
 
@@ -457,8 +473,9 @@ class _AppEntryState extends State<_AppEntry> {
 }
 
 // ============================================================
-// Shell principal avec BottomNavigationBar
-// 6 onglets : Matchs, Favoris, Fantasy, Jeux, Chat, Réglages
+// Shell principal avec la barre de navigation globale (MainBottomNav)
+// 5 onglets : Populaire (paris) · Favoris · Coupon · Historique · Menu
+// (Menu donne accès à Jeux, Chat, Profil, Réglages, Promos, etc.)
 // ============================================================
 class MainShell extends StatefulWidget {
   final HiveService hiveService;
@@ -487,6 +504,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
   bool _bjResumeInFlight = false;
   bool _checkersResumeInFlight = false;
   bool _ludoV2ResumeInFlight = false;
+  // Proposition de recharge (une seule fois) pour un compte fraichement cree.
+  bool _rechargePromptFired = false;
 
   // Lazy loading des écrans
   final Map<int, Widget> _cachedScreens = {};
@@ -505,10 +524,14 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       _matchesProvider.addListener(_detectGoals);
       // Lier le wallet (coins) au module Fantasy
       context.read<FplProvider>().attachWallet(context.read<WalletProvider>());
+      // Notifie les nouveaux codes bonus (promotions) recus.
+      _checkNewBonusCodes();
       // Si un patch Shorebird a ete telecharge, demander la permission
       // de redemarrer (apres un petit delai pour ne pas spammer au boot).
       Future.delayed(const Duration(seconds: 3), () {
-        if (mounted) ShorebirdService.instance.showRestartDialogIfReady(context);
+        if (mounted) {
+          ShorebirdService.instance.showRestartDialogIfReady(context);
+        }
       });
     });
   }
@@ -530,13 +553,15 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
           notifProvider.addGoal(
             match.homeTeam.shortName,
             match.awayTeam.shortName,
-            home, away,
+            home,
+            away,
           );
         } else if (away > prev.away) {
           notifProvider.addGoal(
             match.homeTeam.shortName,
             match.awayTeam.shortName,
-            home, away,
+            home,
+            away,
           );
         }
       }
@@ -551,15 +576,19 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         case 0:
           return const BettingScreen();
         case 1:
-          return const GamesScreen();
+          return const FavoritesScreen();
         case 2:
-          return const ChatScreen();
+          return const CouponScreen();
         case 3:
-          return const ProfileScreen();
+          return const BetsHistoryScreen();
         case 4:
-          return SettingsScreen(
+          return MenuScreen(
             hiveService: widget.hiveService,
             supabaseService: widget.supabaseService,
+            onLoggedOut: () {
+              _cachedScreens.remove(4);
+              setState(() => _currentIndex = 0);
+            },
           );
         default:
           return SizedBox();
@@ -582,7 +611,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       case AppLifecycleState.resumed:
         provider.setAppForeground(true);
         // Marquer en ligne
-        try { context.read<MessagingProvider>().goOnline(); } catch (_) {}
+        try {
+          context.read<MessagingProvider>().goOnline();
+        } catch (_) {}
         // Reprise de session Cora Dice (game ou room en cours côté serveur)
         _checkActiveCoraSession();
         // Reprise de session Blackjack
@@ -590,6 +621,8 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         // Reprise de session Checkers + Ludo V2
         _checkActiveCheckersSession();
         _checkActiveLudoV2Session();
+        // Notifie les nouveaux codes bonus recus pendant l'absence.
+        _checkNewBonusCodes();
         break;
       case AppLifecycleState.paused:
       case AppLifecycleState.inactive:
@@ -597,7 +630,9 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
       case AppLifecycleState.hidden:
         provider.setAppForeground(false);
         // Marquer hors ligne
-        try { context.read<MessagingProvider>().goOffline(); } catch (_) {}
+        try {
+          context.read<MessagingProvider>().goOffline();
+        } catch (_) {}
         break;
     }
 
@@ -622,13 +657,15 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         if (CoraGameScreen.isOnScreen) return;
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => CoraGameScreen(gameId: session['game_id'] as String),
+            builder: (_) =>
+                CoraGameScreen(gameId: session['game_id'] as String),
           ),
         );
       } else if (type == 'room' && session['room_id'] != null) {
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => CoraLobbyScreen(roomId: session['room_id'] as String),
+            builder: (_) =>
+                CoraLobbyScreen(roomId: session['room_id'] as String),
           ),
         );
       }
@@ -691,8 +728,12 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
         // Meme calcul que lobby_screen : host -> host_color,
         // guest -> couleur opposee.
         final myColor = room.hostId == uid
-            ? (room.hostColor == 'red' ? cm.PieceColor.red : cm.PieceColor.black)
-            : (room.hostColor == 'red' ? cm.PieceColor.black : cm.PieceColor.red);
+            ? (room.hostColor == 'red'
+                ? cm.PieceColor.red
+                : cm.PieceColor.black)
+            : (room.hostColor == 'red'
+                ? cm.PieceColor.black
+                : cm.PieceColor.red);
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) => CheckersGameScreen(room: room, myColor: myColor),
@@ -746,111 +787,202 @@ class _MainShellState extends State<MainShell> with WidgetsBindingObserver {
     }
   }
 
+  /// Si un compte vient d'etre cree (flag Hive pose au signup), propose au
+  /// joueur de recharger son compte des son arrivee sur l'accueil. La fenetre
+  /// est fermable ("Plus tard") : ce n'est pas une obligation. Ne se declenche
+  /// qu'une seule fois.
+  void _maybeShowRechargePrompt() {
+    if (_rechargePromptFired) return;
+    final pending = widget.hiveService
+            .getSetting<bool>('pending_recharge_prompt', defaultValue: false) ??
+        false;
+    if (!pending) return;
+    _rechargePromptFired = true;
+    widget.hiveService.saveSetting('pending_recharge_prompt', false);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _showRechargeDialog();
+    });
+  }
+
+  /// Detecte les nouveaux codes bonus (promotions PlugSafe/Shield/Boost) et
+  /// notifie le joueur (feed in-app + notification OS). Ne notifie jamais
+  /// retroactivement : au 1er passage on enregistre l'etat courant, ensuite
+  /// on n'alerte que sur les codes REELLEMENT nouveaux.
+  Future<void> _checkNewBonusCodes() async {
+    try {
+      final codes = await BonusService().getMyBonusCodes();
+      final active = codes.where((c) => c.isActive).toList();
+      final raw = widget.hiveService.getSetting<List>('seen_bonus_code_ids');
+      final seen = <String>{...?raw?.map((e) => e.toString())};
+      final firstRun = raw == null;
+      final fresh = active.where((c) => !seen.contains(c.id)).toList();
+      seen.addAll(active.map((c) => c.id));
+      await widget.hiveService
+          .saveSetting('seen_bonus_code_ids', seen.toList());
+      if (firstRun || fresh.isEmpty || !mounted) return;
+      for (final c in fresh) {
+        final title = 'Bonus ${c.sourceLabel} reçu ! 🎁';
+        final body =
+            "Tu as gagné ${c.amount} FCFA en bonus. Ton code ${c.code} "
+            "t'attend dans « Mes bonus » — utilise-le sur un coupon !";
+        try {
+          context.read<NotificationProvider>().add(
+                title: title,
+                body: body,
+                icon: Icons.card_giftcard_rounded,
+                color: const Color(0xFFFFB020),
+              );
+        } catch (_) {}
+        NotificationService.instance.showPushNotification(
+          title: title,
+          body: body,
+          payload: 'bonus',
+        );
+      }
+    } catch (_) {/* offline / non connecte : on ignore */}
+  }
+
+  Future<void> _showRechargeDialog() async {
+    const green = Color(0xFF37DD86);
+    await showDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.bgCard,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Padding(
+          padding: const EdgeInsets.all(22),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Container(
+                width: 64,
+                height: 64,
+                decoration: BoxDecoration(
+                  color: green.withValues(alpha: 0.15),
+                  shape: BoxShape.circle,
+                ),
+                child: const Icon(Icons.account_balance_wallet_rounded,
+                    color: green, size: 32),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Prêt à jouer pour de vrai ?',
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 19,
+                    fontWeight: FontWeight.w900),
+              ),
+              const SizedBox(height: 10),
+              Text(
+                "Recharge ton compte en quelques secondes via Mobile Money et "
+                "lance-toi dans l'aventure. Ta première mise n'attend que toi !",
+                textAlign: TextAlign.center,
+                style: TextStyle(
+                    color: AppColors.textMuted, fontSize: 13.5, height: 1.4),
+              ),
+              const SizedBox(height: 20),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: () {
+                    Navigator.pop(ctx);
+                    Navigator.of(context).push(
+                      MaterialPageRoute(
+                        builder: (_) => ProfileScreen(
+                          hiveService: widget.hiveService,
+                          supabaseService: widget.supabaseService,
+                          openDeposit: true,
+                        ),
+                      ),
+                    );
+                  },
+                  icon: const Icon(Icons.bolt_rounded),
+                  label: const Text('Recharger maintenant'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: green,
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    textStyle: const TextStyle(
+                        fontWeight: FontWeight.w800, fontSize: 15),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text('Plus tard',
+                    style: TextStyle(
+                        color: AppColors.textMuted,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    final t = AppLocalizations.of(context)!;
+    _maybeShowRechargePrompt();
     return Scaffold(
       key: _scaffoldKey,
       drawer: AppDrawer(
+        hiveService: widget.hiveService,
+        supabaseService: widget.supabaseService,
         onTabChange: (i) => setState(() => _currentIndex = i),
       ),
       body: _buildScreen(_currentIndex),
-      bottomNavigationBar: Container(
-        decoration: BoxDecoration(
-          color: AppColors.bgDark,
-          border: Border(
-            top: BorderSide(
-              color: AppColors.divider.withValues(alpha: 0.4),
-              width: 0.5,
-            ),
+      bottomNavigationBar: Consumer<MessagingProvider>(
+        builder: (navContext, msg, __) => AnimatedBuilder(
+          animation: BetSlipController.instance,
+          builder: (_, __) => MainBottomNav(
+            currentIndex: _currentIndex,
+            onTap: (index) async {
+              // Onglet Menu réservé aux comptes : un invité (anonyme)
+              // est redirigé vers la page d'inscription.
+              if (index == 4 && ProfileService().isAnonymous) {
+                final ok = await Navigator.push<bool>(
+                  navContext,
+                  MaterialPageRoute(builder: (_) => const SignupScreen()),
+                );
+                if (ok == true && mounted) {
+                  widget.liveScoreManager.pauseTracking();
+                  setState(() => _currentIndex = 4);
+                }
+                return;
+              }
+              // Pause live score polling quand on quitte l'onglet Populaire
+              // (paris) -> economise CPU + reseau ailleurs dans l'app.
+              if (index != 0 && _currentIndex == 0) {
+                widget.liveScoreManager.pauseTracking();
+              } else if (index == 0 && _currentIndex != 0) {
+                widget.liveScoreManager.resumeTracking();
+              }
+              setState(() => _currentIndex = index);
+            },
+            items: [
+              MainNavItem(icon: AppIcons.flame, label: 'Populaire'),
+              MainNavItem(icon: AppIcons.star, label: 'Favoris'),
+              MainNavItem(
+                iconBuilder: (color, active) =>
+                    TicketIcon(size: 26, color: color),
+                label: 'Coupon',
+                badgeCount: BetSlipController.instance.count,
+                prominent: true,
+              ),
+              MainNavItem(icon: AppIcons.history, label: 'Historique'),
+              MainNavItem(
+                icon: AppIcons.grid,
+                label: 'Menu',
+                badgeCount: msg.unreadTotal,
+              ),
+            ],
           ),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withValues(alpha: 0.3),
-              blurRadius: 12,
-              offset: const Offset(0, -4),
-            ),
-          ],
-        ),
-        child: BottomNavigationBar(
-          currentIndex: _currentIndex,
-          onTap: (index) {
-            // Pause live score polling quand on quitte l'onglet Matchs
-            // -> economise CPU + reseau quand l'utilisateur est sur les jeux
-            if (index != 0 && _currentIndex == 0) {
-              widget.liveScoreManager.pauseTracking();
-            } else if (index == 0 && _currentIndex != 0) {
-              widget.liveScoreManager.resumeTracking();
-            }
-            setState(() => _currentIndex = index);
-          },
-          items: [
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.bolt_outlined),
-              activeIcon: ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [AppColors.neonYellow, AppColors.neonGreen],
-                ).createShader(bounds),
-                child: const Icon(Icons.bolt, color: Colors.white),
-              ),
-              label: 'Paris',
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.sports_esports_outlined),
-              activeIcon: ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [AppColors.neonGreen, AppColors.neonYellow],
-                ).createShader(bounds),
-                child: Icon(Icons.sports_esports, color: Colors.white),
-              ),
-              label: t.tabGames,
-            ),
-            BottomNavigationBarItem(
-              icon: Consumer<MessagingProvider>(
-                builder: (_, msg, __) {
-                  final count = msg.unreadTotal;
-                  return Badge(
-                    isLabelVisible: count > 0,
-                    label: Text('$count', style: TextStyle(fontSize: 9)),
-                    backgroundColor: AppColors.neonRed,
-                    child: Icon(Icons.chat_bubble_outline),
-                  );
-                },
-              ),
-              activeIcon: Consumer<MessagingProvider>(
-                builder: (_, msg, __) {
-                  final count = msg.unreadTotal;
-                  return Badge(
-                    isLabelVisible: count > 0,
-                    label: Text('$count', style: TextStyle(fontSize: 9)),
-                    backgroundColor: AppColors.neonRed,
-                    child: ShaderMask(
-                      shaderCallback: (bounds) => LinearGradient(
-                        colors: [AppColors.neonBlue, AppColors.neonPurple],
-                      ).createShader(bounds),
-                      child: Icon(Icons.chat_bubble, color: Colors.white),
-                    ),
-                  );
-                },
-              ),
-              label: t.tabChat,
-            ),
-            BottomNavigationBarItem(
-              icon: Icon(Icons.person_outline),
-              activeIcon: ShaderMask(
-                shaderCallback: (bounds) => LinearGradient(
-                  colors: [AppColors.neonBlue, AppColors.neonGreen],
-                ).createShader(bounds),
-                child: Icon(Icons.person, color: Colors.white),
-              ),
-              label: t.tabProfile,
-            ),
-            BottomNavigationBarItem(
-              icon: const Icon(Icons.settings_outlined),
-              activeIcon: const Icon(Icons.settings),
-              label: t.tabSettings,
-            ),
-          ],
         ),
       ),
     );
@@ -868,18 +1000,17 @@ class _PlugbetErrorWidget extends StatelessWidget {
 
   bool get _isNetwork {
     final msg = details.exception.toString().toLowerCase();
-    return msg.contains('socketexception')
-        || msg.contains('connection abort')
-        || msg.contains('failed host lookup')
-        || msg.contains('network is unreachable')
-        || msg.contains('connection timed out')
-        || msg.contains('connection refused');
+    return msg.contains('socketexception') ||
+        msg.contains('connection abort') ||
+        msg.contains('failed host lookup') ||
+        msg.contains('network is unreachable') ||
+        msg.contains('connection timed out') ||
+        msg.contains('connection refused');
   }
 
   bool get _isRender {
     final lib = details.library ?? '';
-    return lib.contains('rendering')
-        || lib.contains('widgets library');
+    return lib.contains('rendering') || lib.contains('widgets library');
   }
 
   @override
@@ -896,10 +1027,11 @@ class _PlugbetErrorWidget extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               SizedBox(
-                width: 32, height: 32,
+                width: 32,
+                height: 32,
                 child: CircularProgressIndicator(
                   strokeWidth: 2,
-                  valueColor: AlwaysStoppedAnimation(AppColors.neonGreen),
+                  valueColor: AlwaysStoppedAnimation(AppColors.primaryInk),
                 ),
               ),
               SizedBox(height: 12),
@@ -941,22 +1073,17 @@ class _PlugbetErrorWidget extends StatelessWidget {
                         gradient: AppColors.cardGradient,
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: accent.withValues(alpha: 0.40),
-                            width: 2),
+                            color: accent.withValues(alpha: 0.40), width: 2),
                       ),
                       child: Icon(
-                        _isNetwork
-                            ? Icons.wifi_off_rounded
-                            : Icons.error_outline_rounded,
+                        _isNetwork ? AppIcons.wifiOff : AppIcons.warning,
                         size: 46,
                         color: accent,
                       ),
                     ),
                     const SizedBox(height: 26),
                     Text(
-                      _isNetwork
-                          ? 'Connexion perdue'
-                          : 'Oups, un souci',
+                      _isNetwork ? 'Connexion perdue' : 'Oups, un souci',
                       textAlign: TextAlign.center,
                       style: TextStyle(
                         color: AppColors.textPrimary,
@@ -986,13 +1113,12 @@ class _PlugbetErrorWidget extends StatelessWidget {
                         onPressed: () {
                           WidgetsBinding.instance.scheduleForcedFrame();
                         },
-                        icon: const Icon(Icons.refresh_rounded, size: 19),
+                        icon: const Icon(AppIcons.refresh, size: 19),
                         label: const Text('Réessayer'),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.neonGreen,
-                          foregroundColor: Colors.black,
-                          padding:
-                              const EdgeInsets.symmetric(vertical: 15),
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
+                          padding: const EdgeInsets.symmetric(vertical: 15),
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(14)),
                           textStyle: const TextStyle(

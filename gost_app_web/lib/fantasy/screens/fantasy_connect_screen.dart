@@ -48,7 +48,26 @@ class _FantasyConnectScreenState extends State<FantasyConnectScreen> {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
       appBar: AppBar(
-        backgroundColor: AppColors.bgBlueNight,
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        flexibleSpace: DecoratedBox(
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.bgBlueNight,
+                Color.lerp(AppColors.bgBlueNight, AppColors.bgDark, 0.6)!,
+              ],
+            ),
+            boxShadow: [
+              BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.3),
+                  blurRadius: 10,
+                  offset: const Offset(0, 3)),
+            ],
+          ),
+        ),
         title: Text(AppLocalizations.of(context)!.fantasyConnectTitle),
         leading: IconButton(
           icon: Icon(Icons.arrow_back),

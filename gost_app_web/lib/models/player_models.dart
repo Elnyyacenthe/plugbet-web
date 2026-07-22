@@ -4,6 +4,8 @@
 
 import 'package:flutter/material.dart';
 
+import '../theme/app_icons.dart';
+
 // ── Rangs du joueur ────────────────────────────────────────
 enum PlayerRank {
   bronze,
@@ -35,17 +37,17 @@ extension PlayerRankX on PlayerRank {
   IconData get icon {
     switch (this) {
       case PlayerRank.bronze:
-        return Icons.shield_outlined;
+        return AppIcons.shield;
       case PlayerRank.argent:
-        return Icons.shield;
+        return AppIcons.shieldFilled;
       case PlayerRank.or_:
-        return Icons.workspace_premium;
+        return AppIcons.premium;
       case PlayerRank.platine:
-        return Icons.military_tech;
+        return AppIcons.medal;
       case PlayerRank.diamant:
-        return Icons.diamond;
+        return AppIcons.gem;
       case PlayerRank.maitre:
-        return Icons.emoji_events;
+        return AppIcons.trophyFilled;
     }
   }
 
@@ -255,18 +257,18 @@ class GameHistoryEntry {
     }
   }
 
-  String get gameEmoji {
+  IconData get gameIcon {
     switch (gameType) {
       case 'checkers':
-        return '♟️';
+        return AppIcons.gridBoard;
       case 'solitaire':
-        return '🃏';
+        return AppIcons.cards;
       case 'cora':
-        return '🎲';
+        return AppIcons.dice;
       case 'ludo':
-        return '🎯';
+        return AppIcons.target;
       default:
-        return '🎮';
+        return AppIcons.games;
     }
   }
 }
@@ -295,28 +297,28 @@ const List<Achievement> allAchievements = [
     id: 'first_win',
     title: 'Première Victoire',
     description: 'Gagner sa première partie',
-    icon: Icons.star,
+    icon: AppIcons.starFilled,
     color: Color(0xFFFFD700),
   ),
   Achievement(
     id: 'wins_10',
     title: 'Victorieux',
     description: 'Gagner 10 parties',
-    icon: Icons.emoji_events,
+    icon: AppIcons.trophy,
     color: Color(0xFFFF9100),
   ),
   Achievement(
     id: 'wins_50',
     title: 'Dominateur',
     description: 'Gagner 50 parties',
-    icon: Icons.military_tech,
+    icon: AppIcons.medal,
     color: Color(0xFFE040FB),
   ),
   Achievement(
     id: 'wins_100',
     title: 'Légende',
     description: 'Gagner 100 parties',
-    icon: Icons.auto_awesome,
+    icon: AppIcons.sparkle,
     color: Color(0xFFFF1744),
   ),
   // Séries
@@ -324,21 +326,21 @@ const List<Achievement> allAchievements = [
     id: 'streak_3',
     title: 'Série de 3',
     description: '3 victoires consécutives',
-    icon: Icons.local_fire_department,
+    icon: AppIcons.streak,
     color: Color(0xFFFF6D00),
   ),
   Achievement(
     id: 'streak_5',
     title: 'En feu',
     description: '5 victoires consécutives',
-    icon: Icons.whatshot,
+    icon: AppIcons.flame,
     color: Color(0xFFFF1744),
   ),
   Achievement(
     id: 'streak_10',
     title: 'Inarrêtable',
     description: '10 victoires consécutives',
-    icon: Icons.bolt,
+    icon: AppIcons.bets,
     color: Color(0xFFFFD600),
   ),
   // Coins
@@ -346,14 +348,14 @@ const List<Achievement> allAchievements = [
     id: 'rich_5k',
     title: 'Riche',
     description: 'Avoir 5 000 FCFA',
-    icon: Icons.monetization_on,
+    icon: AppIcons.coinsFilled,
     color: Color(0xFF00E676),
   ),
   Achievement(
     id: 'rich_10k',
     title: 'Millionnaire',
     description: 'Avoir 10 000 FCFA',
-    icon: Icons.diamond,
+    icon: AppIcons.gem,
     color: Color(0xFF00E5FF),
   ),
   // Par jeu
@@ -361,21 +363,21 @@ const List<Achievement> allAchievements = [
     id: 'checkers_10',
     title: 'Roi des Dames',
     description: 'Gagner 10 parties de Dames',
-    icon: Icons.grid_on,
+    icon: AppIcons.gridBoard,
     color: Color(0xFF8D6E63),
   ),
   Achievement(
     id: 'solitaire_10',
     title: 'Maître Solitaire',
     description: 'Gagner 10 parties de Solitaire',
-    icon: Icons.style,
+    icon: AppIcons.cards,
     color: Color(0xFF9C27B0),
   ),
   Achievement(
     id: 'cora_10',
     title: 'As du Cora',
     description: 'Gagner 10 parties de Cora Dice',
-    icon: Icons.casino,
+    icon: AppIcons.dice,
     color: Color(0xFF448AFF),
   ),
   // Rang
@@ -383,21 +385,21 @@ const List<Achievement> allAchievements = [
     id: 'rank_argent',
     title: 'Rang Argent',
     description: 'Atteindre le rang Argent',
-    icon: Icons.shield,
+    icon: AppIcons.shieldFilled,
     color: Color(0xFFC0C0C0),
   ),
   Achievement(
     id: 'rank_or',
     title: 'Rang Or',
     description: 'Atteindre le rang Or',
-    icon: Icons.workspace_premium,
+    icon: AppIcons.premium,
     color: Color(0xFFFFD700),
   ),
   Achievement(
     id: 'rank_diamant',
     title: 'Rang Diamant',
     description: 'Atteindre le rang Diamant',
-    icon: Icons.diamond,
+    icon: AppIcons.gem,
     color: Color(0xFFE040FB),
   ),
   // Jeux joués
@@ -405,21 +407,21 @@ const List<Achievement> allAchievements = [
     id: 'games_10',
     title: 'Joueur Régulier',
     description: 'Jouer 10 parties',
-    icon: Icons.sports_esports,
+    icon: AppIcons.games,
     color: Color(0xFF448AFF),
   ),
   Achievement(
     id: 'games_50',
     title: 'Passionné',
     description: 'Jouer 50 parties',
-    icon: Icons.videogame_asset,
+    icon: AppIcons.joystick,
     color: Color(0xFF00E676),
   ),
   Achievement(
     id: 'games_100',
     title: 'Accro',
     description: 'Jouer 100 parties',
-    icon: Icons.gamepad,
+    icon: AppIcons.gamesActive,
     color: Color(0xFFFF1744),
   ),
   // Daily
@@ -427,7 +429,7 @@ const List<Achievement> allAchievements = [
     id: 'daily_7',
     title: 'Fidèle',
     description: 'Se connecter 7 jours de suite',
-    icon: Icons.calendar_month,
+    icon: AppIcons.calendar,
     color: Color(0xFF00E5FF),
   ),
 ];

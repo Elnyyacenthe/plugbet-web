@@ -17,13 +17,14 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../models/aviator_models.dart';
 import '../services/aviator_service.dart';
+import '../../../services/audio_service.dart';
 
 // Durees fixes du round (en ms)
 // NOTE: si tu changes ces valeurs, MAJ aussi aviator_multiplayer.sql
 // (les RPC aviator_place_bet / aviator_cashout ont les memes constantes hardcodees)
 const int _kCountdownMs = 10000; // 10s de countdown (mises autorisees)
-const int _kMaxFlyMs    = 10000; // 10s max de vol
-const int _kRoundMs     = _kCountdownMs + _kMaxFlyMs; // 20s par round
+const int _kMaxFlyMs = 10000; // 10s max de vol
+const int _kRoundMs = _kCountdownMs + _kMaxFlyMs; // 20s par round
 
 class AviatorProvider extends ChangeNotifier {
   AviatorProvider() {
@@ -41,7 +42,7 @@ class AviatorProvider extends ChangeNotifier {
   // Seeds provably fair (affichés après crash pour vérif)
   String serverSeed = '';
   String clientSeed = '';
-  String roundHash  = '';
+  String roundHash = '';
   String currentRoundId = '';
 
   // ─── Mode démo ───────────────────────────────────────
@@ -59,12 +60,13 @@ class AviatorProvider extends ChangeNotifier {
   // ─── Paris multijoueur temps reel ────────────────────
   /// Tous les paris actifs du round courant (tous les joueurs confondus)
   List<LiveBet> liveBets = [];
+
   /// Gains recents pour le feed de droite
   List<LiveBet> recentWinnings = [];
 
   // ─── Stats perso ─────────────────────────────────────
   double bestMultiplier = 0.0;
-  int totalWon  = 0;
+  int totalWon = 0;
   int totalLost = 0;
 
   // ─── Internes ────────────────────────────────────────
@@ -147,16 +149,17 @@ class AviatorProvider extends ChangeNotifier {
 
     // Utilise l'horloge SERVEUR (locale + offset mesure) pour que tous les
     // clients voient le meme roundNum, meme si leur horloge locale est decalee.
-    final now  = _serverNowMs();
-    final roundNum     = now ~/ _kRoundMs;
-    final posInRound   = now % _kRoundMs;
+    final now = _serverNowMs();
+    final roundNum = now ~/ _kRoundMs;
+    final posInRound = now % _kRoundMs;
 
     // ── Générer le crash point depuis le roundNum ─────
     // Identique sur tous les appareils pour ce round
-    serverSeed     = _hashRoundNum(roundNum);
-    clientSeed     = _svc.generateClientSeed(); // device-specific, juste pour affichage
-    roundHash      = _svc.computeHash(serverSeed, clientSeed);
-    crashPoint     = _svc.generateCrashPoint(serverSeed, '');
+    serverSeed = _hashRoundNum(roundNum);
+    clientSeed =
+        _svc.generateClientSeed(); // device-specific, juste pour affichage
+    roundHash = _svc.computeHash(serverSeed, clientSeed);
+    crashPoint = _svc.generateCrashPoint(serverSeed, '');
     currentRoundId = roundNum.toString();
 
     // Si on a change de round → reset les paris live + charger ceux de la DB
@@ -184,11 +187,11 @@ class AviatorProvider extends ChangeNotifier {
     } else {
       // ── Phase vol (ou déjà crashé) ───────────────
       _elapsedMs = posInRound - _kCountdownMs;
-      multiplier  = _svc.computeMultiplier(_elapsedMs);
+      multiplier = _svc.computeMultiplier(_elapsedMs);
 
       if (multiplier >= crashPoint || _elapsedMs >= _kMaxFlyMs) {
         // Déjà crashé quand on arrive
-        phase      = AviatorPhase.crashed;
+        phase = AviatorPhase.crashed;
         multiplier = crashPoint;
         _notify();
         _scheduleNextRound(posInRound);
@@ -200,9 +203,9 @@ class AviatorProvider extends ChangeNotifier {
   }
 
   void _enterCountdown(int posInRound) {
-    phase         = AviatorPhase.waiting;
-    multiplier    = 0.00;
-    _elapsedMs    = 0;
+    phase = AviatorPhase.waiting;
+    multiplier = 0.00;
+    _elapsedMs = 0;
     bet1.reset();
     bet2.reset();
     countdownSecs = ((_kCountdownMs - posInRound) / 1000).ceil().clamp(1, 10);
@@ -210,7 +213,10 @@ class AviatorProvider extends ChangeNotifier {
 
     // Mettre à jour le countdown chaque seconde
     _syncTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (_disposed) { t.cancel(); return; }
+      if (_disposed) {
+        t.cancel();
+        return;
+      }
       countdownSecs--;
       _notify();
       if (countdownSecs <= 0) {
@@ -221,7 +227,7 @@ class AviatorProvider extends ChangeNotifier {
   }
 
   void _enterFlying({required int startElapsed}) {
-    phase      = AviatorPhase.flying;
+    phase = AviatorPhase.flying;
     _elapsedMs = startElapsed;
     _notify();
 
@@ -229,7 +235,7 @@ class AviatorProvider extends ChangeNotifier {
     _ticker = Timer.periodic(const Duration(milliseconds: 100), (_) {
       if (_disposed) return;
       _elapsedMs += 100;
-      multiplier  = _svc.computeMultiplier(_elapsedMs);
+      multiplier = _svc.computeMultiplier(_elapsedMs);
 
       // Auto cash out
       _checkAuto(bet1);
@@ -251,7 +257,7 @@ class AviatorProvider extends ChangeNotifier {
   }
 
   void _doCrash() {
-    phase      = AviatorPhase.crashed;
+    phase = AviatorPhase.crashed;
     multiplier = double.parse(crashPoint.toStringAsFixed(2));
 
     final supabase = Supabase.instance.client;
@@ -267,7 +273,8 @@ class AviatorProvider extends ChangeNotifier {
             'p_amount': bet.amount,
             'p_game_type': 'aviator',
             'p_user_id': uid,
-            'p_description': 'Aviator: crash @x${crashPoint.toStringAsFixed(2)}',
+            'p_description':
+                'Aviator: crash @x${crashPoint.toStringAsFixed(2)}',
           }).then((_) {}, onError: (_) {});
           // Marque la ligne aviator_bets comme perdue (win_amount = 0)
           // → permet aux stats / feed de distinguer perdu vs en cours
@@ -279,21 +286,22 @@ class AviatorProvider extends ChangeNotifier {
       }
     }
 
+    AudioService.instance.playCrash();
     _notify();
 
     // Sauvegarder le round (hors démo, 1 seule fois)
     if (!isDemoMode) {
       _svc.saveRound(CrashRound(
-        roundId:    currentRoundId,
+        roundId: currentRoundId,
         crashPoint: crashPoint,
         serverSeed: serverSeed,
         clientSeed: clientSeed,
-        time:       DateTime.now(),
+        time: DateTime.now(),
       ));
     }
 
     // Calculer le temps restant jusqu'au prochain round (horloge serveur)
-    final now        = _serverNowMs();
+    final now = _serverNowMs();
     final posInRound = now % _kRoundMs;
     _scheduleNextRound(posInRound);
   }
@@ -351,6 +359,7 @@ class AviatorProvider extends ChangeNotifier {
     }
 
     bet.placed = true;
+    AudioService.instance.playPlaneTakeoff();
     _notify();
     return true;
   }
@@ -362,12 +371,12 @@ class AviatorProvider extends ChangeNotifier {
   }
 
   void _executeCashOut(AviatorBet bet) {
-    bet.cashedOut      = true;
+    bet.cashedOut = true;
     bet.cashMultiplier = multiplier;
-    final grossPayout  = (bet.amount * multiplier).floor();
+    final grossPayout = (bet.amount * multiplier).floor();
     // Gain NET (apres commission 10%) = ce que le joueur va REELLEMENT recevoir.
-    final netPayout    = (grossPayout * 0.90).floor();
-    bet.profit         = netPayout - bet.amount;
+    final netPayout = (grossPayout * 0.90).floor();
+    bet.profit = netPayout - bet.amount;
 
     if (grossPayout > 0 && !isDemoMode) {
       if (multiplier > bestMultiplier) bestMultiplier = multiplier;
@@ -385,9 +394,9 @@ class AviatorProvider extends ChangeNotifier {
 
       _svc.getUsername().then((username) {
         _svc.sendCashOutMessage(
-          username:   username,
+          username: username,
           multiplier: cashMult,
-          profit:     bet.profit!,
+          profit: bet.profit!,
         );
       });
     }

@@ -15,6 +15,7 @@ import '../../../services/live_score_manager.dart';
 import '../models/roulette_models.dart';
 import '../services/roulette_service.dart';
 import '../../../widgets/network_lost_overlay.dart';
+import '../../../services/audio_service.dart';
 
 class RLTGameScreen extends StatefulWidget {
   final String gameId;
@@ -43,8 +44,24 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   String get _myId => _svc.currentUserId ?? '';
 
   static const _redNumbers = {
-    1, 3, 5, 7, 9, 12, 14, 16, 18,
-    19, 21, 23, 25, 27, 30, 32, 34, 36
+    1,
+    3,
+    5,
+    7,
+    9,
+    12,
+    14,
+    16,
+    18,
+    19,
+    21,
+    23,
+    25,
+    27,
+    30,
+    32,
+    34,
+    36
   };
 
   static const _chips = [50, 100, 250, 500, 1000];
@@ -52,12 +69,23 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   @override
   void initState() {
     super.initState();
-    _wheelCtrl = AnimationController(vsync: this, duration: const Duration(seconds: 4));
+    _initAudio();
+    _wheelCtrl =
+        AnimationController(vsync: this, duration: const Duration(seconds: 4));
     _init();
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
-      try { context.read<LiveScoreManager>().pauseTracking(); } catch (_) {}
+      try {
+        context.read<MatchesProvider>().pausePolling();
+      } catch (_) {}
+      try {
+        context.read<LiveScoreManager>().pauseTracking();
+      } catch (_) {}
     });
+  }
+
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('roulette');
+    AudioService.instance.startBackgroundMusic();
   }
 
   @override
@@ -65,8 +93,13 @@ class _RLTGameScreenState extends State<RLTGameScreen>
     _wheelCtrl.dispose();
     _pollTimer?.cancel();
     if (_channel != null) _svc.unsubscribe(_channel!);
-    try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
-    try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
+    try {
+      context.read<MatchesProvider>().resumePolling();
+    } catch (_) {}
+    try {
+      context.read<LiveScoreManager>().resumeTracking();
+    } catch (_) {}
+    AudioService.instance.stopBackgroundMusic();
     super.dispose();
   }
 
@@ -125,20 +158,25 @@ class _RLTGameScreenState extends State<RLTGameScreen>
     final wallet = context.read<WalletProvider>();
     if (wallet.coins < amount) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('Solde insuffisant : $amount FCFA requis'),
-        backgroundColor: Colors.red, duration: const Duration(seconds: 1)));
+          content: Text('Solde insuffisant : $amount FCFA requis'),
+          backgroundColor: Colors.red,
+          duration: const Duration(seconds: 1)));
       return;
     }
 
     setState(() => _placing = true);
     try {
       await _svc.placeBet(widget.gameId, type, amount, number: number);
+      AudioService.instance.playChipPlace();
       if (mounted) {
-        try { context.read<WalletProvider>().refresh(); } catch (_) {}
+        try {
+          context.read<WalletProvider>().refresh();
+        } catch (_) {}
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('$e'), backgroundColor: Colors.red));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _placing = false);
     }
@@ -147,14 +185,18 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   Future<void> _spinWheel() async {
     if (_spinning) return;
     setState(() => _spinning = true);
+    AudioService.instance.playSpin();
     try {
       await _svc.spin(widget.gameId);
       if (mounted) {
-        try { context.read<WalletProvider>().refresh(); } catch (_) {}
+        try {
+          context.read<WalletProvider>().refresh();
+        } catch (_) {}
       }
     } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text('$e'), backgroundColor: Colors.red));
+      if (mounted)
+        ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('$e'), backgroundColor: Colors.red));
     } finally {
       if (mounted) setState(() => _spinning = false);
     }
@@ -169,7 +211,8 @@ class _RLTGameScreenState extends State<RLTGameScreen>
     if (_loading || _game == null) {
       return Scaffold(
         backgroundColor: AppColors.bgDark,
-        body: Center(child: CircularProgressIndicator(color: AppColors.neonGreen)),
+        body: Center(
+            child: CircularProgressIndicator(color: AppColors.neonGreen)),
       );
     }
 
@@ -179,70 +222,125 @@ class _RLTGameScreenState extends State<RLTGameScreen>
     final myTotalBet = myPlayer?.totalBet ?? 0;
 
     return Scaffold(
-      backgroundColor: const Color(0xFF0D3B0F),
+      backgroundColor: const Color(0xFF06210A),
       appBar: AppBar(
-        backgroundColor: const Color(0xFF062505),
-        title: const Text('Roulette', style: TextStyle(fontWeight: FontWeight.w800)),
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: const Text('Roulette',
+            style: TextStyle(fontWeight: FontWeight.w900, letterSpacing: 1.5)),
         centerTitle: true,
         actions: [
-          // Solde
+          // Solde — pastille glassy dorée
           Padding(
-            padding: const EdgeInsets.only(right: 12),
-            child: Row(children: [
-              Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 16),
-              const SizedBox(width: 4),
-              Text('${wallet.coins}',
-                  style: TextStyle(
-                      color: AppColors.neonYellow,
-                      fontWeight: FontWeight.w800,
-                      fontSize: 14)),
-            ]),
+            padding: const EdgeInsets.only(right: 12, top: 8, bottom: 8),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(30),
+                gradient: LinearGradient(colors: [
+                  AppColors.neonYellow.withValues(alpha: 0.18),
+                  AppColors.neonYellow.withValues(alpha: 0.06),
+                ]),
+                border: Border.all(
+                    color: AppColors.neonYellow.withValues(alpha: 0.45)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonYellow.withValues(alpha: 0.2),
+                    blurRadius: 10,
+                  ),
+                ],
+              ),
+              child: Row(mainAxisSize: MainAxisSize.min, children: [
+                Icon(Icons.monetization_on,
+                    color: AppColors.neonYellow, size: 16),
+                const SizedBox(width: 5),
+                Text('${wallet.coins}',
+                    style: TextStyle(
+                        color: AppColors.neonYellow,
+                        fontWeight: FontWeight.w800,
+                        fontSize: 14)),
+              ]),
+            ),
           ),
         ],
       ),
-      body: SafeArea(
-        child: Column(children: [
-          _buildPhaseBar(gs, myTotalBet),
-          _buildWheel(gs),
-          if (gs.phase == 'betting') ...[
-            const Divider(height: 1, color: Colors.white12),
-            Expanded(child: _buildBettingTable(myPlayer)),
-            _buildSpinButton(myTotalBet),
-          ] else if (gs.isFinished)
-            Expanded(child: _buildResultBanner(gs)),
-        ]),
+      body: Container(
+        // Tapis de feutre casino (dégradé radial profond)
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.35),
+            radius: 1.2,
+            colors: [
+              Color(0xFF1B6B2A),
+              Color(0xFF0D3B0F),
+              Color(0xFF05170A),
+            ],
+            stops: [0.0, 0.55, 1.0],
+          ),
+        ),
+        child: SafeArea(
+          child: Column(children: [
+            _buildPhaseBar(gs, myTotalBet),
+            _buildWheel(gs),
+            if (gs.phase == 'betting') ...[
+              Divider(
+                  height: 1, color: Colors.white.withValues(alpha: 0.08)),
+              Expanded(child: _buildBettingTable(myPlayer)),
+              _buildSpinButton(myTotalBet),
+            ] else if (gs.isFinished)
+              Expanded(child: _buildResultBanner(gs)),
+          ]),
+        ),
       ),
     );
   }
 
   // ─── Barre phase + total mise ─────────────────────────────
   Widget _buildPhaseBar(RouletteGameState gs, int myTotalBet) {
+    final accent = gs.phase == 'betting'
+        ? AppColors.neonGreen
+        : gs.phase == 'spinning'
+            ? AppColors.neonOrange
+            : AppColors.neonYellow;
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      color: gs.phase == 'betting'
-          ? AppColors.neonGreen.withValues(alpha: 0.15)
-          : gs.phase == 'spinning'
-              ? Colors.orange.withValues(alpha: 0.20)
-              : AppColors.neonYellow.withValues(alpha: 0.20),
+      margin: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(14),
+        gradient: LinearGradient(colors: [
+          accent.withValues(alpha: 0.22),
+          accent.withValues(alpha: 0.08),
+        ]),
+        border: Border.all(color: accent.withValues(alpha: 0.4)),
+        boxShadow: [
+          BoxShadow(color: accent.withValues(alpha: 0.2), blurRadius: 12),
+        ],
+      ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(
-            gs.phase == 'betting'
-                ? '🎯 Placez vos paris'
-                : gs.phase == 'spinning'
-                    ? '🌀 La roue tourne...'
-                    : 'Résultat : ${gs.result ?? "?"}',
-            style: const TextStyle(
-                color: Colors.white, fontWeight: FontWeight.w800, fontSize: 14),
+          Flexible(
+            child: Text(
+              gs.phase == 'betting'
+                  ? '🎯 Placez vos paris'
+                  : gs.phase == 'spinning'
+                      ? '🌀 La roue tourne...'
+                      : 'Résultat : ${gs.result ?? "?"}',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 14),
+            ),
           ),
           if (myTotalBet > 0)
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 5),
               decoration: BoxDecoration(
-                color: Colors.black.withValues(alpha: 0.4),
-                borderRadius: BorderRadius.circular(10),
+                color: Colors.black.withValues(alpha: 0.45),
+                borderRadius: BorderRadius.circular(30),
+                border: Border.all(
+                    color: AppColors.neonYellow.withValues(alpha: 0.4)),
               ),
               child: Text(
                 'Mise : $myTotalBet FCFA',
@@ -259,58 +357,128 @@ class _RLTGameScreenState extends State<RLTGameScreen>
 
   // ─── Roue (180px, segments rouge/noir/vert) ───────────────
   Widget _buildWheel(RouletteGameState gs) {
+    final spinning = gs.phase == 'spinning';
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 10),
-      child: Stack(alignment: Alignment.center, children: [
-        Transform.rotate(
-          angle: _wheelAngle,
-          child: Container(
-            width: 140,
-            height: 140,
+      padding: const EdgeInsets.symmetric(vertical: 14),
+      child: SizedBox(
+        height: 176,
+        child: Stack(alignment: Alignment.center, children: [
+          // Halo lumineux derrière la roue
+          Container(
+            width: 176,
+            height: 176,
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              gradient: const SweepGradient(colors: [
-                Colors.green,
-                Colors.red, Colors.black, Colors.red, Colors.black,
-                Colors.red, Colors.black, Colors.red, Colors.black,
-                Colors.red, Colors.black, Colors.red, Colors.black,
-                Colors.red, Colors.black, Colors.red, Colors.black,
-                Colors.red, Colors.black,
-                Colors.green,
-              ]),
-              border: Border.all(color: AppColors.neonYellow, width: 3),
-              boxShadow: const [
-                BoxShadow(color: Colors.black54, blurRadius: 14)
+              boxShadow: [
+                BoxShadow(
+                  color: (spinning
+                          ? AppColors.neonOrange
+                          : AppColors.neonYellow)
+                      .withValues(alpha: 0.35),
+                  blurRadius: 34,
+                  spreadRadius: 4,
+                ),
               ],
             ),
           ),
-        ),
-        // Centre fixe
-        Container(
-          width: 64,
-          height: 64,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: Colors.white,
-            boxShadow: const [BoxShadow(color: Colors.black54, blurRadius: 6)],
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            gs.result != null && gs.isFinished ? '${gs.result}' : '?',
-            style: TextStyle(
-              fontSize: 26,
-              fontWeight: FontWeight.w900,
-              color: gs.result == null
-                  ? Colors.black54
-                  : gs.result == 0
-                      ? Colors.green
-                      : (_redNumbers.contains(gs.result)
-                          ? Colors.red
-                          : Colors.black),
+          // Roue tournante
+          Transform.rotate(
+            angle: _wheelAngle,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: const SweepGradient(colors: [
+                  Color(0xFF1B8A2E),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFFD32F2F),
+                  Color(0xFF15171C),
+                  Color(0xFF1B8A2E),
+                ]),
+                border: Border.all(color: AppColors.neonYellow, width: 3),
+                boxShadow: const [
+                  BoxShadow(color: Colors.black54, blurRadius: 14)
+                ],
+              ),
             ),
           ),
-        ),
-      ]),
+          // Jante metallique doree 3D + studs (couche fixe)
+          IgnorePointer(
+            child: CustomPaint(
+              size: const Size(158, 158),
+              painter: _RouletteRimPainter(),
+            ),
+          ),
+          // Anneau intérieur (contour du moyeu)
+          Container(
+            width: 78,
+            height: 78,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(colors: [
+                Color(0xFF2A3550),
+                Color(0xFF0E1A2E),
+              ]),
+              border: Border.all(
+                  color: AppColors.neonYellow.withValues(alpha: 0.6), width: 2),
+            ),
+          ),
+          // Moyeu central (numéro)
+          Container(
+            width: 64,
+            height: 64,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: const RadialGradient(colors: [
+                Colors.white,
+                Color(0xFFDDE3EC),
+              ]),
+              boxShadow: const [
+                BoxShadow(color: Colors.black54, blurRadius: 8)
+              ],
+            ),
+            alignment: Alignment.center,
+            child: Text(
+              gs.result != null && gs.isFinished ? '${gs.result}' : '?',
+              style: TextStyle(
+                fontSize: 26,
+                fontWeight: FontWeight.w900,
+                color: gs.result == null
+                    ? Colors.black54
+                    : gs.result == 0
+                        ? const Color(0xFF1B8A2E)
+                        : (_redNumbers.contains(gs.result)
+                            ? const Color(0xFFD32F2F)
+                            : Colors.black),
+              ),
+            ),
+          ),
+          // Aiguille (pointeur haut)
+          Positioned(
+            top: 4,
+            child: CustomPaint(
+              size: const Size(22, 20),
+              painter: _PointerPainter(color: AppColors.neonYellow),
+            ),
+          ),
+        ]),
+      ),
     );
   }
 
@@ -338,11 +506,17 @@ class _RLTGameScreenState extends State<RLTGameScreen>
           Padding(
             padding: const EdgeInsets.only(bottom: 4),
             child: Row(children: [
-              Expanded(child: _numberCell(row * 3 + 1, myBetsByZone['n${row * 3 + 1}'] ?? 0)),
+              Expanded(
+                  child: _numberCell(
+                      row * 3 + 1, myBetsByZone['n${row * 3 + 1}'] ?? 0)),
               const SizedBox(width: 4),
-              Expanded(child: _numberCell(row * 3 + 2, myBetsByZone['n${row * 3 + 2}'] ?? 0)),
+              Expanded(
+                  child: _numberCell(
+                      row * 3 + 2, myBetsByZone['n${row * 3 + 2}'] ?? 0)),
               const SizedBox(width: 4),
-              Expanded(child: _numberCell(row * 3 + 3, myBetsByZone['n${row * 3 + 3}'] ?? 0)),
+              Expanded(
+                  child: _numberCell(
+                      row * 3 + 3, myBetsByZone['n${row * 3 + 3}'] ?? 0)),
             ]),
           ),
 
@@ -350,21 +524,33 @@ class _RLTGameScreenState extends State<RLTGameScreen>
 
         // Paris exterieurs (1-18, EVEN, RED, BLACK, ODD, 19-36)
         Row(children: [
-          Expanded(child: _outsideBet('1-18', 'low', Colors.teal, myBetsByZone['low'] ?? 0)),
+          Expanded(
+              child: _outsideBet(
+                  '1-18', 'low', Colors.teal, myBetsByZone['low'] ?? 0)),
           const SizedBox(width: 4),
-          Expanded(child: _outsideBet('PAIR', 'even', Colors.blueGrey, myBetsByZone['even'] ?? 0)),
+          Expanded(
+              child: _outsideBet(
+                  'PAIR', 'even', Colors.blueGrey, myBetsByZone['even'] ?? 0)),
         ]),
         const SizedBox(height: 4),
         Row(children: [
-          Expanded(child: _outsideBet('ROUGE', 'red', Colors.red, myBetsByZone['red'] ?? 0)),
+          Expanded(
+              child: _outsideBet(
+                  'ROUGE', 'red', Colors.red, myBetsByZone['red'] ?? 0)),
           const SizedBox(width: 4),
-          Expanded(child: _outsideBet('NOIR', 'black', Colors.black, myBetsByZone['black'] ?? 0)),
+          Expanded(
+              child: _outsideBet(
+                  'NOIR', 'black', Colors.black, myBetsByZone['black'] ?? 0)),
         ]),
         const SizedBox(height: 4),
         Row(children: [
-          Expanded(child: _outsideBet('IMPAIR', 'odd', Colors.blueGrey, myBetsByZone['odd'] ?? 0)),
+          Expanded(
+              child: _outsideBet(
+                  'IMPAIR', 'odd', Colors.blueGrey, myBetsByZone['odd'] ?? 0)),
           const SizedBox(width: 4),
-          Expanded(child: _outsideBet('19-36', 'high', Colors.orange.shade800, myBetsByZone['high'] ?? 0)),
+          Expanded(
+              child: _outsideBet('19-36', 'high', Colors.orange.shade800,
+                  myBetsByZone['high'] ?? 0)),
         ]),
 
         const SizedBox(height: 12),
@@ -424,7 +610,11 @@ class _RLTGameScreenState extends State<RLTGameScreen>
                   width: selected ? 3 : 1,
                 ),
                 boxShadow: selected
-                    ? [BoxShadow(color: AppColors.neonYellow.withValues(alpha: 0.5), blurRadius: 10)]
+                    ? [
+                        BoxShadow(
+                            color: AppColors.neonYellow.withValues(alpha: 0.5),
+                            blurRadius: 10)
+                      ]
                     : null,
               ),
               alignment: Alignment.center,
@@ -445,49 +635,96 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   // ─── Cellule numero (cliquable, avec chip si pari place) ──
   Widget _numberCell(int n, int betAmount, {bool fullWidth = false}) {
     final isRed = _redNumbers.contains(n);
-    final color = n == 0
-        ? Colors.green.shade700
+    final colors = n == 0
+        ? const [Color(0xFF1FA83A), Color(0xFF116522)]
         : isRed
-            ? Colors.red.shade700
-            : Colors.black87;
+            ? const [Color(0xFFE53935), Color(0xFF9E1B1B)]
+            : const [Color(0xFF2C3444), Color(0xFF11151E)];
+    final hasBet = betAmount > 0;
     return GestureDetector(
       onTap: _placing ? null : () => _bet('number', number: n),
       child: Stack(children: [
-        Container(
-          height: fullWidth ? 36 : 34,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: fullWidth ? 38 : 34,
           width: fullWidth ? double.infinity : null,
           decoration: BoxDecoration(
-            color: color,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: colors,
+            ),
             border: Border.all(
-                color: betAmount > 0 ? AppColors.neonYellow : Colors.white12,
-                width: betAmount > 0 ? 2 : 0.5),
-            borderRadius: BorderRadius.circular(6),
+                color: hasBet
+                    ? AppColors.neonYellow
+                    : Colors.white.withValues(alpha: 0.10),
+                width: hasBet ? 2 : 0.5),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: hasBet
+                ? [
+                    BoxShadow(
+                      color: AppColors.neonYellow.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 3,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           alignment: Alignment.center,
           child: Text('$n',
               style: const TextStyle(
                   color: Colors.white,
-                  fontWeight: FontWeight.w800,
+                  fontWeight: FontWeight.w900,
                   fontSize: 13)),
         ),
-        if (betAmount > 0) _chipBadge(betAmount),
+        if (hasBet) _chipBadge(betAmount),
       ]),
     );
   }
 
   // ─── Pari exterieur (zone large) ──────────────────────────
   Widget _outsideBet(String label, String type, Color color, int betAmount) {
+    final hasBet = betAmount > 0;
     return GestureDetector(
       onTap: _placing ? null : () => _bet(type),
       child: Stack(children: [
-        Container(
-          height: 42,
+        AnimatedContainer(
+          duration: const Duration(milliseconds: 160),
+          height: 44,
           decoration: BoxDecoration(
-            color: color,
+            gradient: LinearGradient(
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+              colors: [
+                color,
+                Color.lerp(color, Colors.black, 0.35) ?? color,
+              ],
+            ),
             border: Border.all(
-                color: betAmount > 0 ? AppColors.neonYellow : Colors.white12,
-                width: betAmount > 0 ? 2 : 0.5),
-            borderRadius: BorderRadius.circular(8),
+                color: hasBet
+                    ? AppColors.neonYellow
+                    : Colors.white.withValues(alpha: 0.12),
+                width: hasBet ? 2 : 0.5),
+            borderRadius: BorderRadius.circular(10),
+            boxShadow: hasBet
+                ? [
+                    BoxShadow(
+                      color: AppColors.neonYellow.withValues(alpha: 0.4),
+                      blurRadius: 10,
+                    ),
+                  ]
+                : [
+                    BoxShadow(
+                      color: Colors.black.withValues(alpha: 0.3),
+                      blurRadius: 4,
+                      offset: const Offset(0, 2),
+                    ),
+                  ],
           ),
           alignment: Alignment.center,
           child: Text(label,
@@ -497,7 +734,7 @@ class _RLTGameScreenState extends State<RLTGameScreen>
                   fontSize: 13,
                   letterSpacing: 0.5)),
         ),
-        if (betAmount > 0) _chipBadge(betAmount),
+        if (hasBet) _chipBadge(betAmount),
       ]),
     );
   }
@@ -525,25 +762,56 @@ class _RLTGameScreenState extends State<RLTGameScreen>
 
   // ─── Bouton spin ──────────────────────────────────────────
   Widget _buildSpinButton(int myTotalBet) {
+    final enabled = !(_spinning || myTotalBet == 0);
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
-      child: SizedBox(
-        width: double.infinity,
-        height: 50,
-        child: ElevatedButton.icon(
-          onPressed: (_spinning || myTotalBet == 0) ? null : _spinWheel,
-          icon: const Icon(Icons.casino, size: 22),
-          label: Text(
-            myTotalBet == 0 ? 'Place au moins 1 pari' : 'LANCER LA ROUE',
-            style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 15),
-          ),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: myTotalBet == 0
-                ? Colors.grey.shade700
-                : Colors.orange.shade700,
-            foregroundColor: Colors.white,
-            shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(14)),
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: enabled ? 1 : 0.6,
+        child: GestureDetector(
+          onTap: enabled ? _spinWheel : null,
+          child: Container(
+            width: double.infinity,
+            height: 52,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(16),
+              gradient: enabled
+                  ? const LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [Color(0xFFFFB300), Color(0xFFFF6D00)],
+                    )
+                  : null,
+              color: enabled ? null : Colors.white.withValues(alpha: 0.10),
+              boxShadow: enabled
+                  ? [
+                      BoxShadow(
+                        color: AppColors.neonOrange.withValues(alpha: 0.5),
+                        blurRadius: 18,
+                        spreadRadius: 1,
+                      ),
+                    ]
+                  : null,
+            ),
+            alignment: Alignment.center,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.casino,
+                    size: 22,
+                    color: enabled ? Colors.white : Colors.white54),
+                const SizedBox(width: 8),
+                Text(
+                  myTotalBet == 0 ? 'Place au moins 1 pari' : 'LANCER LA ROUE',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w900,
+                    fontSize: 15,
+                    letterSpacing: 0.5,
+                    color: enabled ? Colors.white : Colors.white54,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -554,41 +822,77 @@ class _RLTGameScreenState extends State<RLTGameScreen>
   Widget _buildResultBanner(RouletteGameState gs) {
     final myPlayer = gs.players[_myId];
     final won = myPlayer?.winnings != null && myPlayer!.winnings! > 0;
-    return Container(
-      padding: const EdgeInsets.all(20),
-      margin: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: won
-            ? AppColors.neonGreen.withValues(alpha: 0.2)
-            : Colors.red.withValues(alpha: 0.2),
-        borderRadius: BorderRadius.circular(20),
-      ),
-      child: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text(won ? '🎉 Gagné !' : '😔 Perdu',
-            style: TextStyle(
-                color: won ? AppColors.neonGreen : Colors.redAccent,
-                fontSize: 24,
-                fontWeight: FontWeight.w900)),
-        const SizedBox(height: 8),
-        if (won)
-          Text(
-            // 90% du gain brut (apres 10% maison)
-            '+${(myPlayer!.winnings! * 0.9).floor()} FCFA',
-            style: TextStyle(
-                color: AppColors.neonYellow,
-                fontSize: 28,
-                fontWeight: FontWeight.w900),
+    final accent = won ? AppColors.neonGreen : AppColors.neonRed;
+    return Center(
+      child: TweenAnimationBuilder<double>(
+        tween: Tween(begin: 0.9, end: 1.0),
+        duration: const Duration(milliseconds: 320),
+        curve: Curves.easeOutBack,
+        builder: (context, scale, child) =>
+            Transform.scale(scale: scale, child: child),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          margin: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                const Color(0xFF0E1A2E).withValues(alpha: 0.95),
+                accent.withValues(alpha: 0.18),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(22),
+            border: Border.all(color: accent.withValues(alpha: 0.5), width: 2),
+            boxShadow: [
+              BoxShadow(
+                  color: accent.withValues(alpha: 0.35),
+                  blurRadius: 28,
+                  spreadRadius: 3),
+            ],
           ),
-        const SizedBox(height: 12),
-        Text('Numéro tiré : ${gs.result}',
-            style: const TextStyle(color: Colors.white70, fontSize: 14)),
-      ]),
+          child: Column(mainAxisSize: MainAxisSize.min, children: [
+            Text(won ? '🎉 Gagné !' : '😔 Perdu',
+                style: TextStyle(
+                    color: accent,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(
+                          color: accent.withValues(alpha: 0.6), blurRadius: 14),
+                    ])),
+            const SizedBox(height: 8),
+            if (won)
+              Text(
+                // 90% du gain brut (apres 10% maison)
+                '+${(myPlayer!.winnings! * 0.9).floor()} FCFA',
+                style: TextStyle(
+                    color: AppColors.neonYellow,
+                    fontSize: 28,
+                    fontWeight: FontWeight.w900),
+              ),
+            const SizedBox(height: 12),
+            Container(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.black.withValues(alpha: 0.35),
+                borderRadius: BorderRadius.circular(30),
+              ),
+              child: Text('Numéro tiré : ${gs.result}',
+                  style: const TextStyle(color: Colors.white70, fontSize: 14)),
+            ),
+          ]),
+        ),
+      ),
     );
   }
 
   // ─── Dialog fin de partie ─────────────────────────────────
   void _showResult() {
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
+    try {
+      context.read<WalletProvider>().refresh();
+    } catch (_) {}
     showDialog(
       context: context,
       barrierDismissible: false,
@@ -600,7 +904,8 @@ class _RLTGameScreenState extends State<RLTGameScreen>
           onPopInvokedWithResult: (_, __) => autoTimer.cancel(),
           child: AlertDialog(
             backgroundColor: AppColors.bgCard,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Text('Résultat: ${_game?.gameState.result ?? "?"}',
                 style: TextStyle(color: AppColors.neonYellow)),
             content: Text(AppLocalizations.of(context)!.gameNextRound,
@@ -627,20 +932,115 @@ class _RLTGameScreenState extends State<RLTGameScreen>
     try {
       final r = await _svc.autoContinue(widget.gameId);
       if (!mounted) return;
-      try { Navigator.pop(ctx); } catch (_) {}
+      try {
+        Navigator.pop(ctx);
+      } catch (_) {}
       if (r == 'ended') {
         Navigator.pop(context);
       } else {
-        try { context.read<WalletProvider>().refresh(); } catch (_) {}
+        try {
+          context.read<WalletProvider>().refresh();
+        } catch (_) {}
         _game = await _svc.getGame(widget.gameId);
         _wheelAngle = 0;
         if (mounted) setState(() {});
       }
     } catch (_) {
       if (mounted) {
-        try { Navigator.pop(ctx); } catch (_) {}
+        try {
+          Navigator.pop(ctx);
+        } catch (_) {}
         Navigator.pop(context);
       }
     }
   }
+}
+
+// ─── Aiguille (pointeur) de la roue ─────────────────────────
+class _PointerPainter extends CustomPainter {
+  final Color color;
+  const _PointerPainter({required this.color});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..style = PaintingStyle.fill;
+    final path = Path()
+      ..moveTo(size.width / 2, size.height) // pointe vers le bas (centre roue)
+      ..lineTo(0, 0)
+      ..lineTo(size.width, 0)
+      ..close();
+    // Ombre douce pour le relief
+    canvas.drawShadow(path, Colors.black.withValues(alpha: 0.6), 3, false);
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(covariant _PointerPainter oldDelegate) =>
+      oldDelegate.color != color;
+}
+
+// ─── Jante metallique doree 3D de la roulette (fixe) ────────
+class _RouletteRimPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2;
+    final rimMid = r * 0.94;
+    final rimW = r * 0.11;
+
+    // Corps de la jante : degrade vertical (lumiere haut / ombre bas) → 3D
+    canvas.drawCircle(
+      center,
+      rimMid,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = rimW
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFFFFF3C4),
+            Color(0xFFE8C05A),
+            Color(0xFFB07A00),
+            Color(0xFF4A3000),
+          ],
+          stops: [0, 0.35, 0.7, 1],
+        ).createShader(Rect.fromCircle(center: center, radius: rimMid)),
+    );
+    // Aretes sombres
+    final edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1
+      ..color = const Color(0xFF2A1B00);
+    canvas.drawCircle(center, rimMid + rimW / 2, edge);
+    canvas.drawCircle(center, rimMid - rimW / 2, edge);
+    // Reflet haut
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: rimMid),
+      -pi * 0.85,
+      pi * 0.7,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = rimW * 0.35
+        ..strokeCap = StrokeCap.round
+        ..color = Colors.white.withValues(alpha: 0.45)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+    // Studs (rivets dores)
+    for (int i = 0; i < 16; i++) {
+      final a = -pi / 2 + i * 2 * pi / 16;
+      final pos = Offset(
+          center.dx + rimMid * cos(a), center.dy + rimMid * sin(a));
+      canvas.drawCircle(
+          pos, 2.4, Paint()..color = const Color(0xFF3A2400));
+      canvas.drawCircle(
+          pos, 1.6, Paint()..color = const Color(0xFFFFE9A8));
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter old) => false;
 }

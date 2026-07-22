@@ -61,7 +61,7 @@ const List<GameModel> kInitialGamesCatalog = [
     category: GameCategory.sport,
     provider: GameProvider.poki,
     embedUrl: 'https://poki.com/fr/g/penalty-shooters-2',
-    thumbnailAsset: 'assets/games/penalty_shooters_2.png',
+    thumbnailAsset: 'assets/games/penalty_shooters_2.jpg',
     entryPriceCoins: 50,
     sessionDurationMinutes: 5,
     featured: true,

@@ -131,36 +131,66 @@ class DiceAnimationWidget extends StatelessWidget {
             width: 80,
             height: 80,
             decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
+              gradient: const RadialGradient(
+                center: Alignment(-0.45, -0.5),
+                radius: 1.1,
                 colors: [
-                  Colors.white,
-                  Colors.grey.shade300,
+                  Color(0xFFFFFFFF),
+                  Color(0xFFF3F0E8),
+                  Color(0xFFCFC9BC),
                 ],
+                stops: [0, 0.55, 1],
               ),
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(18),
               border: Border.all(
                 color: isCora
                     ? AppColors.neonGreen
                     : isSeven
                         ? AppColors.neonRed
-                        : Colors.grey.shade400,
+                        : const Color(0xFFB8B0A0),
                 width: 3,
               ),
               boxShadow: [
+                // Halo d'etat (Cora/7) ou ombre portee
                 BoxShadow(
                   color: isCora
                       ? AppColors.neonGreen.withValues(alpha: 0.5)
                       : isSeven
                           ? AppColors.neonRed.withValues(alpha: 0.5)
-                          : Colors.black.withValues(alpha: 0.3),
-                  blurRadius: isCora || isSeven ? 20 : 10,
-                  spreadRadius: isCora || isSeven ? 5 : 2,
+                          : Colors.black.withValues(alpha: 0.45),
+                  blurRadius: isCora || isSeven ? 22 : 12,
+                  spreadRadius: isCora || isSeven ? 4 : 1,
+                  offset: isCora || isSeven
+                      ? Offset.zero
+                      : const Offset(0, 6),
                 ),
               ],
             ),
-            child: _buildDots(value),
+            child: Stack(
+              children: [
+                Positioned.fill(child: _buildDots(value)),
+                // Biseau : reflet clair en haut, ombre en bas (relief cube)
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        borderRadius: BorderRadius.circular(15),
+                        gradient: LinearGradient(
+                          begin: Alignment.topCenter,
+                          end: Alignment.bottomCenter,
+                          colors: [
+                            Colors.white.withValues(alpha: 0.5),
+                            Colors.white.withValues(alpha: 0.0),
+                            Colors.black.withValues(alpha: 0.10),
+                          ],
+                          stops: const [0.0, 0.35, 1.0],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         );
       },
@@ -184,13 +214,28 @@ class DiceAnimationWidget extends StatelessWidget {
               width: dotSize,
               height: dotSize,
               decoration: BoxDecoration(
-                color: dotColor,
                 shape: BoxShape.circle,
+                // Bille bombée (relief) : reflet haut-gauche → cœur → base sombre
+                gradient: RadialGradient(
+                  center: const Alignment(-0.4, -0.4),
+                  colors: [
+                    Color.lerp(dotColor, Colors.white, 0.55)!,
+                    dotColor,
+                    Color.lerp(dotColor, Colors.black, 0.45)!,
+                  ],
+                  stops: const [0, 0.5, 1],
+                ),
                 boxShadow: [
                   BoxShadow(
-                    color: dotColor.withValues(alpha: 0.3),
-                    blurRadius: 4,
+                    color: Colors.black.withValues(alpha: 0.35),
+                    blurRadius: 2,
+                    offset: const Offset(0, 1),
                   ),
+                  if (isCora || isSeven)
+                    BoxShadow(
+                      color: dotColor.withValues(alpha: 0.5),
+                      blurRadius: 5,
+                    ),
                 ],
               ),
             );

@@ -6,12 +6,17 @@
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import '../l10n/generated/app_localizations.dart';
-import '../theme/app_theme.dart';
+import '../theme/app_icons.dart';
 import '../app_version.dart';
 
 /// Callback de progression : recoit une valeur entre 0.0 et 1.0.
 /// La barre s'anime de maniere lisse vers cette valeur via animateTo.
 typedef SplashProgress = void Function(double value);
+
+/// Le splash peint toujours sur un fond sombre : son accent ne peut pas
+/// être `AppColors.neonGreen`, qui vire au vert profond quand le thème
+/// clair est actif. On fige le néon ici.
+const Color _kSplashAccent = Color(0xFF00E676);
 
 class SplashScreen extends StatefulWidget {
   /// `onInit` recoit un callback `progress` a appeler aux differentes etapes
@@ -234,7 +239,7 @@ class _SplashScreenState extends State<SplashScreen>
                                 shape: BoxShape.circle,
                                 gradient: RadialGradient(
                                   colors: [
-                                    AppColors.neonGreen
+                                    _kSplashAccent
                                         .withValues(alpha: _glow.value * 0.4),
                                     Colors.transparent,
                                   ],
@@ -259,10 +264,10 @@ class _SplashScreenState extends State<SplashScreen>
                                     height: 8,
                                     decoration: BoxDecoration(
                                       shape: BoxShape.circle,
-                                      color: AppColors.neonGreen,
+                                      color: _kSplashAccent,
                                       boxShadow: [
                                         BoxShadow(
-                                          color: AppColors.neonGreen
+                                          color: _kSplashAccent
                                               .withValues(alpha: 0.8),
                                           blurRadius: 10,
                                           spreadRadius: 2,
@@ -285,7 +290,7 @@ class _SplashScreenState extends State<SplashScreen>
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
                                     border: Border.all(
-                                      color: AppColors.neonGreen
+                                      color: _kSplashAccent
                                           .withValues(alpha: 0.3),
                                       width: 1,
                                     ),
@@ -313,13 +318,13 @@ class _SplashScreenState extends State<SplashScreen>
                                       ],
                                     ),
                                     border: Border.all(
-                                      color: AppColors.neonGreen
+                                      color: _kSplashAccent
                                           .withValues(alpha: 0.8),
                                       width: 2.5,
                                     ),
                                     boxShadow: [
                                       BoxShadow(
-                                        color: AppColors.neonGreen
+                                        color: _kSplashAccent
                                             .withValues(alpha: 0.5),
                                         blurRadius: 25,
                                         spreadRadius: 3,
@@ -327,9 +332,9 @@ class _SplashScreenState extends State<SplashScreen>
                                     ],
                                   ),
                                   child: Icon(
-                                    Icons.sports_soccer,
+                                    AppIcons.football,
                                     size: 54,
-                                    color: AppColors.neonGreen,
+                                    color: _kSplashAccent,
                                   ),
                                 ),
                               ),
@@ -373,10 +378,10 @@ class _SplashScreenState extends State<SplashScreen>
                             padding: const EdgeInsets.symmetric(
                                 horizontal: 14, vertical: 4),
                             decoration: BoxDecoration(
-                              color: AppColors.neonGreen.withValues(alpha: 0.12),
+                              color: _kSplashAccent.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(20),
                               border: Border.all(
-                                color: AppColors.neonGreen.withValues(alpha: 0.3),
+                                color: _kSplashAccent.withValues(alpha: 0.3),
                                 width: 1,
                               ),
                             ),
@@ -388,10 +393,10 @@ class _SplashScreenState extends State<SplashScreen>
                                   height: 6,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: AppColors.neonGreen,
+                                    color: _kSplashAccent,
                                     boxShadow: [
                                       BoxShadow(
-                                        color: AppColors.neonGreen,
+                                        color: _kSplashAccent,
                                         blurRadius: 8,
                                       ),
                                     ],
@@ -403,7 +408,7 @@ class _SplashScreenState extends State<SplashScreen>
                                   style: TextStyle(
                                     fontSize: 11,
                                     fontWeight: FontWeight.w800,
-                                    color: AppColors.neonGreen,
+                                    color: _kSplashAccent,
                                     letterSpacing: 2.5,
                                   ),
                                 ),
@@ -444,14 +449,14 @@ class _SplashScreenState extends State<SplashScreen>
                                         borderRadius: BorderRadius.circular(4),
                                         gradient: LinearGradient(
                                           colors: [
-                                            AppColors.neonGreen
+                                            _kSplashAccent
                                                 .withValues(alpha: 0.8),
-                                            AppColors.neonGreen,
+                                            _kSplashAccent,
                                           ],
                                         ),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: AppColors.neonGreen
+                                            color: _kSplashAccent
                                                 .withValues(alpha: 0.6),
                                             blurRadius: 10,
                                             offset: const Offset(0, 0),
@@ -545,7 +550,7 @@ class _BgGridPainter extends CustomPainter {
     // 3 cercles concentriques tres discrets
     for (int i = 1; i <= 3; i++) {
       final paint = Paint()
-        ..color = AppColors.neonGreen.withValues(alpha: 0.04 / i)
+        ..color = _kSplashAccent.withValues(alpha: 0.04 / i)
         ..strokeWidth = 1
         ..style = PaintingStyle.stroke;
       canvas.drawCircle(center, 120.0 * i, paint);

@@ -7,15 +7,16 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../services/audio_service.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/network_lost_overlay.dart';
 import '../models/ludo_models.dart';
 import '../providers/ludo_provider.dart';
 import '../widgets/ludo_flame_widget.dart';
 import '../widgets/ludo_dice_widget.dart';
 import '../widgets/ludo_chat_widget.dart';
 import '../game/ludo_board_colors.dart';
-import '../services/audio_service.dart';
 import '../services/vibration_service.dart';
 
 class LudoGameScreen extends StatefulWidget {
@@ -49,7 +50,13 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
   @override
   void initState() {
     super.initState();
+    AudioService.instance.configureGame('ludo');
+    _initAudio();
     _loadGame();
+  }
+
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('ludo');
     AudioService.instance.startBackgroundMusic();
   }
 
@@ -91,8 +98,10 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: AppColors.bgDark,
+    return NetworkLostOverlay(
+      onRetry: _loadGame,
+      child: Scaffold(
+        backgroundColor: AppColors.bgDark,
       appBar: AppBar(
         backgroundColor: AppColors.bgBlueNight,
         title: Text('Ludo'),
@@ -149,7 +158,8 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
           if (isMyTurn != _lastKnownIsMyTurn) {
             _lastKnownIsMyTurn = isMyTurn;
             if (isMyTurn) {
-              WidgetsBinding.instance.addPostFrameCallback((_) => _startTurnTimer());
+              WidgetsBinding.instance
+                  .addPostFrameCallback((_) => _startTurnTimer());
             } else {
               _turnTimer?.cancel();
             }
@@ -171,8 +181,10 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
           final isPlayer1 = myId == game.player1;
           final myName = isPlayer1 ? _player1Name : _player2Name;
           final oppName = isPlayer1 ? _player2Name : _player1Name;
-          final myColor = isPlayer1 ? LudoBoardColors.red : LudoBoardColors.blue;
-          final oppColor = isPlayer1 ? LudoBoardColors.blue : LudoBoardColors.red;
+          final myColor =
+              isPlayer1 ? LudoBoardColors.red : LudoBoardColors.blue;
+          final oppColor =
+              isPlayer1 ? LudoBoardColors.blue : LudoBoardColors.red;
 
           return Container(
             decoration: BoxDecoration(gradient: AppColors.bgGradient),
@@ -200,13 +212,14 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
                 ),
 
                 // Barre du bas : [You] [Dice] [Com]
-                _buildBottomBar(ludo, game, myId, isMyTurn, myName, oppName, myColor, oppColor),
+                _buildBottomBar(ludo, game, myId, isMyTurn, myName, oppName,
+                    myColor, oppColor),
               ],
             ),
           );
         },
       ),
-    );
+    ));
   }
 
   Widget _buildStatusMessage(bool isMyTurn) {
@@ -235,8 +248,10 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
             Padding(
               padding: EdgeInsets.only(right: 8),
               child: SizedBox(
-                width: 12, height: 12,
-                child: CircularProgressIndicator(strokeWidth: 1.5, color: color),
+                width: 12,
+                height: 12,
+                child:
+                    CircularProgressIndicator(strokeWidth: 1.5, color: color),
               ),
             ),
           Text(text,
@@ -297,7 +312,8 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
                     value: _diceValue,
                     isRolling: _isRolling,
                     enabled: isMyTurn && !_hasRolled && !_isRolling,
-                    onTap: isMyTurn && !_hasRolled ? () => _rollDice(ludo) : null,
+                    onTap:
+                        isMyTurn && !_hasRolled ? () => _rollDice(ludo) : null,
                   ),
                 ),
 
@@ -338,7 +354,8 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
     );
   }
 
-  Widget _playerBottomChip(String label, Color color, {required bool isActive}) {
+  Widget _playerBottomChip(String label, Color color,
+      {required bool isActive}) {
     return Container(
       padding: EdgeInsets.symmetric(horizontal: 12, vertical: 10),
       decoration: BoxDecoration(
@@ -385,7 +402,10 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
     if (!mounted) return;
     setState(() => _turnCountdown = _turnSeconds);
     _turnTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       setState(() => _turnCountdown--);
       if (_turnCountdown <= 0) {
         t.cancel();
@@ -426,7 +446,10 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
         validPawns.add(i);
       }
     }
-    if (validPawns.isEmpty) { _skipTurn(ludo); return; }
+    if (validPawns.isEmpty) {
+      _skipTurn(ludo);
+      return;
+    }
 
     // Biais 65% vers un pion sous-optimal (ordre inversé = moins avancé)
     final rng = Random();
@@ -510,7 +533,8 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
     if (game == null || myId == null || _diceValue == null) return;
 
     final opponentIds = game.opponentsOf(myId);
-    final moveResult = game.gameState.applyMove(myId, pawnIndex, _diceValue!, opponentIds);
+    final moveResult =
+        game.gameState.applyMove(myId, pawnIndex, _diceValue!, opponentIds);
 
     final success = await ludo.makeMove(pawnIndex, _diceValue!);
 
@@ -653,8 +677,8 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
               Navigator.pop(ctx);
               _syncErrorCount = 0;
             },
-            child: Text('Reessayer',
-                style: TextStyle(color: AppColors.neonGreen)),
+            child:
+                Text('Reessayer', style: TextStyle(color: AppColors.neonGreen)),
           ),
           ElevatedButton(
             onPressed: () async {
@@ -764,14 +788,12 @@ class _LudoGameScreenState extends State<LudoGameScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Quitter la partie ?',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: Text(
-            'Si vous quittez, vous perdrez la partie et votre mise.',
+        content: Text('Si vous quittez, vous perdrez la partie et votre mise.',
             style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Rester',
-                style: TextStyle(color: AppColors.neonGreen)),
+            child: Text('Rester', style: TextStyle(color: AppColors.neonGreen)),
           ),
           ElevatedButton(
             onPressed: () async {

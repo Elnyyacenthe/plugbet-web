@@ -3,7 +3,9 @@
 // ============================================================
 import 'dart:async';
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
+import '../../../services/audio_service.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:uuid/uuid.dart';
@@ -18,11 +20,13 @@ import '../models/checkers_models.dart';
 import '../game/checkers_logic.dart';
 import '../services/checkers_service.dart';
 import '../../../widgets/connectivity_banner.dart';
+import '../../../widgets/network_lost_overlay.dart';
 
 class CheckersGameScreen extends StatefulWidget {
   final CheckersRoom room;
   final PieceColor myColor;
-  const CheckersGameScreen({super.key, required this.room, required this.myColor});
+  const CheckersGameScreen(
+      {super.key, required this.room, required this.myColor});
 
   /// [A2] Garde anti-empilement : vrai tant qu'un écran de partie
   /// Checkers est monté. La reprise de session (main.dart) ne
@@ -46,7 +50,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   // partie et JAMAIS ré-armé : empêche forfait + game-over realtime
   // concurrents de re-déclencher distributeWinnings / re-rentrer.
   bool _endInFlight = false;
-  bool _moving = false;  // verrou anti double-clic pendant l'attente serveur
+  bool _moving = false; // verrou anti double-clic pendant l'attente serveur
   BoardPos? _serverJumpFrom; // multi-capture en cours (envoyé par serveur)
   bool _reconnecting = false; // true pendant retry reseau
   DateTime? _opponentTurnStartedAt; // pour anti-AFK adversaire
@@ -75,8 +79,9 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   @override
   void initState() {
     super.initState();
-    CheckersGameScreen.isOnScreen = true;            // [A2]
-    WidgetsBinding.instance.addObserver(this);        // [A1]
+    _initAudio();
+    CheckersGameScreen.isOnScreen = true; // [A2]
+    WidgetsBinding.instance.addObserver(this); // [A1]
     _gameState = CheckersGameState.initial();
     _pulseCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 700))
@@ -84,8 +89,12 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     _updateTurn();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
-        try { context.read<LiveScoreManager>().pauseTracking(); } catch (_) {}
+        try {
+          context.read<MatchesProvider>().pausePolling();
+        } catch (_) {}
+        try {
+          context.read<LiveScoreManager>().pauseTracking();
+        } catch (_) {}
       }
     });
 
@@ -93,7 +102,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     if (!widget.room.isAI && widget.room.guestId != null) {
       _service.subscribeToRoom(widget.room.id, _handleRemoteRoomUpdate);
       // Fallback polling toutes les 2s au cas ou le realtime ne livre pas
-      _pollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
+      _pollTimer =
+          Timer.periodic(const Duration(milliseconds: 1500), (_) async {
         if (!mounted || _gameOver) return;
         final fresh = await _service.getRoom(widget.room.id);
         if (fresh != null) _handleRemoteRoomUpdate(fresh);
@@ -101,10 +111,24 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     }
   }
 
+  Future<void> _refetchRoom() async {
+    if (!mounted || _gameOver) return;
+    try {
+      final fresh = await _service.getRoom(widget.room.id);
+      if (fresh != null) _handleRemoteRoomUpdate(fresh);
+    } catch (_) {}
+  }
+
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('checkers');
+    AudioService.instance.startBackgroundMusic();
+  }
+
   bool _boardEqual(List<List<CheckerPiece?>> a, List<List<CheckerPiece?>> b) {
     for (int r = 0; r < 8; r++) {
       for (int c = 0; c < 8; c++) {
-        final pa = a[r][c]; final pb = b[r][c];
+        final pa = a[r][c];
+        final pb = b[r][c];
         if (pa == null && pb == null) continue;
         if (pa == null || pb == null) return false;
         if (pa.color != pb.color || pa.type != pb.type) return false;
@@ -124,7 +148,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     final boardChanged = !_boardEqual(state.board, _gameState.board);
     final gameOverChanged = state.isGameOver != _gameState.isGameOver;
     final jumpChanged = _serverJumpFrom != jumpFrom;
-    final realChange = turnChanged || boardChanged || gameOverChanged || jumpChanged;
+    final realChange =
+        turnChanged || boardChanged || gameOverChanged || jumpChanged;
 
     if (!realChange) {
       // Polling tick sans changement : ne PAS toucher au selected/timer
@@ -137,8 +162,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       _moving = false;
       if (jumpFrom != null && isMyTurn) {
         _selected = jumpFrom;
-        _possibleMoves = CheckersLogic.getLegalMoves(state.board, widget.myColor)
-            .where((m) => m.from == jumpFrom).toList();
+        _possibleMoves =
+            CheckersLogic.getLegalMoves(state.board, widget.myColor)
+                .where((m) => m.from == jumpFrom)
+                .toList();
       } else if (turnChanged || boardChanged) {
         // Tour a change ou board a change : reset selection
         _selected = null;
@@ -160,6 +187,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     }
 
     if (state.isGameOver && !_gameOver) {
+      AudioService.instance.playWin();
       _handleGameOver(state);
     }
   }
@@ -176,7 +204,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     _turnTimer?.cancel();
     setState(() => _turnCountdown = _turnSeconds);
     _turnTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       setState(() => _turnCountdown--);
       if (_turnCountdown <= 0) {
         t.cancel();
@@ -187,10 +218,11 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
 
   Future<void> _onTurnTimeout() async {
     if (_gameOver || _gameState.isGameOver) return;
-    if (!_myTurn) return;  // jamais agir pour l'autre joueur
-    if (_moving) return;   // un move est deja en cours d'envoi
+    if (!_myTurn) return; // jamais agir pour l'autre joueur
+    if (_moving) return; // un move est deja en cours d'envoi
 
-    var legalMoves = CheckersLogic.getLegalMoves(_gameState.board, widget.myColor);
+    var legalMoves =
+        CheckersLogic.getLegalMoves(_gameState.board, widget.myColor);
     if (_serverJumpFrom != null) {
       legalMoves = legalMoves.where((m) => m.from == _serverJumpFrom).toList();
     }
@@ -222,16 +254,18 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   }
 
   Future<void> _handleForfeit() async {
-    if (_endInFlight || _gameOver) return;   // [A3]
-    _endInFlight = true;                      // [A3] jamais ré-armé
+    if (_endInFlight || _gameOver) return; // [A3]
+    _endInFlight = true; // [A3] jamais ré-armé
     _gameOver = true;
     _turnTimer?.cancel();
     final isMultiplayer = !widget.room.isAI && widget.room.guestId != null;
 
     if (isMultiplayer) {
       final myId = _service.currentUserId ?? '';
-      final winnerId = myId == widget.room.hostId ? widget.room.guestId : widget.room.hostId;
-      final opponentColor = widget.myColor == PieceColor.red ? PieceColor.black : PieceColor.red;
+      final winnerId =
+          myId == widget.room.hostId ? widget.room.guestId : widget.room.hostId;
+      final opponentColor =
+          widget.myColor == PieceColor.red ? PieceColor.black : PieceColor.red;
       final forfeitState = CheckersGameState(
         board: _gameState.board,
         currentTurn: _gameState.currentTurn,
@@ -274,26 +308,31 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       }
     }
 
-    try { await context.read<WalletProvider>().refresh(); } catch (_) {} // [A7] solde à jour avant l'écran de fin
+    try {
+      await context.read<WalletProvider>().refresh();
+    } catch (_) {} // [A7] solde à jour avant l'écran de fin
     try {
       context.read<PlayerProvider>().recordGameResult(
-        gameType: 'checkers',
-        result: 'loss',
-        coinsChange: -widget.room.betAmount,
-        isPractice: widget.room.isAI,
-        opponentName: widget.room.guestUsername ?? 'IA',
-      );
+            gameType: 'checkers',
+            result: 'loss',
+            coinsChange: -widget.room.betAmount,
+            isPractice: widget.room.isAI,
+            opponentName: widget.room.guestUsername ?? 'IA',
+          );
     } catch (_) {}
     if (mounted) {
       showDialog(
         context: context,
         barrierDismissible: false,
         builder: (_) => _GameOverDialog(
-          isWin: false, isDraw: false, prize: 0,
+          isWin: false,
+          isDraw: false,
+          prize: 0,
           onBack: () {
-            Navigator.of(context).pop();            // ferme le dialog
-            if (Navigator.of(context).canPop()) {   // [A11] anti over-pop / écran figé
-              Navigator.of(context).pop();          // quitte l'écran de jeu
+            Navigator.of(context).pop(); // ferme le dialog
+            if (Navigator.of(context).canPop()) {
+              // [A11] anti over-pop / écran figé
+              Navigator.of(context).pop(); // quitte l'écran de jeu
             }
           },
         ),
@@ -307,7 +346,7 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
 
   void _onCellTap(int row, int col) {
     if (!_myTurn || _gameState.isGameOver) return;
-    if (_moving) return;  // serveur en cours de validation, ignore les taps
+    if (_moving) return; // serveur en cours de validation, ignore les taps
     final piece = _gameState.board[row][col];
     final tappedPos = BoardPos(row, col);
 
@@ -323,7 +362,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     if (_selected == null) {
       if (piece?.color == widget.myColor) {
         final legal = _legalMovesFromHere(tappedPos);
-        setState(() { _selected = tappedPos; _possibleMoves = legal; });
+        setState(() {
+          _selected = tappedPos;
+          _possibleMoves = legal;
+        });
       }
     } else {
       final move = _possibleMoves.firstWhere(
@@ -336,9 +378,15 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         _applyMove(move);
       } else if (piece?.color == widget.myColor) {
         final legal = _legalMovesFromHere(tappedPos);
-        setState(() { _selected = tappedPos; _possibleMoves = legal; });
+        setState(() {
+          _selected = tappedPos;
+          _possibleMoves = legal;
+        });
       } else {
-        setState(() { _selected = null; _possibleMoves = []; });
+        setState(() {
+          _selected = null;
+          _possibleMoves = [];
+        });
       }
     }
   }
@@ -348,11 +396,21 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   void _startAfkCheck() {
     _afkCheckTimer?.cancel();
     _afkCheckTimer = Timer.periodic(const Duration(seconds: 1), (t) async {
-      if (!mounted || _gameOver || _gameState.isGameOver) { t.cancel(); return; }
-      if (_opponentTurnStartedAt == null) { t.cancel(); return; }
+      if (!mounted || _gameOver || _gameState.isGameOver) {
+        t.cancel();
+        return;
+      }
+      if (_opponentTurnStartedAt == null) {
+        t.cancel();
+        return;
+      }
       final isMyTurn = _gameState.currentTurn == widget.myColor;
-      if (isMyTurn) { t.cancel(); return; }
-      final elapsed = DateTime.now().difference(_opponentTurnStartedAt!).inSeconds;
+      if (isMyTurn) {
+        t.cancel();
+        return;
+      }
+      final elapsed =
+          DateTime.now().difference(_opponentTurnStartedAt!).inSeconds;
       if (elapsed >= _idleClaimSeconds && !_claimingIdle) {
         t.cancel();
         await _claimIdleWin();
@@ -380,8 +438,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   // Affiche un indicateur 'reconnexion' pendant les retries.
   // Echoue uniquement si > 2 min sans reseau.
   Future<Map<String, dynamic>> _playMoveWithRetry({
-    required int fromRow, required int fromCol,
-    required int toRow, required int toCol,
+    required int fromRow,
+    required int fromCol,
+    required int toRow,
+    required int toCol,
   }) async {
     // S19 : un seul requestId pour tout le retry. L'idempotence serveur
     // (checkers_play_move via p_request_id) detecte les retries et ne
@@ -392,8 +452,10 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       try {
         final r = await _service.playMove(
           roomId: widget.room.id,
-          fromRow: fromRow, fromCol: fromCol,
-          toRow: toRow, toCol: toCol,
+          fromRow: fromRow,
+          fromCol: fromCol,
+          toRow: toRow,
+          toCol: toCol,
           requestId: reqId,
         );
         if (_reconnecting && mounted) {
@@ -402,11 +464,11 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         return r;
       } catch (e) {
         final msg = e.toString();
-        final isNetwork = msg.contains('SocketException')
-            || msg.contains('Failed host lookup')
-            || msg.contains('Network is unreachable')
-            || msg.contains('Connection timed out')
-            || msg.contains('Connection failed');
+        final isNetwork = msg.contains('SocketException') ||
+            msg.contains('Failed host lookup') ||
+            msg.contains('Network is unreachable') ||
+            msg.contains('Connection timed out') ||
+            msg.contains('Connection failed');
         if (!isNetwork) rethrow; // erreur metier serveur -> remonte
         if (mounted && !_reconnecting) {
           setState(() => _reconnecting = true);
@@ -431,30 +493,38 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   }
 
   Future<void> _applyMove(CheckerMove move) async {
-    if (_moving) return;  // anti double-click serveur-authoritative
+    if (_moving) return; // anti double-click serveur-authoritative
 
     if (widget.room.isAI || widget.room.guestId == null) {
       // Mode AI/solo : le moteur reste local (pas d'argent reel impacte
       // par le multi-joueur). Le moteur SQL ne gere que le multi.
       final newState = CheckersLogic.applyMove(_gameState, move);
+      AudioService.instance.playPieceMove();
       setState(() {
         _gameState = newState;
         _selected = null;
         _possibleMoves = [];
       });
       _updateTurn();
-      if (newState.isGameOver) _handleGameOver(newState);
+      if (newState.isGameOver) {
+        AudioService.instance.playWin();
+        _handleGameOver(newState);
+      }
       return;
     }
 
     // MULTIJOUEUR : envoie au serveur. Pour multi-capture, decompose la chaine
     // en sauts individuels (le serveur valide 1 saut a la fois).
-    setState(() { _moving = true; });
+    setState(() {
+      _moving = true;
+    });
     try {
       if (move.captured.length <= 1) {
         await _playMoveWithRetry(
-          fromRow: move.from.row, fromCol: move.from.col,
-          toRow: move.to.row, toCol: move.to.col,
+          fromRow: move.from.row,
+          fromCol: move.from.col,
+          toRow: move.to.row,
+          toCol: move.to.col,
         );
       } else {
         BoardPos current = move.from;
@@ -462,21 +532,31 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           final landingR = 2 * cap.row - current.row;
           final landingC = 2 * cap.col - current.col;
           final r = await _playMoveWithRetry(
-            fromRow: current.row, fromCol: current.col,
-            toRow: landingR, toCol: landingC,
+            fromRow: current.row,
+            fromCol: current.col,
+            toRow: landingR,
+            toCol: landingC,
           );
           current = BoardPos(landingR, landingC);
           if (r['must_continue'] != true) break;
         }
       }
       _consecutiveTimeouts = 0;
-      if (mounted) setState(() { _moving = false; });
+      AudioService.instance.playPieceMove();
+      if (mounted)
+        setState(() {
+          _moving = false;
+        });
     } catch (e) {
       debugPrint('[CHECKERS] playMove error: $e');
       if (mounted) {
-        setState(() { _moving = false; });
+        setState(() {
+          _moving = false;
+        });
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Coup invalide : $e'.replaceAll('PostgrestException(message: ', '').replaceAll(',', '')),
+          content: Text('Coup invalide : $e'
+              .replaceAll('PostgrestException(message: ', '')
+              .replaceAll(',', '')),
           backgroundColor: AppColors.neonRed,
           duration: const Duration(seconds: 3),
         ));
@@ -489,14 +569,16 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       Navigator.pop(context);
       return;
     }
-    final isMultiplayer = widget.room.guestId != null && widget.room.guestId != 'AI';
+    final isMultiplayer =
+        widget.room.guestId != null && widget.room.guestId != 'AI';
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(AppLocalizations.of(context)!.gameLeaveQuestion,
-            style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                color: AppColors.textPrimary, fontWeight: FontWeight.w700)),
         content: Text(
           isMultiplayer
               ? 'Cette action sera considérée comme un forfait et tu perdras ta mise.\nConfirmer ?'
@@ -521,7 +603,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
               }
             },
             child: Text(AppLocalizations.of(context)!.gameForfeit,
-                style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    color: AppColors.neonRed, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -529,8 +612,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
   }
 
   Future<void> _handleGameOver(CheckersGameState state) async {
-    if (_endInFlight || _gameOver) return;   // [A3] verrou unique partagé
-    _endInFlight = true;                      // [A3] jamais ré-armé
+    if (_endInFlight || _gameOver) return; // [A3] verrou unique partagé
+    _endInFlight = true; // [A3] jamais ré-armé
     _gameOver = true;
     final uid = _service.currentUserId ?? '';
     final isWin = state.winner == widget.myColor;
@@ -539,8 +622,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     // Distribution treasury (multi ET solo IA passent par les memes RPCs).
     // Seul cas ou on n'appelle pas le RPC : si la room est deja 'finished'
     // (l'autre joueur l'a deja cloturee, on est juste informe via realtime).
-    final shouldDistribute = !widget.room.isAI ||
-        (widget.room.isAI && widget.room.betAmount > 0);
+    final shouldDistribute =
+        !widget.room.isAI || (widget.room.isAI && widget.room.betAmount > 0);
 
     if (shouldDistribute && uid.isNotEmpty) {
       // [A4] Fin multijoueur : le SERVEUR a déjà clôturé + payé
@@ -603,17 +686,20 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       }
     }
 
-    try { await context.read<WalletProvider>().refresh(); } catch (_) {} // [A7] solde à jour avant l'écran de fin
+    try {
+      await context.read<WalletProvider>().refresh();
+    } catch (_) {} // [A7] solde à jour avant l'écran de fin
 
     // Enregistrer le résultat pour XP / stats
     try {
       context.read<PlayerProvider>().recordGameResult(
-        gameType: 'checkers',
-        result: isWin ? 'win' : (isDraw ? 'draw' : 'loss'),
-        coinsChange: isWin ? widget.room.betAmount * 2 : -widget.room.betAmount,
-        isPractice: widget.room.isAI,
-        opponentName: widget.room.isAI ? 'IA' : widget.room.guestUsername,
-      );
+            gameType: 'checkers',
+            result: isWin ? 'win' : (isDraw ? 'draw' : 'loss'),
+            coinsChange:
+                isWin ? widget.room.betAmount * 2 : -widget.room.betAmount,
+            isPractice: widget.room.isAI,
+            opponentName: widget.room.isAI ? 'IA' : widget.room.guestUsername,
+          );
     } catch (_) {}
 
     if (!mounted) return;
@@ -625,22 +711,30 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         isDraw: isDraw,
         // Affiche le gain NET (apres 10% commission caisse)
         prize: isWin ? (widget.room.betAmount * 2 * 0.90).floor() : 0,
-        onBack: () { Navigator.pop(context); Navigator.pop(context); },
+        onBack: () {
+          Navigator.pop(context);
+          Navigator.pop(context);
+        },
       ),
     );
   }
 
   @override
   void dispose() {
-    CheckersGameScreen.isOnScreen = false;           // [A2]
-    WidgetsBinding.instance.removeObserver(this);     // [A1]
+    CheckersGameScreen.isOnScreen = false; // [A2]
+    WidgetsBinding.instance.removeObserver(this); // [A1]
     _turnTimer?.cancel();
     _pollTimer?.cancel();
     _afkCheckTimer?.cancel();
     _pulseCtrl.dispose();
     _service.unsubscribe();
-    try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
-    try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
+    try {
+      context.read<MatchesProvider>().resumePolling();
+    } catch (_) {}
+    try {
+      context.read<LiveScoreManager>().resumeTracking();
+    } catch (_) {}
+    AudioService.instance.stopBackgroundMusic();
     super.dispose();
   }
 
@@ -658,7 +752,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           if (fresh != null && mounted) _handleRemoteRoomUpdate(fresh);
         });
         _pollTimer?.cancel();
-        _pollTimer = Timer.periodic(const Duration(milliseconds: 1500), (_) async {
+        _pollTimer =
+            Timer.periodic(const Duration(milliseconds: 1500), (_) async {
           if (!mounted || _gameOver) return;
           final fresh = await _service.getRoom(widget.room.id);
           if (fresh != null) _handleRemoteRoomUpdate(fresh);
@@ -684,38 +779,81 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         if (didPop) return;
         _confirmExit();
       },
-      child: Scaffold(
-        // Page perte réseau IDENTITAIRE DAMES (rendue dans l'écran Dames
-        // uniquement ; le filet global main.dart est neutre).
-        body: _reconnecting
-            ? const _CheckersNetworkView()
-            : Container(
-                decoration: BoxDecoration(gradient: AppColors.bgGradient),
-                child: SafeArea(
-                  child: Column(
+      child: NetworkLostOverlay(
+        onRetry: _refetchRoom,
+        child: Scaffold(
+          // Page perte réseau IDENTITAIRE DAMES (rendue dans l'écran Dames
+          // uniquement ; le filet global main.dart est neutre).
+          body: _reconnecting
+              ? const _CheckersNetworkView()
+              : Container(
+                  decoration: BoxDecoration(gradient: AppColors.bgGradient),
+                  child: Stack(
                     children: [
-                      _buildTopBar(),
-                      const ConnectivityBanner(),
-                      if (_reconnecting) _buildReconnectingBanner(),
-                      if (_buildAfkRemainingSeconds() != null) _buildAfkBanner(),
-                      const Spacer(),
-                      _buildBoard(),
-                      const Spacer(),
-                      _buildBottomBar(),
+                      // Halos neon ambiants — purement decoratifs, ne
+                      // captent aucun geste, n'affectent aucune logique.
+                      Positioned(
+                        top: -60,
+                        right: -40,
+                        child: _ambientBlob(
+                            AppColors.neonOrange.withValues(alpha: 1), 180),
+                      ),
+                      Positioned(
+                        bottom: 40,
+                        left: -50,
+                        child: _ambientBlob(
+                            AppColors.neonGreen.withValues(alpha: 1), 170),
+                      ),
+                      SafeArea(
+                        child: Column(
+                          children: [
+                            _buildTopBar(),
+                            const ConnectivityBanner(),
+                            if (_reconnecting) _buildReconnectingBanner(),
+                            if (_buildAfkRemainingSeconds() != null)
+                              _buildAfkBanner(),
+                            const Spacer(),
+                            _buildBoard(),
+                            const Spacer(),
+                            _buildBottomBar(),
+                          ],
+                        ),
+                      ),
                     ],
                   ),
                 ),
-              ),
+        ),
+      ),
+    );
+  }
+
+  /// Tache de lumiere floue purement decorative (glassmorphism ambiant).
+  Widget _ambientBlob(Color color, double size) {
+    return IgnorePointer(
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.14),
+            ),
+          ),
+        ),
       ),
     );
   }
 
   // Renvoie les secondes restantes avant auto-claim (0..30), sinon null
   int? _buildAfkRemainingSeconds() {
-    if (_opponentTurnStartedAt == null || _gameOver || _gameState.isGameOver) return null;
+    if (_opponentTurnStartedAt == null || _gameOver || _gameState.isGameOver)
+      return null;
     final isMyTurn = _gameState.currentTurn == widget.myColor;
     if (isMyTurn) return null;
-    final elapsed = DateTime.now().difference(_opponentTurnStartedAt!).inSeconds;
+    final elapsed =
+        DateTime.now().difference(_opponentTurnStartedAt!).inSeconds;
     final remaining = _idleClaimSeconds - elapsed;
     // On affiche le banner seulement les 30 dernieres secondes
     if (remaining > 30) return null;
@@ -728,29 +866,56 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     return RepaintBoundary(
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.neonOrange.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.neonOrange.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(claiming ? Icons.emoji_events : Icons.warning_amber_rounded,
-                 color: AppColors.neonOrange, size: 16),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                claiming
-                  ? 'Reclamation de la victoire...'
-                  : 'Adversaire inactif. Victoire dans ${remaining}s.',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: AppColors.neonOrange, fontSize: 13, fontWeight: FontWeight.w600),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.neonOrange.withValues(alpha: 0.22),
+                    AppColors.neonOrange.withValues(alpha: 0.08),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppColors.neonOrange.withValues(alpha: 0.55),
+                    width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonOrange.withValues(alpha: 0.25),
+                    blurRadius: 14,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                      claiming
+                          ? Icons.emoji_events
+                          : Icons.warning_amber_rounded,
+                      color: AppColors.neonOrange,
+                      size: 16),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      claiming
+                          ? 'Reclamation de la victoire...'
+                          : 'Adversaire inactif. Victoire dans ${remaining}s.',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: AppColors.neonOrange,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
             ),
-          ],
+          ),
         ),
       ),
     );
@@ -760,31 +925,56 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     return RepaintBoundary(
       child: Container(
         margin: const EdgeInsets.fromLTRB(16, 6, 16, 0),
-        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.neonYellow.withValues(alpha: 0.15),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.5)),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            SizedBox(
-              width: 14, height: 14,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                valueColor: AlwaysStoppedAnimation(AppColors.neonYellow),
+        child: ClipRRect(
+          borderRadius: BorderRadius.circular(12),
+          child: BackdropFilter(
+            filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 9),
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.neonYellow.withValues(alpha: 0.22),
+                    AppColors.neonYellow.withValues(alpha: 0.08),
+                  ],
+                ),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                    color: AppColors.neonYellow.withValues(alpha: 0.55),
+                    width: 1),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonYellow.withValues(alpha: 0.25),
+                    blurRadius: 14,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  SizedBox(
+                    width: 14,
+                    height: 14,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      valueColor: AlwaysStoppedAnimation(AppColors.neonYellow),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Flexible(
+                    child: Text(
+                      'Reconnexion au serveur...',
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                          color: AppColors.neonYellow,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
               ),
             ),
-            const SizedBox(width: 10),
-            Flexible(
-              child: Text(
-                'Reconnexion au serveur...',
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(color: AppColors.neonYellow, fontSize: 13, fontWeight: FontWeight.w600),
-              ),
-            ),
-          ],
+          ),
         ),
       ),
     );
@@ -801,18 +991,31 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           ),
           Expanded(
             child: Column(children: [
-              Text('DAMES',
-                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w800,
-                      color: AppColors.textPrimary, letterSpacing: 2)),
+              ShaderMask(
+                shaderCallback: (r) => LinearGradient(
+                  colors: [
+                    AppColors.textPrimary,
+                    AppColors.neonOrange.withValues(alpha: 0.9),
+                  ],
+                ).createShader(r),
+                child: Text('DAMES',
+                    style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white,
+                        letterSpacing: 3)),
+              ),
               AnimatedBuilder(
                 animation: _pulseCtrl,
                 builder: (_, __) => Text(
-                  _gameState.isGameOver ? 'Partie terminée'
+                  _gameState.isGameOver
+                      ? 'Partie terminée'
                       : (_myTurn ? '● Votre tour' : 'Tour adversaire'),
                   style: TextStyle(
                     fontSize: 12,
                     color: _myTurn
-                        ? Color.lerp(AppColors.neonGreen, Colors.white, _pulseCtrl.value * 0.3)!
+                        ? Color.lerp(AppColors.neonGreen, Colors.white,
+                            _pulseCtrl.value * 0.3)!
                         : AppColors.textSecondary,
                     fontWeight: FontWeight.w600,
                   ),
@@ -821,19 +1024,42 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
             ]),
           ),
           // Pot
-          Container(
-            padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.neonYellow.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.3)),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(10),
+            child: BackdropFilter(
+              filter: ImageFilter.blur(sigmaX: 8, sigmaY: 8),
+              child: Container(
+                padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [
+                      AppColors.neonYellow.withValues(alpha: 0.18),
+                      AppColors.neonYellow.withValues(alpha: 0.06),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
+                  border: Border.all(
+                      color: AppColors.neonYellow.withValues(alpha: 0.45),
+                      width: 0.9),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.neonYellow.withValues(alpha: 0.22),
+                      blurRadius: 10,
+                    ),
+                  ],
+                ),
+                child: Row(mainAxisSize: MainAxisSize.min, children: [
+                  Icon(Icons.emoji_events,
+                      color: AppColors.neonYellow, size: 14),
+                  SizedBox(width: 4),
+                  Text('${widget.room.betAmount * 2}',
+                      style: TextStyle(
+                          color: AppColors.neonYellow,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w800)),
+                ]),
+              ),
             ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Icon(Icons.emoji_events, color: AppColors.neonYellow, size: 14),
-              SizedBox(width: 4),
-              Text('${widget.room.betAmount * 2}',
-                  style: TextStyle(color: AppColors.neonYellow, fontSize: 13, fontWeight: FontWeight.w700)),
-            ]),
           ),
           SizedBox(width: 8),
           // [A5] Cœurs : auto-jeux restants avant forfait
@@ -842,14 +1068,18 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
               mainAxisSize: MainAxisSize.min,
               children: [
                 for (int i = 0; i < _maxAutoPlays; i++)
-                  Icon(
-                    i < (_maxAutoPlays - _autoPlays)
-                        ? Icons.favorite
-                        : Icons.favorite_border,
-                    size: 12,
-                    color: i < (_maxAutoPlays - _autoPlays)
-                        ? AppColors.neonRed
-                        : AppColors.textMuted,
+                  AnimatedScale(
+                    scale: i < (_maxAutoPlays - _autoPlays) ? 1.0 : 0.85,
+                    duration: const Duration(milliseconds: 220),
+                    child: Icon(
+                      i < (_maxAutoPlays - _autoPlays)
+                          ? Icons.favorite
+                          : Icons.favorite_border,
+                      size: 12,
+                      color: i < (_maxAutoPlays - _autoPlays)
+                          ? AppColors.neonRed
+                          : AppColors.textMuted,
+                    ),
                   ),
               ],
             ),
@@ -857,20 +1087,46 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
           ],
           // Countdown
           if (!_gameState.isGameOver)
-            Container(
-              width: 36, height: 36,
+            AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              width: 36,
+              height: 36,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: (_turnCountdown <= 3
-                    ? AppColors.neonRed
-                    : _myTurn ? AppColors.neonGreen : AppColors.bgCard)
-                    .withValues(alpha: 0.15),
+                gradient: RadialGradient(
+                  colors: [
+                    (_turnCountdown <= 3
+                            ? AppColors.neonRed
+                            : _myTurn
+                                ? AppColors.neonGreen
+                                : AppColors.bgCard)
+                        .withValues(alpha: 0.28),
+                    (_turnCountdown <= 3
+                            ? AppColors.neonRed
+                            : _myTurn
+                                ? AppColors.neonGreen
+                                : AppColors.bgCard)
+                        .withValues(alpha: 0.08),
+                  ],
+                ),
                 border: Border.all(
                   color: _turnCountdown <= 3
                       ? AppColors.neonRed
-                      : _myTurn ? AppColors.neonGreen : AppColors.textMuted,
+                      : _myTurn
+                          ? AppColors.neonGreen
+                          : AppColors.textMuted,
                   width: 2,
                 ),
+                boxShadow: [
+                  if (_turnCountdown <= 3 || _myTurn)
+                    BoxShadow(
+                      color: (_turnCountdown <= 3
+                              ? AppColors.neonRed
+                              : AppColors.neonGreen)
+                          .withValues(alpha: 0.5),
+                      blurRadius: 10,
+                    ),
+                ],
               ),
               child: Center(
                 child: Text(
@@ -880,7 +1136,9 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
                     fontWeight: FontWeight.w800,
                     color: _turnCountdown <= 3
                         ? AppColors.neonRed
-                        : _myTurn ? AppColors.neonGreen : AppColors.textSecondary,
+                        : _myTurn
+                            ? AppColors.neonGreen
+                            : AppColors.textSecondary,
                   ),
                 ),
               ),
@@ -896,16 +1154,38 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       margin: EdgeInsets.symmetric(horizontal: 16),
       width: boardSize,
       height: boardSize,
+      padding: const EdgeInsets.all(6),
       decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: AppColors.neonOrange.withValues(alpha: 0.5), width: 2),
-        boxShadow: [BoxShadow(color: AppColors.neonOrange.withValues(alpha: 0.1), blurRadius: 16)],
+        borderRadius: BorderRadius.circular(16),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF3A2000),
+            const Color(0xFF7A4F00),
+            const Color(0xFF3A2000),
+          ],
+        ),
+        border: Border.all(
+            color: AppColors.neonOrange.withValues(alpha: 0.55), width: 1.4),
+        boxShadow: [
+          BoxShadow(
+              color: AppColors.neonOrange.withValues(alpha: 0.28),
+              blurRadius: 26,
+              spreadRadius: 1),
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.5),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
       ),
       child: ClipRRect(
-        borderRadius: BorderRadius.circular(6),
+        borderRadius: BorderRadius.circular(11),
         child: GridView.builder(
           physics: const NeverScrollableScrollPhysics(),
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 8),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: 8),
           itemCount: 64,
           itemBuilder: (_, idx) => _buildCell(idx ~/ 8, idx % 8, boardSize / 8),
         ),
@@ -924,15 +1204,58 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     if (isSelected) bg = AppColors.neonGreen.withValues(alpha: 0.55);
     if (isTarget && isDark) bg = AppColors.neonGreen.withValues(alpha: 0.35);
 
+    // Degrade premium calcule a partir de la meme couleur de base (bg),
+    // pour un rendu "case en bois/onyx poli" sans changer la logique
+    // isDark/isSelected/isTarget ci-dessus.
+    final lightShade = Color.lerp(bg, Colors.white, 0.12)!;
+    final darkShade = Color.lerp(bg, Colors.black, 0.18)!;
+
     return GestureDetector(
       onTap: () => _onCellTap(row, col),
-      child: Container(
-        color: bg,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 180),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [lightShade, bg, darkShade],
+          ),
+          border: isSelected
+              ? Border.all(
+                  color: AppColors.neonGreen.withValues(alpha: 0.9),
+                  width: 2)
+              : null,
+          boxShadow: isSelected
+              ? [
+                  BoxShadow(
+                    color: AppColors.neonGreen.withValues(alpha: 0.5),
+                    blurRadius: 10,
+                  ),
+                ]
+              : null,
+        ),
         child: Center(
           child: isTarget && piece == null
-              ? Container(
-                  width: size * 0.28, height: size * 0.28,
-                  decoration: BoxDecoration(color: AppColors.neonGreen, shape: BoxShape.circle),
+              ? AnimatedBuilder(
+                  animation: _pulseCtrl,
+                  builder: (_, __) => Container(
+                    width: size * (0.24 + _pulseCtrl.value * 0.06),
+                    height: size * (0.24 + _pulseCtrl.value * 0.06),
+                    decoration: BoxDecoration(
+                      gradient: RadialGradient(colors: [
+                        Color.lerp(
+                            AppColors.neonGreen, Colors.white, 0.35)!,
+                        AppColors.neonGreen,
+                      ]),
+                      shape: BoxShape.circle,
+                      boxShadow: [
+                        BoxShadow(
+                          color: AppColors.neonGreen.withValues(alpha: 0.6),
+                          blurRadius: 8,
+                        ),
+                      ],
+                    ),
+                  ),
                 )
               : piece != null
                   ? _buildPiece(piece, size, isSelected)
@@ -946,6 +1269,8 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
     final isRed = piece.color == PieceColor.red;
     final pieceColor = isRed ? Colors.red.shade700 : const Color(0xFF1A1A1A);
     final rimColor = isRed ? Colors.red.shade300 : Colors.grey.shade600;
+    final highlightColor =
+        isRed ? Colors.red.shade200 : const Color(0xFF6A6A6A);
 
     return AnimatedBuilder(
       animation: _pulseCtrl,
@@ -954,16 +1279,68 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
         child: child,
       ),
       child: Container(
-        width: size * 0.78, height: size * 0.78,
+        width: size * 0.78,
+        height: size * 0.78,
         decoration: BoxDecoration(
-          color: pieceColor,
+          gradient: RadialGradient(
+            center: const Alignment(-0.3, -0.4),
+            radius: 1.0,
+            colors: [highlightColor, pieceColor, Colors.black],
+            stops: const [0, 0.55, 1],
+          ),
           shape: BoxShape.circle,
           border: Border.all(color: rimColor, width: 2),
-          boxShadow: [const BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(1, 2))],
+          boxShadow: [
+            const BoxShadow(
+                color: Colors.black45, blurRadius: 6, offset: Offset(1, 3)),
+            if (isSelected)
+              BoxShadow(
+                color: AppColors.neonGreen.withValues(alpha: 0.55),
+                blurRadius: 12,
+                spreadRadius: 1,
+              ),
+          ],
         ),
-        child: piece.isKing
-            ? Center(child: Text('♛', style: TextStyle(fontSize: 14, color: Colors.amber)))
-            : null,
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            // Fraisage 3D du jeton (rainures concentriques + cabochon)
+            const Positioned.fill(
+              child: CustomPaint(painter: _CheckerRidgePainter()),
+            ),
+            if (piece.isKing)
+              Container(
+                padding: const EdgeInsets.all(3),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: const RadialGradient(
+                    center: Alignment(-0.3, -0.4),
+                    colors: [
+                      Color(0xFFFFF9E1),
+                      Color(0xFFFFC107),
+                      Color(0xFF9A6A00),
+                    ],
+                    stops: [0, 0.6, 1],
+                  ),
+                  boxShadow: [
+                    BoxShadow(
+                      color: const Color(0xFFFFD600).withValues(alpha: 0.7),
+                      blurRadius: 8,
+                    ),
+                    const BoxShadow(
+                        color: Colors.black45,
+                        blurRadius: 3,
+                        offset: Offset(0, 1)),
+                  ],
+                ),
+                child: const Text('♛',
+                    style: TextStyle(
+                        fontSize: 13,
+                        color: Color(0xFF5A3D00),
+                        fontWeight: FontWeight.w900)),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -974,9 +1351,15 @@ class _CheckersGameScreenState extends State<CheckersGameScreen>
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: [
-          _PieceCounter(color: PieceColor.red, count: _gameState.redCount, myColor: widget.myColor),
+          _PieceCounter(
+              color: PieceColor.red,
+              count: _gameState.redCount,
+              myColor: widget.myColor),
           Container(width: 1, height: 40, color: AppColors.divider),
-          _PieceCounter(color: PieceColor.black, count: _gameState.blackCount, myColor: widget.myColor),
+          _PieceCounter(
+              color: PieceColor.black,
+              count: _gameState.blackCount,
+              myColor: widget.myColor),
         ],
       ),
     );
@@ -987,25 +1370,73 @@ class _PieceCounter extends StatelessWidget {
   final PieceColor color;
   final int count;
   final PieceColor myColor;
-  const _PieceCounter({required this.color, required this.count, required this.myColor});
+  const _PieceCounter(
+      {required this.color, required this.count, required this.myColor});
 
   @override
   Widget build(BuildContext context) {
     final isMe = color == myColor;
-    final c = color == PieceColor.red ? Colors.red.shade400 : Colors.grey.shade400;
-    return Column(mainAxisSize: MainAxisSize.min, children: [
-      Container(
-        width: 26, height: 26,
-        decoration: BoxDecoration(
-          color: c,
-          shape: BoxShape.circle,
-          border: Border.all(color: isMe ? AppColors.neonGreen : Colors.transparent, width: 2),
+    final c =
+        color == PieceColor.red ? Colors.red.shade400 : Colors.grey.shade400;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          colors: [
+            Colors.white.withValues(alpha: 0.06),
+            Colors.white.withValues(alpha: 0.02),
+          ],
         ),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: isMe
+              ? AppColors.neonGreen.withValues(alpha: 0.55)
+              : Colors.white.withValues(alpha: 0.08),
+          width: 1,
+        ),
+        boxShadow: isMe
+            ? [
+                BoxShadow(
+                  color: AppColors.neonGreen.withValues(alpha: 0.25),
+                  blurRadius: 12,
+                ),
+              ]
+            : null,
       ),
-      SizedBox(height: 4),
-      Text('$count', style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w700, fontSize: 16)),
-      Text(isMe ? 'Vous' : 'Adv.', style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
-    ]);
+      child: Column(mainAxisSize: MainAxisSize.min, children: [
+        Container(
+          width: 26,
+          height: 26,
+          decoration: BoxDecoration(
+            gradient: RadialGradient(colors: [
+              Color.lerp(c, Colors.white, 0.3)!,
+              c,
+            ]),
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: isMe ? AppColors.neonGreen : Colors.transparent,
+                width: 2),
+            boxShadow: const [
+              BoxShadow(color: Colors.black38, blurRadius: 3, offset: Offset(0, 2)),
+            ],
+          ),
+        ),
+        SizedBox(height: 4),
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, anim) =>
+              ScaleTransition(scale: anim, child: child),
+          child: Text('$count',
+              key: ValueKey(count),
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16)),
+        ),
+        Text(isMe ? 'Vous' : 'Adv.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+      ]),
+    );
   }
 }
 
@@ -1013,41 +1444,116 @@ class _GameOverDialog extends StatelessWidget {
   final bool isWin, isDraw;
   final int prize;
   final VoidCallback onBack;
-  const _GameOverDialog({required this.isWin, required this.isDraw, required this.prize, required this.onBack});
+  const _GameOverDialog(
+      {required this.isWin,
+      required this.isDraw,
+      required this.prize,
+      required this.onBack});
 
   @override
   Widget build(BuildContext context) {
-    final color = isDraw ? AppColors.neonOrange : (isWin ? AppColors.neonGreen : AppColors.neonRed);
-    return AlertDialog(
-      backgroundColor: AppColors.bgCard,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-      content: Column(mainAxisSize: MainAxisSize.min, children: [
-        Text(isDraw ? '🤝' : (isWin ? '🏆' : '😞'), style: TextStyle(fontSize: 52)),
-        SizedBox(height: 12),
-        Text(isDraw ? 'Égalité !' : (isWin ? 'Victoire !' : 'Défaite'),
-            style: TextStyle(fontSize: 24, fontWeight: FontWeight.w900, color: color)),
-        if (isWin) ...[
-          SizedBox(height: 8),
-          Row(mainAxisAlignment: MainAxisAlignment.center, children: [
-            Icon(Icons.monetization_on, color: AppColors.neonYellow),
-            SizedBox(width: 6),
-            Text('+$prize FCFA',
-                style: TextStyle(color: AppColors.neonYellow, fontSize: 18, fontWeight: FontWeight.w700)),
-          ]),
-        ],
-        SizedBox(height: 20),
-        SizedBox(
-          width: double.infinity,
-          child: ElevatedButton(
-            onPressed: onBack,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: color, foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    final color = isDraw
+        ? AppColors.neonOrange
+        : (isWin ? AppColors.neonGreen : AppColors.neonRed);
+    return Dialog(
+      backgroundColor: Colors.transparent,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(24),
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+          child: Container(
+            padding: const EdgeInsets.fromLTRB(24, 28, 24, 20),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  AppColors.bgCard.withValues(alpha: 0.96),
+                  AppColors.bgDark.withValues(alpha: 0.98),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(24),
+              border: Border.all(color: color.withValues(alpha: 0.4), width: 1.2),
+              boxShadow: [
+                BoxShadow(color: color.withValues(alpha: 0.3), blurRadius: 34),
+              ],
             ),
-            child: Text(AppLocalizations.of(context)!.gameBack, style: TextStyle(fontWeight: FontWeight.w800)),
+            child: Column(mainAxisSize: MainAxisSize.min, children: [
+              Container(
+                width: 88,
+                height: 88,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(colors: [
+                    color.withValues(alpha: 0.35),
+                    color.withValues(alpha: 0.05),
+                  ]),
+                  border: Border.all(color: color.withValues(alpha: 0.5), width: 1.5),
+                ),
+                child: Center(
+                  child: Text(isDraw ? '🤝' : (isWin ? '🏆' : '😞'),
+                      style: TextStyle(fontSize: 46)),
+                ),
+              ),
+              SizedBox(height: 16),
+              ShaderMask(
+                shaderCallback: (r) => LinearGradient(
+                  colors: [color, Color.lerp(color, Colors.white, 0.4)!],
+                ).createShader(r),
+                child: Text(
+                    isDraw ? 'Égalité !' : (isWin ? 'Victoire !' : 'Défaite'),
+                    style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.w900,
+                        color: Colors.white)),
+              ),
+              if (isWin) ...[
+                SizedBox(height: 10),
+                Container(
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 16, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: AppColors.neonYellow.withValues(alpha: 0.14),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                        color: AppColors.neonYellow.withValues(alpha: 0.45)),
+                  ),
+                  child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.monetization_on,
+                            color: AppColors.neonYellow),
+                        SizedBox(width: 6),
+                        Text('+$prize FCFA',
+                            style: TextStyle(
+                                color: AppColors.neonYellow,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w800)),
+                      ]),
+                ),
+              ],
+              SizedBox(height: 22),
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: onBack,
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: color,
+                    foregroundColor: Colors.black,
+                    elevation: 6,
+                    shadowColor: color.withValues(alpha: 0.6),
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                  ),
+                  child: Text(AppLocalizations.of(context)!.gameBack,
+                      style: TextStyle(fontWeight: FontWeight.w800)),
+                ),
+              ),
+            ]),
           ),
         ),
-      ]),
+      ),
     );
   }
 }
@@ -1097,8 +1603,7 @@ class _CheckersNetworkView extends StatelessWidget {
                                     ? AppColors.bgElevated
                                     : AppColors.bgCard,
                                 child: (i == 5)
-                                    ? Center(
-                                        child: _Disc(AppColors.neonRed))
+                                    ? Center(child: _Disc(AppColors.neonRed))
                                     : (i == 10)
                                         ? const Center(
                                             child: _Disc(Colors.white70))
@@ -1149,8 +1654,8 @@ class _CheckersNetworkView extends StatelessWidget {
                 SizedBox(
                   width: 26,
                   height: 26,
-                  child: CircularProgressIndicator(
-                      strokeWidth: 3, color: accent),
+                  child:
+                      CircularProgressIndicator(strokeWidth: 3, color: accent),
                 ),
               ],
             ),
@@ -1174,4 +1679,80 @@ class _Disc extends StatelessWidget {
           border: Border.all(color: Colors.black26, width: 1),
         ),
       );
+}
+
+/// Fraisage 3D d'un jeton de dames : rainures concentriques gravées
+/// (ombre + lumière) + cabochon central surélevé. Fonctionne sur pion
+/// rouge comme noir (n'utilise que blanc/noir translucides).
+class _CheckerRidgePainter extends CustomPainter {
+  const _CheckerRidgePainter();
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final c = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2;
+
+    // Rainure périphérique (groove) : trait sombre + trait clair décalé
+    void groove(double rr) {
+      canvas.drawCircle(
+        c,
+        rr,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.4
+          ..color = Colors.black.withValues(alpha: 0.32),
+      );
+      canvas.drawCircle(
+        c,
+        rr + 1.4,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1.0
+          ..color = Colors.white.withValues(alpha: 0.18),
+      );
+    }
+
+    groove(r * 0.82);
+    groove(r * 0.70);
+
+    // Cabochon central surélevé (disque + liseret + reflet)
+    canvas.drawCircle(
+      c,
+      r * 0.5,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(-0.35, -0.4),
+          colors: [
+            Colors.white.withValues(alpha: 0.28),
+            Colors.white.withValues(alpha: 0.0),
+            Colors.black.withValues(alpha: 0.22),
+          ],
+          stops: const [0, 0.55, 1],
+        ).createShader(Rect.fromCircle(center: c, radius: r * 0.5)),
+    );
+    canvas.drawCircle(
+      c,
+      r * 0.5,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.2
+        ..color = Colors.black.withValues(alpha: 0.28),
+    );
+    // Reflet spéculaire haut-gauche sur le cabochon
+    canvas.drawArc(
+      Rect.fromCircle(center: c, radius: r * 0.5),
+      3.9, // radians ≈ haut-gauche
+      1.4,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2
+        ..strokeCap = StrokeCap.round
+        ..color = Colors.white.withValues(alpha: 0.35)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.5),
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _CheckerRidgePainter old) => false;
 }

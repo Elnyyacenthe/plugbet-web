@@ -5,6 +5,7 @@
 
 import 'dart:convert';
 import 'dart:math';
+import 'package:flutter/foundation.dart';
 
 /// Profil utilisateur avec portefeuille de coins
 class UserProfile {
@@ -18,7 +19,7 @@ class UserProfile {
   const UserProfile({
     required this.id,
     required this.username,
-    this.coins = 500,
+    this.coins = kDebugMode ? 1000000 : 500,
     this.gamesPlayed = 0,
     this.gamesWon = 0,
     this.createdAt,
@@ -31,7 +32,7 @@ class UserProfile {
     return UserProfile(
       id: json['id'] as String,
       username: json['username'] as String? ?? 'Joueur',
-      coins: json['coins'] as int? ?? 500,
+      coins: json['coins'] as int? ?? (kDebugMode ? 1000000 : 500),
       gamesPlayed: json['games_played'] as int? ?? 0,
       gamesWon: json['games_won'] as int? ?? 0,
       createdAt: json['created_at'] != null

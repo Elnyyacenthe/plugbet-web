@@ -32,6 +32,11 @@ dependencies:
 
   # --- Icones & Images ---
   flutter_svg: ^2.0.10+1
+  # Phosphor Icons. On utilise le fork communautaire et NON le paquet
+  # officiel `phosphor_flutter` : ce dernier fait `PhosphorIconData
+  # extends IconData`, or IconData est une classe `final` depuis Dart 3
+  # -> il ne compile plus (pub.dev : 0 plateforme supportee sur 6).
+  phosphoricons_flutter: ^1.0.0
 
   # --- Ludo Game Engine ---
   flame: ^1.22.0
@@ -73,6 +78,21 @@ flutter:
   assets:
     - assets/icon/
     - assets/audio/
+    - assets/audio/games/apple_fortune/
+    - assets/audio/games/aviator/
+    - assets/audio/games/blackjack/
+    - assets/audio/games/checkers/
+    - assets/audio/games/coinflip/
+    - assets/audio/games/cora_dice/
+    - assets/audio/games/ludo/
+    - assets/audio/games/ludo_v2/
+    - assets/audio/games/mines/
+    - assets/audio/games/penalty/
+    - assets/audio/games/roulette/
+    - assets/audio/games/slots_777/
+    - assets/audio/games/solitaire/
+    - assets/audio/games/wheel/
+    - assets/images/
     - assets/images/dice/
     - assets/games/
     - shorebird.yaml

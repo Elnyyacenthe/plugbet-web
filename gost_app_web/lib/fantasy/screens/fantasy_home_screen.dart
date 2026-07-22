@@ -10,6 +10,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../../theme/app_theme.dart';
 import '../../l10n/generated/app_localizations.dart';
+import '../../services/audio_service.dart';
 import '../providers/fpl_provider.dart';
 import '../models/fpl_models.dart';
 import '../widgets/fpl_player_card.dart';
@@ -38,9 +39,18 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
   @override
   void initState() {
     super.initState();
+    _initAudio();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _init();
     });
+  }
+
+  /// Audio Fantasy : aucune banque de sons dédiée → configureGame retombe
+  /// sur le pack par défaut (musique d'ambiance partagée). Cohérent avec
+  /// les 14 mini-jeux qui démarrent une musique de fond à l'ouverture.
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('fantasy');
+    AudioService.instance.startBackgroundMusic();
   }
 
   void _init() async {
@@ -185,6 +195,7 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
   @override
   void dispose() {
     _deadlineTimer?.cancel();
+    AudioService.instance.stopBackgroundMusic();
     super.dispose();
   }
 
@@ -240,7 +251,26 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
 
   Widget _buildAppBar(FplProvider fpl) {
     return SliverAppBar(
-      backgroundColor: AppColors.bgBlueNight,
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      flexibleSpace: DecoratedBox(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.bgBlueNight,
+              Color.lerp(AppColors.bgBlueNight, AppColors.bgDark, 0.6)!,
+            ],
+          ),
+          boxShadow: [
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 10,
+                offset: const Offset(0, 3)),
+          ],
+        ),
+      ),
       expandedHeight: 60,
       floating: true,
       snap: true,
@@ -298,14 +328,21 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
       decoration: BoxDecoration(
         gradient: LinearGradient(
           colors: [
-            bannerColor.withValues(alpha: 0.15),
+            bannerColor.withValues(alpha: 0.18),
             AppColors.bgCard,
           ],
           begin: Alignment.centerLeft,
           end: Alignment.centerRight,
         ),
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: bannerColor.withValues(alpha: 0.4)),
+        border: Border.all(color: bannerColor.withValues(alpha: 0.45)),
+        boxShadow: [
+          BoxShadow(color: bannerColor.withValues(alpha: 0.2), blurRadius: 14),
+          BoxShadow(
+              color: Colors.black.withValues(alpha: 0.3),
+              blurRadius: 8,
+              offset: const Offset(0, 5)),
+        ],
       ),
       child: Row(
         children: [
@@ -834,24 +871,62 @@ class _FantasyHomeScreenState extends State<FantasyHomeScreen> {
     VoidCallback onTap,
   ) {
     return GestureDetector(
-      onTap: onTap,
+      onTap: () {
+        HapticFeedback.selectionClick();
+        onTap();
+      },
       child: Container(
         padding: EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: color.withValues(alpha: 0.4)),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              color.withValues(alpha: 0.22),
+              color.withValues(alpha: 0.06),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: color.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(color: color.withValues(alpha: 0.2), blurRadius: 12),
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.3),
+                blurRadius: 6,
+                offset: const Offset(0, 4)),
+          ],
         ),
         child: Column(
           children: [
-            Icon(icon, color: color, size: 22),
-            SizedBox(height: 4),
+            // Icône dans un médaillon embossé
+            Container(
+              width: 38,
+              height: 38,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  center: const Alignment(-0.3, -0.4),
+                  colors: [
+                    color.withValues(alpha: 0.28),
+                    color.withValues(alpha: 0.05),
+                  ],
+                ),
+                border: Border.all(color: color.withValues(alpha: 0.45)),
+              ),
+              child: Icon(icon,
+                  color: color,
+                  size: 20,
+                  shadows: [
+                    Shadow(color: color.withValues(alpha: 0.7), blurRadius: 8)
+                  ]),
+            ),
+            SizedBox(height: 6),
             Text(
               label,
               style: TextStyle(
                 color: color,
                 fontSize: 11,
-                fontWeight: FontWeight.w700,
+                fontWeight: FontWeight.w800,
               ),
             ),
           ],

@@ -12,6 +12,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
 import '../theme/app_theme.dart';
 import 'bet_ticket_detail_screen.dart';
 
@@ -104,18 +106,7 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgDark,
-        elevation: 0,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
-        title: Text('Charger un coupon',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.3,
-            )),
-      ),
+      appBar: const ReliefAppBar(title: 'Charger un coupon'),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 24),
@@ -133,7 +124,7 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
                       width: 0.6),
                 ),
                 child: Row(children: [
-                  Icon(Icons.qr_code_2_rounded,
+                  Icon(AppIcons.qrCode,
                       size: 22, color: AppColors.neonBlue),
                   const SizedBox(width: 10),
                   Expanded(
@@ -171,7 +162,7 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
                 ),
                 child: Row(children: [
                   const SizedBox(width: 14),
-                  Icon(Icons.tag_rounded,
+                  Icon(AppIcons.tag,
                       size: 18, color: AppColors.textMuted),
                   const SizedBox(width: 10),
                   Expanded(
@@ -206,7 +197,7 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
                     ),
                   ),
                   IconButton(
-                    icon: Icon(Icons.content_paste_rounded,
+                    icon: Icon(AppIcons.paste,
                         size: 18, color: AppColors.neonBlue),
                     tooltip: 'Coller',
                     onPressed: _pasteFromClipboard,
@@ -224,7 +215,7 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(children: [
-                    Icon(Icons.error_outline,
+                    Icon(AppIcons.warning,
                         size: 14, color: AppColors.neonRed),
                     const SizedBox(width: 6),
                     Expanded(
@@ -247,20 +238,20 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
                           height: 22,
                           child: CircularProgressIndicator(
                               strokeWidth: 2.5,
-                              color: AppColors.neonGreen),
+                              color: AppColors.primaryInk),
                         ),
                       )
                     : ElevatedButton.icon(
                         onPressed: _loadCoupon,
-                        icon: const Icon(Icons.search_rounded, size: 18),
+                        icon: const Icon(AppIcons.search, size: 18),
                         label: const Text('Charger le ticket',
                             style: TextStyle(
                               fontWeight: FontWeight.w900,
                               fontSize: 14,
                               letterSpacing: 0.3)),
                         style: ElevatedButton.styleFrom(
-                          backgroundColor: AppColors.neonGreen,
-                          foregroundColor: Colors.black,
+                          backgroundColor: AppColors.primary,
+                          foregroundColor: AppColors.onPrimary,
                           shape: RoundedRectangleBorder(
                               borderRadius: BorderRadius.circular(12)),
                           elevation: 0,
@@ -276,7 +267,7 @@ class _LoadCouponScreenState extends State<LoadCouponScreen> {
                   borderRadius: BorderRadius.circular(10),
                 ),
                 child: Row(children: [
-                  Icon(Icons.lightbulb_outline_rounded,
+                  Icon(AppIcons.idea,
                       size: 16, color: AppColors.neonYellow),
                   const SizedBox(width: 8),
                   Expanded(

@@ -2,7 +2,7 @@ import 'dart:math';
 import 'package:flame/components.dart';
 import 'package:flame/effects.dart';
 import 'package:flutter/material.dart';
-import '../../services/audio_service.dart';
+import '../../../services/audio_service.dart';
 
 class PawnComponent extends PositionComponent {
   final Color color;

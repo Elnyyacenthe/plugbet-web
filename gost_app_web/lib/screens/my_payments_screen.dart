@@ -143,9 +143,10 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
         actions: [
           IconButton(
             icon: _checking
-                ? const SizedBox(
+                ? SizedBox(
                     width: 18, height: 18,
-                    child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    child: CircularProgressIndicator(
+                        strokeWidth: 2, color: AppColors.textPrimary),
                   )
                 : const Icon(Icons.search),
             tooltip: 'Vérifier maintenant',
@@ -166,7 +167,7 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
                     children: [
                       Icon(Icons.error_outline, color: AppColors.neonRed, size: 48),
                       const SizedBox(height: 12),
-                      Text(_error!, style: const TextStyle(color: Colors.white70)),
+                      Text(_error!, style: TextStyle(color: AppColors.textMuted)),
                       const SizedBox(height: 12),
                       OutlinedButton(onPressed: _load, child: const Text('Réessayer')),
                     ],
@@ -194,9 +195,12 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
           Icon(Icons.account_balance_wallet_outlined,
                size: 56, color: AppColors.textSecondary.withValues(alpha: 0.6)),
           const SizedBox(height: 12),
-          const Text(
+          Text(
             'Aucun paiement',
-            style: TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold),
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 16,
+                fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 6),
           Text(
@@ -235,7 +239,8 @@ class _MyPaymentsScreenState extends State<MyPaymentsScreen> {
               const SizedBox(width: 8),
               Text(
                 isDeposit ? 'Dépôt' : 'Retrait',
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                style: TextStyle(
+                    color: AppColors.textPrimary, fontWeight: FontWeight.w600),
               ),
               const Spacer(),
               Text(

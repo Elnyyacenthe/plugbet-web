@@ -14,6 +14,7 @@ import '../../../services/live_score_manager.dart';
 import '../models/solitaire_models.dart';
 import '../game/solitaire_logic.dart';
 import '../services/solitaire_service.dart';
+import '../../../services/audio_service.dart';
 
 class SolitaireGameScreen extends StatefulWidget {
   final bool isPractice;
@@ -32,7 +33,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
   // V2 : session-based, server-validated
   String? _sessionId;
   int? _seed;
-  bool _bootstrapping = true;     // pendant placeBet
+  bool _bootstrapping = true; // pendant placeBet
   bool _finishingSession = false; // pendant payout (anti double-tap)
   String? _bootstrapError;
   // V2.1 : log des moves pour audit serveur
@@ -55,6 +56,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
   @override
   void initState() {
     super.initState();
+    _initAudio();
     // _state sera initialisé après bootstrap (avec le seed serveur)
     _state = SolitaireState.initial(); // placeholder, écrasé après bootstrap
     _scoreAnimCtrl = AnimationController(
@@ -68,10 +70,19 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     _bootstrap();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
-        try { context.read<LiveScoreManager>().pauseTracking(); } catch (_) {}
+        try {
+          context.read<MatchesProvider>().pausePolling();
+        } catch (_) {}
+        try {
+          context.read<LiveScoreManager>().pauseTracking();
+        } catch (_) {}
       }
     });
+  }
+
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('solitaire');
+    AudioService.instance.startBackgroundMusic();
   }
 
   /// Bootstrap V2 : reprise session active OU création nouvelle.
@@ -177,7 +188,8 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
               _end(won: false);
             },
             child: Text(AppLocalizations.of(context)!.gameForfeit,
-                style: TextStyle(color: Color(0xFFEF4444), fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    color: Color(0xFFEF4444), fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -189,7 +201,10 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     if (_gameEnded || !mounted) return;
     setState(() => _inactivityCountdown = _inactivitySeconds);
     _inactivityTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted || _gameEnded) { t.cancel(); return; }
+      if (!mounted || _gameEnded) {
+        t.cancel();
+        return;
+      }
       setState(() => _inactivityCountdown--);
       if (_inactivityCountdown <= 0) {
         t.cancel();
@@ -214,8 +229,9 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
 
     // Catégoriser les coups disponibles
     SolitaireState? foundationMove; // bon coup
-    SolitaireState? tableauMove;    // coup neutre
-    final SolitaireState stockMove = SolitaireLogic.drawFromStock(_state); // mauvais coup
+    SolitaireState? tableauMove; // coup neutre
+    final SolitaireState stockMove =
+        SolitaireLogic.drawFromStock(_state); // mauvais coup
 
     foundationMove = SolitaireLogic.moveWasteToFoundation(_state);
     if (foundationMove == null) {
@@ -287,12 +303,13 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     if (mounted) {
       try {
         context.read<PlayerProvider>().recordGameResult(
-          gameType: 'solitaire',
-          result: won ? 'win' : 'loss',
-          coinsChange: won && !_isPractice ? payoutNet : (_isPractice ? 0 : -_bet),
-          score: _state.score,
-          isPractice: _isPractice,
-        );
+              gameType: 'solitaire',
+              result: won ? 'win' : 'loss',
+              coinsChange:
+                  won && !_isPractice ? payoutNet : (_isPractice ? 0 : -_bet),
+              score: _state.score,
+              isPractice: _isPractice,
+            );
       } catch (_) {}
     }
 
@@ -323,9 +340,11 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     if (logged != null) _moveHistory.add(logged);
     _startInactivityTimer();
     if (s.score > prevScore) {
+      AudioService.instance.playValidMove();
       _scoreAnimCtrl.forward(from: 0);
     }
     if (s.isWon) {
+      AudioService.instance.playComplete();
       _end(won: true);
     } else if (s.isLost) {
       // V2.1 : aucun coup possible → fin auto avec message clair
@@ -358,14 +377,29 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
     _scoreAnimCtrl.dispose();
     context.read<MatchesProvider>().resumePolling();
     context.read<LiveScoreManager>().resumeTracking();
+    AudioService.instance.stopBackgroundMusic();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFF0F172A),
-      body: SafeArea(
+      backgroundColor: const Color(0xFF0B1220),
+      body: Container(
+        // Tapis de feutre premium (dégradé radial vert profond)
+        decoration: const BoxDecoration(
+          gradient: RadialGradient(
+            center: Alignment(0, -0.25),
+            radius: 1.3,
+            colors: [
+              Color(0xFF14532D),
+              Color(0xFF0C2E1C),
+              Color(0xFF0B1220),
+            ],
+            stops: [0.0, 0.5, 1.0],
+          ),
+        ),
+        child: SafeArea(
         child: Stack(children: [
           Column(children: [
             _topBar(),
@@ -423,6 +457,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
             ),
         ]),
       ),
+      ),
     );
   }
 
@@ -461,8 +496,8 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
             decoration: BoxDecoration(
               color: AppColors.neonBlue.withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(20),
-              border: Border.all(
-                  color: AppColors.neonBlue.withValues(alpha: 0.3)),
+              border:
+                  Border.all(color: AppColors.neonBlue.withValues(alpha: 0.3)),
             ),
             child: Text('ENTRAÎN.',
                 style: TextStyle(
@@ -582,15 +617,16 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
           ),
         ),
         child: _slot(
-          w, h,
+          w,
+          h,
           child: _state.stock.isNotEmpty
               ? _back(w, h)
               : Container(
                   decoration: BoxDecoration(
                     color: const Color(0xFF1E293B),
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(
-                        color: Colors.white.withValues(alpha: 0.15)),
+                    border:
+                        Border.all(color: Colors.white.withValues(alpha: 0.15)),
                   ),
                   child: Center(
                     child: Icon(Icons.refresh_rounded,
@@ -602,7 +638,8 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
 
   // ── Talon ──────────────────────────────────────────────────
   Widget _waste(double w, double h) => _slot(
-        w, h,
+        w,
+        h,
         child: _state.waste.isNotEmpty
             ? _face(_state.waste.last, w, h,
                 onTap: () => _act(
@@ -625,7 +662,8 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
         logged: MoveAction(type: MoveType.wasteToFoundation, timestampMs: _ms),
       ),
       child: _slot(
-        w, h,
+        w,
+        h,
         border: const Color(0xFF22C55E).withValues(alpha: 0.4),
         child: f.isNotEmpty
             ? _face(f.last, w, h)
@@ -670,8 +708,8 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
             child: card.faceUp
                 ? _face(card, w, h, onTap: () {
                     if (i == cards.length - 1) {
-                      final r = SolitaireLogic.moveTableauToFoundation(
-                          _state, col);
+                      final r =
+                          SolitaireLogic.moveTableauToFoundation(_state, col);
                       if (r != null) {
                         _act(r,
                             logged: MoveAction(
@@ -707,8 +745,7 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
   }
 
   // ── Slot vide ──────────────────────────────────────────────
-  Widget _slot(double w, double h,
-      {Widget? child, Color? border}) {
+  Widget _slot(double w, double h, {Widget? child, Color? border}) {
     return Container(
       width: w,
       height: h,
@@ -725,11 +762,9 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
   }
 
   // ── Carte face ─────────────────────────────────────────────
-  Widget _face(PlayingCard card, double w, double h,
-      {VoidCallback? onTap}) {
+  Widget _face(PlayingCard card, double w, double h, {VoidCallback? onTap}) {
     final isRed = card.isRed;
-    final textColor =
-        isRed ? const Color(0xFFDC2626) : const Color(0xFF1E293B);
+    final textColor = isRed ? const Color(0xFFDC2626) : const Color(0xFF1E293B);
 
     return GestureDetector(
       onTap: onTap,
@@ -737,12 +772,16 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
         width: w,
         height: h,
         decoration: BoxDecoration(
-          color: const Color(0xFFF8FAFC),
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFFFFF), Color(0xFFEEF2F7)],
+          ),
           borderRadius: BorderRadius.circular(10),
           boxShadow: const [
             BoxShadow(
-              color: Colors.black38,
-              blurRadius: 6,
+              color: Colors.black45,
+              blurRadius: 7,
               offset: Offset(0, 3),
             ),
           ],
@@ -822,23 +861,21 @@ class _SolitaireGameScreenState extends State<SolitaireGameScreen>
 class _CardBackPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.07)
-      ..style = PaintingStyle.fill;
-
-    const step = 10.0;
-    for (double x = 0; x < size.width; x += step) {
-      for (double y = 0; y < size.height; y += step) {
-        if ((x ~/ step + y ~/ step) % 2 == 0) {
-          canvas.drawRect(
-              Rect.fromLTWH(x, y, step, step), paint);
-        }
-      }
+    // Guilloché : lattice diagonal doré (losanges) sur le dos.
+    final line = Paint()
+      ..color = const Color(0xFFE8C879).withValues(alpha: 0.18)
+      ..strokeWidth = 0.7;
+    final step = size.width * 0.24;
+    for (double d = -size.height; d < size.width; d += step) {
+      canvas.drawLine(Offset(d, 0), Offset(d + size.height, size.height), line);
+    }
+    for (double d = 0; d < size.width + size.height; d += step) {
+      canvas.drawLine(Offset(d, 0), Offset(d - size.height, size.height), line);
     }
 
-    // Bordure intérieure
+    // Bordure intérieure dorée
     final borderPaint = Paint()
-      ..color = Colors.white.withValues(alpha: 0.18)
+      ..color = const Color(0xFFE8C879).withValues(alpha: 0.4)
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
     canvas.drawRRect(
@@ -848,6 +885,18 @@ class _CardBackPainter extends CustomPainter {
       ),
       borderPaint,
     );
+
+    // Losange central emblème
+    final cx = size.width / 2, cy = size.height / 2;
+    final d = size.width * 0.16;
+    final diamond = Path()
+      ..moveTo(cx, cy - d)
+      ..lineTo(cx + d * 0.7, cy)
+      ..lineTo(cx, cy + d)
+      ..lineTo(cx - d * 0.7, cy)
+      ..close();
+    canvas.drawPath(
+        diamond, Paint()..color = const Color(0xFFE8C879).withValues(alpha: 0.5));
   }
 
   @override
@@ -976,22 +1025,18 @@ class _EndDialog extends StatelessWidget {
         Text(
           won ? 'Félicitations !' : 'Partie terminée',
           style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              color: accent),
+              fontSize: 22, fontWeight: FontWeight.w900, color: accent),
         ),
         SizedBox(height: 10),
         Container(
-          padding:
-              EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+          padding: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           decoration: BoxDecoration(
             color: Colors.white.withValues(alpha: 0.05),
             borderRadius: BorderRadius.circular(12),
           ),
           child: Text(
             'Score : $score pts',
-            style: TextStyle(
-                color: Colors.white70, fontSize: 16),
+            style: TextStyle(color: Colors.white70, fontSize: 16),
           ),
         ),
         if (won && prize > 0) ...[
@@ -1023,7 +1068,8 @@ class _EndDialog extends StatelessWidget {
             decoration: BoxDecoration(
               color: Color(0xFFEF4444).withValues(alpha: 0.15),
               borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: Color(0xFFEF4444).withValues(alpha: 0.4)),
+              border:
+                  Border.all(color: Color(0xFFEF4444).withValues(alpha: 0.4)),
             ),
             child: Text(
               'Erreur paiement : $errorMsg\nContacte le support si non reçu.',

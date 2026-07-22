@@ -2,12 +2,17 @@
 // BettingMatchCard — Card de match style live-score
 // ============================================================
 // Layout horizontal :
-//   ⭐ ⚽ Turkish Cup            🔴 LIVE 38'
-//   [👕] Alanyaspor    1 — 0    Fatih Karag. [👕]
+//   [étoile] [ballon] Turkish Cup          [LIVE 38']
+//   [écusson] Alanyaspor   1 — 0   Fatih Karag. [écusson]
 //                   1ère mi-temps
-//   1X2  [1 1.62]   [X 3.90]   [2 4.60]   →
+//   [ 1  1.62 ] [ X  3.90 ] [ 2  4.60 ]  →
 //
-// Interactions :
+// Habillage : cadre biseauté (ReliefCard) au liseré de marque, ou vert
+// quand le match est en direct. Le score est encastré dans la carte, les
+// cotes sont des touches bombées qui s'enfoncent au doigt et s'allument
+// en vert plein une fois sélectionnées.
+//
+// Interactions (inchangées) :
 // - Tap sur le corps de la carte (hors cotes/etoile) -> ecran detail
 // - Tap simple sur une cote                          -> pari simple
 // - Long press sur une cote                          -> combine (haptic)
@@ -15,20 +20,25 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
+import '../theme/app_surfaces.dart';
 import '../theme/app_theme.dart';
 import '../services/statpal_service.dart';
 import 'bet_team_crest.dart';
 
 class BettingMatchCard extends StatelessWidget {
   final BettingMatch match;
-  final VoidCallback? onTapCard;                // -> detail screen
+  final VoidCallback? onTapCard; // -> detail screen
   final void Function(String market)? onTapOdds; // pari simple
   final void Function(String market)? onLongPressOdds; // combine
   final VoidCallback? onToggleFavorite;
   final bool isFavorite;
   final String? selectedMarket;
+
   /// Si true, l'utilisateur peut voir le bouton "voir plus de marches".
   final bool showMoreHint;
+
   /// True quand le prefetch des cotes est en cours pour cette ligue.
   /// Affiche un skeleton au lieu de "Cotes indisponibles".
   final bool oddsLoading;
@@ -52,71 +62,67 @@ class BettingMatchCard extends StatelessWidget {
     final w = MediaQuery.of(context).size.width;
     final isSmall = w < 360;
 
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10),
-      decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(
-          color: isLive
-              ? AppColors.neonRed.withValues(alpha: 0.35)
-              : AppColors.divider.withValues(alpha: 0.5),
-          width: isLive ? 1 : 0.5,
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: isLive
-                ? AppColors.neonRed.withValues(alpha: 0.10)
-                : Colors.black.withValues(alpha: 0.06),
-            blurRadius: 5, offset: const Offset(0, 2),
-          ),
+    return ReliefCard(
+      // Le direct s'annonce par la couleur du cadre lui-même.
+      accent: isLive ? AppColors.primary : AppColors.primaryInk,
+      elevation: isLive ? 1.2 : 0.9,
+      margin: const EdgeInsets.only(bottom: 12),
+      // L'horizontal doit dépasser la morsure de l'encoche
+      // (notchRadius - notchCenterInset = 12 px), sinon le creux rogne
+      // les écussons.
+      padding:
+          EdgeInsets.fromLTRB(isSmall ? 16 : 18, 12, isSmall ? 16 : 18, 12),
+      onTap: onTapCard,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          _buildHeader(isLive, isSmall),
+          const SizedBox(height: 12),
+          _buildScoreRow(isSmall),
+          if (isLive) ...[
+            const SizedBox(height: 5),
+            _buildStatusLine(),
+          ],
+          const SizedBox(height: 12),
+          _buildOddsRow(isSmall),
         ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(14),
-        child: InkWell(
-          onTap: onTapCard,
-          borderRadius: BorderRadius.circular(14),
-          child: Padding(
-            padding: EdgeInsets.fromLTRB(
-                isSmall ? 12 : 14, 12, isSmall ? 12 : 14, 12),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                _buildHeader(isLive, isSmall),
-                const SizedBox(height: 12),
-                _buildScoreRow(isSmall),
-                if (isLive) ...[
-                  const SizedBox(height: 4),
-                  _buildStatusLine(),
-                ],
-                const SizedBox(height: 12),
-                _buildOddsRow(isSmall),
-              ],
-            ),
-          ),
-        ),
       ),
     );
   }
 
+  // Eligible 2Up : pre-match avec au moins une cote 1 ou 2 (home/away).
+  bool get _is2UpEligible =>
+      !match.isLive &&
+      match.sport != Sport.tennis &&
+      match.odds != null &&
+      (match.odds!.home != null || match.odds!.away != null);
+
   Widget _buildHeader(bool isLive, bool isSmall) {
     return Row(children: [
-      InkWell(
+      // GestureDetector et non InkWell : ReliefCard ne fournit pas
+      // d'ancêtre Material, et l'encre n'apporte rien sur une étoile.
+      GestureDetector(
         onTap: onToggleFavorite,
-        borderRadius: BorderRadius.circular(20),
+        behavior: HitTestBehavior.opaque,
         child: Padding(
-          padding: const EdgeInsets.all(2),
+          padding: const EdgeInsets.all(3),
           child: Icon(
-            isFavorite ? Icons.star_rounded : Icons.star_border_rounded,
+            isFavorite ? AppIcons.starFilled : AppIcons.star,
             size: 18,
             color: isFavorite ? AppColors.neonYellow : AppColors.textMuted,
+            shadows: isFavorite
+                ? [
+                    Shadow(
+                      color: AppColors.neonYellow.withValues(alpha: 0.6),
+                      blurRadius: 9,
+                    ),
+                  ]
+                : null,
           ),
         ),
       ),
       const SizedBox(width: 6),
-      Icon(_sportIcon(), size: 13, color: AppColors.textMuted),
+      Icon(_sportIcon(), size: 14, color: AppColors.textMuted),
       const SizedBox(width: 6),
       Expanded(
         child: Text(match.league,
@@ -128,24 +134,23 @@ class BettingMatchCard extends StatelessWidget {
             )),
       ),
       const SizedBox(width: 6),
+      // Badge 2Up : matchs pre-match eligibles au paiement anticipe (1X2 home/away).
+      if (_is2UpEligible) ...[
+        ReliefPill(
+          label: '2UP',
+          color: AppColors.primary,
+          solid: true,
+          fontSize: 9,
+        ),
+        const SizedBox(width: 6),
+      ],
       if (isLive)
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-          decoration: BoxDecoration(
-            color: AppColors.neonRed,
-            borderRadius: BorderRadius.circular(4),
-          ),
-          child: Row(mainAxisSize: MainAxisSize.min, children: [
-            const Icon(Icons.fiber_manual_record, size: 6, color: Colors.white),
-            const SizedBox(width: 3),
-            Text("LIVE ${match.minute ?? 0}'",
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 9,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 0.4,
-                )),
-          ]),
+        ReliefPill(
+          label: "LIVE ${match.minute ?? 0}'",
+          icon: AppIcons.dot,
+          color: AppColors.primary,
+          solid: true,
+          fontSize: 9,
         )
       else
         Text(_formatTime(match.startTime),
@@ -160,16 +165,28 @@ class BettingMatchCard extends StatelessWidget {
 
   IconData _sportIcon() {
     switch (match.sport) {
-      case Sport.basketball: return Icons.sports_basketball;
-      case Sport.soccer:     return Icons.sports_soccer;
+      case Sport.soccer:
+        return AppIcons.football;
+      case Sport.basketball:
+        return AppIcons.basketball;
+      case Sport.americanFootball:
+        return Icons.sports_football_rounded;
+      case Sport.baseball:
+        return Icons.sports_baseball_rounded;
+      case Sport.tennis:
+        return AppIcons.tennis;
+      case Sport.iceHockey:
+        return Icons.sports_hockey_rounded;
+      case Sport.rugby:
+        return Icons.sports_rugby_rounded;
+      case Sport.handball:
+        return Icons.sports_handball_rounded;
     }
   }
 
   /// True quand le match est termine (scores presents, plus live).
   bool get _isFinished =>
-      !match.isLive &&
-      match.homeScore != null &&
-      match.awayScore != null;
+      !match.isLive && match.homeScore != null && match.awayScore != null;
 
   int get _winner {
     if (!_isFinished) return 0;
@@ -189,23 +206,25 @@ class BettingMatchCard extends StatelessWidget {
       final w = winner;
       if (w == 0) return AppColors.textPrimary;
       if ((w == 1 && isHome) || (w == 2 && !isHome)) {
-        return AppColors.neonGreen;
+        return AppColors.primaryInk;
       }
       return AppColors.textMuted;
     }
 
     return Row(crossAxisAlignment: CrossAxisAlignment.center, children: [
       BetTeamCrest(
-        name: match.homeName, logoUrl: match.homeLogo,
-        sport: match.sport, size: size),
+          name: match.homeName,
+          logoUrl: match.homeLogo,
+          sport: match.sport,
+          size: size),
       const SizedBox(width: 10),
       Expanded(
         child: Row(children: [
           if (isFinished && winner == 1)
             Padding(
               padding: const EdgeInsets.only(right: 4),
-              child: Icon(Icons.check_circle_rounded,
-                  size: 14, color: AppColors.neonGreen),
+              child: Icon(AppIcons.checkCircleFilled,
+                  size: 14, color: AppColors.primaryInk),
             ),
           Flexible(
             child: Text(match.homeName,
@@ -236,15 +255,17 @@ class BettingMatchCard extends StatelessWidget {
           if (isFinished && winner == 2)
             Padding(
               padding: const EdgeInsets.only(left: 4),
-              child: Icon(Icons.check_circle_rounded,
-                  size: 14, color: AppColors.neonGreen),
+              child: Icon(AppIcons.checkCircleFilled,
+                  size: 14, color: AppColors.primaryInk),
             ),
         ]),
       ),
       const SizedBox(width: 10),
       BetTeamCrest(
-        name: match.awayName, logoUrl: match.awayLogo,
-        sport: match.sport, size: size),
+          name: match.awayName,
+          logoUrl: match.awayLogo,
+          sport: match.sport,
+          size: size),
     ]);
   }
 
@@ -252,17 +273,14 @@ class BettingMatchCard extends StatelessWidget {
     // Affiche le score si dispo (live OU termine). Sinon "VS".
     if (match.homeScore != null && match.awayScore != null) {
       final isFinished = _isFinished;
-      return Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
-        decoration: BoxDecoration(
-          color: AppColors.bgElevated,
-          borderRadius: BorderRadius.circular(8),
-        ),
+      // Le score est gravé dans la carte : puits sombre, chiffres dessus.
+      return InsetPanel(
+        radius: AppRadius.xs,
+        padding: const EdgeInsets.symmetric(horizontal: 11, vertical: 4),
+        baseColor: AppColors.bgDark,
         child: Text('${match.homeScore} — ${match.awayScore}',
             style: TextStyle(
-              color: isFinished
-                  ? AppColors.textPrimary
-                  : AppColors.neonYellow,
+              color: isFinished ? AppColors.textPrimary : AppColors.neonYellow,
               fontSize: isSmall ? 16 : 18,
               fontWeight: FontWeight.w900,
               letterSpacing: 1,
@@ -280,9 +298,7 @@ class BettingMatchCard extends StatelessWidget {
 
   Widget _buildStatusLine() {
     final m = match.minute ?? 0;
-    final label = match.sport == Sport.basketball
-        ? _statusBasketball(m)
-        : _statusSoccer(m);
+    final label = _statusLabel(m);
     return Center(
       child: Text(label,
           style: TextStyle(
@@ -291,6 +307,22 @@ class BettingMatchCard extends StatelessWidget {
             fontWeight: FontWeight.w600,
           )),
     );
+  }
+
+  String _statusLabel(int m) {
+    switch (match.sport) {
+      case Sport.soccer:
+        return _statusSoccer(m);
+      case Sport.basketball:
+        return _statusBasketball(m);
+      case Sport.americanFootball:
+      case Sport.baseball:
+      case Sport.tennis:
+      case Sport.iceHockey:
+      case Sport.rugby:
+      case Sport.handball:
+        return m <= 0 ? 'En cours' : 'Temps de jeu';
+    }
   }
 
   String _statusSoccer(int m) {
@@ -338,8 +370,7 @@ class BettingMatchCard extends StatelessWidget {
               )),
         ),
         if (showMoreHint)
-          Icon(Icons.chevron_right_rounded,
-              size: 18, color: AppColors.textMuted),
+          Icon(AppIcons.chevronRight, size: 16, color: AppColors.textMuted),
       ]);
     }
 
@@ -352,11 +383,11 @@ class BettingMatchCard extends StatelessWidget {
       ],
       Expanded(child: _oddsTile('2', o.away, 'away', isSmall)),
       if (showMoreHint) ...[
-        const SizedBox(width: 6),
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-          child: Icon(Icons.chevron_right_rounded,
-              size: 16, color: AppColors.textMuted),
+        const SizedBox(width: 4),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 6),
+          child:
+              Icon(AppIcons.chevronRight, size: 16, color: AppColors.textMuted),
         ),
       ],
     ]);
@@ -364,22 +395,18 @@ class BettingMatchCard extends StatelessWidget {
 
   /// Skeleton 3 (ou 2) tiles avec un spinner subtil pendant le prefetch.
   Widget _buildOddsSkeleton(bool hasDraw, bool isSmall) {
-    Widget tile() => Container(
-          padding: EdgeInsets.symmetric(
-              vertical: isSmall ? 8 : 10, horizontal: 6),
-          decoration: BoxDecoration(
-            color: AppColors.bgElevated.withValues(alpha: 0.5),
-            borderRadius: BorderRadius.circular(8),
-            border: Border.all(
-              color: AppColors.divider.withValues(alpha: 0.3),
-              width: 0.5,
+    Widget tile() => InsetPanel(
+          radius: AppRadius.xs,
+          depth: 0.7,
+          padding:
+              EdgeInsets.symmetric(vertical: isSmall ? 10 : 12, horizontal: 6),
+          child: Center(
+            child: SizedBox(
+              width: 12,
+              height: 12,
+              child: CircularProgressIndicator(
+                  strokeWidth: 1.4, color: AppColors.textMuted),
             ),
-          ),
-          alignment: Alignment.center,
-          child: SizedBox(
-            width: 12, height: 12,
-            child: CircularProgressIndicator(
-                strokeWidth: 1.4, color: AppColors.textMuted),
           ),
         );
     return Row(children: [
@@ -393,64 +420,18 @@ class BettingMatchCard extends StatelessWidget {
     ]);
   }
 
-  Widget _oddsTile(String label, double? value, String marketCode, bool isSmall) {
-    final disabled = value == null;
-    final selected = selectedMarket == marketCode;
-    return GestureDetector(
-      onTap: disabled ? null : () => onTapOdds?.call(marketCode),
-      onLongPress: disabled ? null : () {
+  Widget _oddsTile(
+      String label, double? value, String marketCode, bool isSmall) {
+    return _OddsTile(
+      label: label,
+      value: value,
+      isSmall: isSmall,
+      selected: selectedMarket == marketCode,
+      onTap: () => onTapOdds?.call(marketCode),
+      onLongPress: () {
         HapticFeedback.mediumImpact();
         onLongPressOdds?.call(marketCode);
       },
-      child: AnimatedContainer(
-        duration: const Duration(milliseconds: 150),
-        padding: EdgeInsets.symmetric(
-          vertical: isSmall ? 8 : 10,
-          horizontal: 6,
-        ),
-        decoration: BoxDecoration(
-          color: disabled
-              ? AppColors.bgElevated.withValues(alpha: 0.4)
-              : selected
-                  ? AppColors.neonGreen.withValues(alpha: 0.18)
-                  : AppColors.bgElevated,
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-            color: disabled
-                ? AppColors.divider.withValues(alpha: 0.3)
-                : selected
-                    ? AppColors.neonGreen
-                    : AppColors.divider.withValues(alpha: 0.4),
-            width: selected ? 1.4 : 0.6,
-          ),
-        ),
-        child: Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(label,
-                style: TextStyle(
-                  color: selected
-                      ? AppColors.neonGreen
-                      : AppColors.textMuted,
-                  fontSize: isSmall ? 11 : 12,
-                  fontWeight: FontWeight.w800,
-                )),
-            const SizedBox(width: 6),
-            Text(
-              disabled ? '-' : value.toStringAsFixed(2),
-              style: TextStyle(
-                color: disabled
-                    ? AppColors.textMuted
-                    : selected
-                        ? AppColors.neonGreen
-                        : AppColors.textPrimary,
-                fontSize: isSmall ? 12 : 13,
-                fontWeight: FontWeight.w900,
-              ),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -459,5 +440,126 @@ class BettingMatchCard extends StatelessWidget {
     final h = local.hour.toString().padLeft(2, '0');
     final m = local.minute.toString().padLeft(2, '0');
     return '$h:$m';
+  }
+}
+
+// ── Touche de cote ────────────────────────────────────────────
+// Trois états : bombée (par défaut), enfoncée (sous le doigt), et
+// allumée en vert plein (sélectionnée). Indisponible : gravée en creux.
+
+class _OddsTile extends StatefulWidget {
+  final String label;
+  final double? value;
+  final bool isSmall;
+  final bool selected;
+  final VoidCallback onTap;
+  final VoidCallback onLongPress;
+
+  const _OddsTile({
+    required this.label,
+    required this.value,
+    required this.isSmall,
+    required this.selected,
+    required this.onTap,
+    required this.onLongPress,
+  });
+
+  @override
+  State<_OddsTile> createState() => _OddsTileState();
+}
+
+class _OddsTileState extends State<_OddsTile> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    final disabled = widget.value == null;
+    final selected = widget.selected;
+    final vPad = widget.isSmall ? 8.0 : 10.0;
+
+    if (disabled) {
+      return InsetPanel(
+        radius: AppRadius.xs,
+        depth: 0.7,
+        padding: EdgeInsets.symmetric(vertical: vPad, horizontal: 6),
+        child:
+            Center(child: _content(AppColors.textMuted, AppColors.textMuted)),
+      );
+    }
+
+    final fill = selected ? AppColors.primary : AppColors.bgElevated;
+    final labelColor =
+        selected ? AppSurfaces.inkOn(AppColors.primary) : AppColors.textMuted;
+    final valueColor =
+        selected ? AppSurfaces.inkOn(AppColors.primary) : AppColors.textPrimary;
+
+    return GestureDetector(
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress,
+      onTapDown: (_) => setState(() => _pressed = true),
+      onTapUp: (_) => setState(() => _pressed = false),
+      onTapCancel: () => setState(() => _pressed = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 130),
+        curve: Curves.easeOut,
+        padding: EdgeInsets.symmetric(vertical: vPad, horizontal: 6),
+        transform: Matrix4.translationValues(0, _pressed ? 1.5 : 0, 0),
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.brXs,
+          gradient: AppSurfaces.raisedGradient(fill),
+          border: Border.all(
+            color: selected ? AppColors.primaryInk : AppSurfaces.hairline,
+            width: selected ? 1.2 : 0.8,
+          ),
+          boxShadow: _pressed
+              ? AppSurfaces.pressed(glow: selected ? AppColors.primary : null)
+              : AppSurfaces.raised(
+                  glow: selected ? AppColors.primary : null,
+                  elevation: 0.5,
+                ),
+        ),
+        child: Stack(
+          alignment: Alignment.center,
+          children: [
+            Positioned.fill(
+              child: IgnorePointer(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    borderRadius: AppRadius.brXs,
+                    gradient: AppSurfaces.bevelOverlay,
+                  ),
+                ),
+              ),
+            ),
+            _content(labelColor, valueColor),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _content(Color labelColor, Color valueColor) {
+    final disabled = widget.value == null;
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        Text(widget.label,
+            style: TextStyle(
+              color: labelColor,
+              fontSize: widget.isSmall ? 11 : 12,
+              fontWeight: FontWeight.w800,
+            )),
+        const SizedBox(width: 6),
+        Text(
+          disabled ? '-' : widget.value!.toStringAsFixed(2),
+          style: TextStyle(
+            color: valueColor,
+            fontSize: widget.isSmall ? 12 : 13,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
+    );
   }
 }

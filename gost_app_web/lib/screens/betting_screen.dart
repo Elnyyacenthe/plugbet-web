@@ -3,7 +3,7 @@
 // ============================================================
 // Layout :
 //   Header     : "Paris" + badge live
-//   Tabs sport : Football / Basket
+//   Tabs sport : Football / Basket / NFL / MLB / Tennis
 //   Searchbar  : "Grands évènements"
 //   Chips      : Tous | Live | Favoris
 //   Liste      : matchs groupes par ligue (sections collapsibles)
@@ -15,9 +15,14 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
+import '../theme/app_surfaces.dart';
 import '../theme/app_theme.dart';
 import '../services/statpal_service.dart';
 import '../services/team_logo_service.dart';
+import '../services/providers/sports_data.dart';
+import '../services/the_odds_api_mapper.dart' show canonicalSportName;
 import '../services/virtual_match_service.dart';
 import '../state/bet_slip_controller.dart';
 import '../widgets/betting_match_card.dart';
@@ -27,6 +32,15 @@ import 'virtual_matches_screen.dart';
 import 'bets_history_screen.dart';
 import '../utils/market_labels.dart';
 import '../utils/bet_slip_feedback.dart';
+import 'package:provider/provider.dart';
+import '../providers/promo_provider.dart';
+import '../models/promo_item.dart';
+import '../games/games_catalog.dart';
+import '../widgets/section_rail.dart';
+import '../widgets/plugbet_wordmark.dart';
+import 'support_screen.dart';
+import 'promotions/promotions_screen.dart';
+import 'promotions/promo_detail_screen.dart';
 
 class BettingScreen extends StatefulWidget {
   const BettingScreen({super.key});
@@ -37,22 +51,54 @@ class BettingScreen extends StatefulWidget {
 
 enum _Filter { tous, live, favoris }
 
+class _CategoryTab {
+  final IconData icon;
+  final String label;
+  const _CategoryTab(this.icon, this.label);
+}
+
+class _SportTabItem {
+  final Sport sport;
+  final IconData icon;
+  final String label;
+  final double width;
+  const _SportTabItem(this.sport, this.icon, this.label, this.width);
+}
+
+/// Teaser E-Sport (onglet "À venir") : discipline bientôt disponible aux paris.
+class _EsportTeaser {
+  final String name;
+  final String genre;
+  final String emoji;
+  final Color color;
+  const _EsportTeaser(this.name, this.genre, this.emoji, this.color);
+}
+
 class _BettingScreenState extends State<BettingScreen>
     with WidgetsBindingObserver, TickerProviderStateMixin {
-  final _svc = StatpalService.instance;
   final _searchCtrl = TextEditingController();
+  final _heroCtrl = PageController();
   late final TabController _sportTab;
+  late final AnimationController _livePulseCtrl;
 
   // Caches locaux : on garde matchs par sport.
   final Map<Sport, List<BettingMatch>> _live = {};
   final Map<Sport, List<BettingMatch>> _today = {};
   final Set<String> _favorites = {};
-  final Set<String> _collapsedLeagues = {};       // leagues fermees
-  final Set<String> _prefetchedLeagueIds = {};    // odds fetched OK
-  final Set<String> _loadingLeagueIds = {};       // fetch en cours
+  final Set<String> _collapsedLeagues = {}; // leagues fermees
+  final Set<String> _prefetchedLeagueIds = {}; // odds fetched OK
+  final Set<String> _loadingLeagueIds = {}; // fetch en cours
 
   _Filter _filter = _Filter.tous;
+  // Categorie active de la topbar : 0=Top, 1=Sports, 2=Jeux, 3=Casino,
+  // 4=A venir. La navigation est INTERNE (on change juste le corps).
+  int _category = 0;
+  // Section Casino : recherche + filtre.
+  final _casinoSearchCtrl = TextEditingController();
+  String _casinoQuery = '';
+  GameCategory? _casinoTag;
   String _query = '';
+  int _heroIndex = 0;
   // Date selectionnee dans le calendrier horizontal. null = "Tous les jours"
   // (cf bouton CDM qui veut voir toutes les dates qui contiennent 'world').
   DateTime? _selectedDate = _dateOnly(DateTime.now());
@@ -65,14 +111,25 @@ class _BettingScreenState extends State<BettingScreen>
 
   static String _formatDateFr(DateTime d) {
     const months = [
-      'janvier', 'février', 'mars', 'avril', 'mai', 'juin',
-      'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre',
+      'janvier',
+      'février',
+      'mars',
+      'avril',
+      'mai',
+      'juin',
+      'juillet',
+      'août',
+      'septembre',
+      'octobre',
+      'novembre',
+      'décembre',
     ];
     final today = _dateOnly(DateTime.now());
     if (d == today) return 'aujourd\'hui';
     if (d == today.add(const Duration(days: 1))) return 'demain';
     return 'le ${d.day} ${months[d.month - 1]}';
   }
+
   // Plus de loader local : le splash a deja prefetch matchs + cotes + logos
   // dans les caches singleton (StatpalService + TeamLogoService).
   // Au mount, la 1ere lecture est un cache-hit instantane.
@@ -82,16 +139,95 @@ class _BettingScreenState extends State<BettingScreen>
   static const _pollInterval = Duration(seconds: 10);
   // Coup d'envoi Coupe du Monde 2026 : 11 juin 2026, 20h locale (USA)
   // Approximation UTC : 20h ET = 00h UTC le 12 juin
-  static final DateTime _worldCupKickoff =
-      DateTime.utc(2026, 6, 12, 0, 0, 0);
+  static final DateTime _worldCupKickoff = DateTime.utc(2026, 6, 12, 0, 0, 0);
 
-  Sport get _sport => Sport.values[_sportTab.index];
+  // Onglets = NOMS des sports (pas des championnats). L'ordre suit les sports
+  // renvoyes par The Odds API et attendus par le grand public.
+  static const List<_SportTabItem> _sportTabs = [
+    _SportTabItem(Sport.soccer, AppIcons.football, 'Football', 116),
+    _SportTabItem(Sport.basketball, AppIcons.basketball, 'Basketball', 132),
+    _SportTabItem(Sport.americanFootball, Icons.sports_football_rounded,
+        'Football Américain', 188),
+    _SportTabItem(Sport.baseball, Icons.sports_baseball_rounded, 'Baseball', 122),
+    _SportTabItem(
+        Sport.handball, Icons.sports_handball_rounded, 'Handball', 124),
+    _SportTabItem(
+        Sport.iceHockey, Icons.sports_hockey_rounded, 'Hockey sur glace', 168),
+    _SportTabItem(Sport.rugby, Icons.sports_rugby_rounded, 'Rugby', 104),
+    _SportTabItem(Sport.tennis, AppIcons.tennis, 'Tennis', 108),
+  ];
+
+  Sport get _sport => _sportTabs[_sportTab.index].sport;
+
+  // E-Sports "bientôt disponibles" affichés dans l'onglet "À venir".
+  static const List<_EsportTeaser> _esports = [
+    _EsportTeaser('League of Legends', 'MOBA', '🐉', Color(0xFF1FB6A6)),
+    _EsportTeaser('Counter-Strike 2', 'FPS', '🔫', Color(0xFFF0A030)),
+    _EsportTeaser('Dota 2', 'MOBA', '⚔️', Color(0xFFE0473E)),
+    _EsportTeaser('Valorant', 'FPS tactique', '🎯', Color(0xFFFF4655)),
+    _EsportTeaser('EA Sports FC', 'Football', '⚽', Color(0xFF2ECC71)),
+    _EsportTeaser('Rocket League', 'Voiture-foot', '🚀', Color(0xFF3B82F6)),
+    _EsportTeaser('Call of Duty', 'FPS', '🎖️', Color(0xFF8B9A46)),
+    _EsportTeaser('Overwatch 2', 'Hero FPS', '🛡️', Color(0xFFF48C25)),
+    _EsportTeaser('Fortnite', 'Battle Royale', '🏝️', Color(0xFF9B5DE5)),
+    _EsportTeaser('Mobile Legends', 'MOBA', '📱', Color(0xFF5B6EE1)),
+    _EsportTeaser('PUBG Mobile', 'Battle Royale', '🪂', Color(0xFFEAB308)),
+    _EsportTeaser('Rainbow Six Siege', 'FPS tactique', '💥', Color(0xFF64748B)),
+  ];
+
+  static IconData _sportIconFor(Sport sport) {
+    switch (sport) {
+      case Sport.soccer:
+        return AppIcons.football;
+      case Sport.basketball:
+        return AppIcons.basketball;
+      case Sport.americanFootball:
+        return Icons.sports_football_rounded;
+      case Sport.baseball:
+        return Icons.sports_baseball_rounded;
+      case Sport.tennis:
+        return AppIcons.tennis;
+      case Sport.iceHockey:
+        return Icons.sports_hockey_rounded;
+      case Sport.rugby:
+        return Icons.sports_rugby_rounded;
+      case Sport.handball:
+        return Icons.sports_handball_rounded;
+    }
+  }
+
+  static String _sportEmptyName(Sport sport) {
+    switch (sport) {
+      case Sport.soccer:
+        return 'football';
+      case Sport.basketball:
+        return 'basketball';
+      case Sport.americanFootball:
+        return 'football américain';
+      case Sport.baseball:
+        return 'baseball';
+      case Sport.tennis:
+        return 'tennis';
+      case Sport.iceHockey:
+        return 'hockey sur glace';
+      case Sport.rugby:
+        return 'rugby';
+      case Sport.handball:
+        return 'handball';
+    }
+  }
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
-    _sportTab = TabController(length: 2, vsync: this)
+    _livePulseCtrl = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+      lowerBound: 0.35,
+      upperBound: 1,
+    )..repeat(reverse: true);
+    _sportTab = TabController(length: _sportTabs.length, vsync: this)
       ..addListener(() {
         if (!_sportTab.indexIsChanging) {
           setState(() {});
@@ -116,7 +252,10 @@ class _BettingScreenState extends State<BettingScreen>
     _pollTimer?.cancel();
     _countdownTimer?.cancel();
     _searchCtrl.dispose();
+    _heroCtrl.dispose();
+    _casinoSearchCtrl.dispose();
     _sportTab.dispose();
+    _livePulseCtrl.dispose();
     VirtualMatchService.instance.stop();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -138,18 +277,15 @@ class _BettingScreenState extends State<BettingScreen>
   Future<void> _initialLoad() async {
     setState(() => _error = null);
     try {
+      // The Odds API : getUpcomingMatches renvoie deja les cotes inline.
       final results = await Future.wait([
-        _svc.getLiveMatches(sport: _sport),
-        _svc.getTodayMatches(sport: _sport),
+        SportsData.active.getUpcomingMatches(sport: _sport),
+        SportsData.active.getLiveMatches(sport: _sport),
       ]);
       if (!mounted) return;
-      setState(() {
-        _live[_sport] = results[0];
-        _today[_sport] = results[1];
-      });
-      // Cotes + logos en background (cache splash -> hit immediat la plupart
-      // du temps, sinon arrive progressivement via setState).
-      unawaited(_prefetchOdds(_sport));
+      setState(() => _today[_sport] = results[0]);
+      _applyLiveScores(
+          results[1]); // fusionne les scores live dans _today + _live
       _prefetchLogos();
       _startPolling();
       // ── REFRESH AUTO apres 6s ──
@@ -170,14 +306,13 @@ class _BettingScreenState extends State<BettingScreen>
     Future.delayed(const Duration(seconds: 6), () async {
       if (!mounted) return;
       try {
-        final list = await _svc.getTodayMatches(sport: _sport);
+        final list = await SportsData.active.getUpcomingMatches(sport: _sport);
         if (!mounted) return;
         // Ne replace que si on a strictement PLUS de matchs (sinon, on
         // suppose que rien n'a change et on evite un setState inutile).
         final current = _today[_sport] ?? const <BettingMatch>[];
         if (list.length > current.length) {
           setState(() => _today[_sport] = list);
-          unawaited(_prefetchOdds(_sport));
         }
       } catch (_) {/* silencieux */}
     });
@@ -207,16 +342,15 @@ class _BettingScreenState extends State<BettingScreen>
     // Le parametre est conserve pour compat mais ignore.
     try {
       final results = await Future.wait([
-        _svc.getLiveMatches(sport: _sport),
-        _svc.getTodayMatches(sport: _sport),
+        SportsData.active.getUpcomingMatches(sport: _sport),
+        SportsData.active.getLiveMatches(sport: _sport),
       ]);
       if (!mounted) return;
       setState(() {
-        _live[_sport] = results[0];
-        _today[_sport] = results[1];
+        _today[_sport] = results[0];
         _error = null;
       });
-      unawaited(_prefetchOdds(_sport));
+      _applyLiveScores(results[1]);
       _prefetchLogos();
     } catch (e) {
       if (!mounted) return;
@@ -224,109 +358,44 @@ class _BettingScreenState extends State<BettingScreen>
     }
   }
 
-  /// Charge les cotes (prematch + live) et enrichit les matchs.
-  /// - Prematch : 1 appel par ligue, limite a 15 ligues (les plus chargees)
-  /// - Live     : 1 seul appel /{sport}/odds/live -> tous les matchs en cours
-  Future<void> _prefetchOdds(Sport sport) async {
-    // NBA / basketball : les cotes sont DEJA embarquees dans la reponse
-    // /nba/odds parsee par _fetchDaily. Aucun prefetch supplementaire.
-    if (sport == Sport.basketball) return;
-
-    // ── 1) LIVE : 1 seul appel, applique a tous les matchs live ──
-    unawaited(_prefetchLiveOdds(sport));
-
-    // ── 2) PREMATCH : par ligue (15 plus grosses) - EN PARALLELE ──
-    // Auparavant : sequentiel (lent : N*latence). Maintenant : Future.wait
-    // -> wall-clock = max(latences) au lieu de sum(latences).
-    final upcoming = [..._today[sport] ?? const <BettingMatch>[]];
-    final byLeague = <String, List<int>>{};
-    for (var i = 0; i < upcoming.length; i++) {
-      final lid = upcoming[i].leagueId;
-      if (lid != null && lid.isNotEmpty) {
-        byLeague.putIfAbsent(lid, () => []).add(i);
-      }
-    }
-    final entries = byLeague.entries.toList()
-      ..sort((a, b) => b.value.length.compareTo(a.value.length));
-    final toFetch = entries.take(15).toList();
-    if (toFetch.isEmpty) return;
-
+  /// Fusionne les scores live (/scores The Odds API, sans cotes) dans les
+  /// matchs de _today (qui portent les cotes) : marque isLive + score, et
+  /// reconstruit _live a partir des matchs ainsi enrichis (avec cotes).
+  void _applyLiveScores(List<BettingMatch> scores) {
+    if (!mounted) return;
+    final byId = {for (final s in scores) s.id: s};
     setState(() {
-      for (final e in toFetch) {
-        _loadingLeagueIds.add(e.key);
+      final today = [...?_today[_sport]];
+      final live = <BettingMatch>[];
+      for (var i = 0; i < today.length; i++) {
+        final sc = byId[today[i].id];
+        if (sc != null) {
+          today[i] = today[i].copyWith(
+            isLive: true,
+            homeScore: sc.homeScore,
+            awayScore: sc.awayScore,
+          );
+          live.add(today[i]);
+        }
       }
+      _today[_sport] = today;
+      _live[_sport] = live;
     });
-
-    // Fetch toutes les ligues en parallele, applique au fur et a mesure
-    // que chaque promesse se resout (UI reactive)
-    await Future.wait(toFetch.map((entry) async {
-      try {
-        final oddsMap = await _svc.getLeagueOdds(entry.key, sport: sport);
-        if (!mounted || _sport != sport) return;
-        setState(() {
-          _loadingLeagueIds.remove(entry.key);
-          _prefetchedLeagueIds.add(entry.key);
-          final list = _today[sport];
-          if (list == null) return;
-          final updated = [...list];
-          for (final idx in entry.value) {
-            final m = updated[idx];
-            final odds = oddsMap[m.id];
-            if (odds != null) updated[idx] = m.copyWith(odds: odds);
-          }
-          _today[sport] = updated;
-        });
-      } catch (_) {
-        if (!mounted) return;
-        setState(() => _loadingLeagueIds.remove(entry.key));
-      }
-    }));
   }
 
-  /// Prefetch des cotes pour une ligue specifique (a la demande quand
-  /// l'utilisateur scrolle vers une section pas encore chargee).
+  // ── Cotes : desormais INLINE via The Odds API (getUpcomingMatches) ──
+  // Les anciennes methodes de prefetch StatPal par ligue sont neutralisees
+  // (conservees en no-op car appelees au scroll / changement de sport).
+  // ignore: unused_element
+  Future<void> _prefetchOdds(Sport sport) async {/* cotes deja inline */}
+
   Future<void> _prefetchLeagueOddsLazy(String leagueId) async {
-    if (_prefetchedLeagueIds.contains(leagueId)) return;
-    if (_loadingLeagueIds.contains(leagueId)) return;
-    setState(() => _loadingLeagueIds.add(leagueId));
-    try {
-      final oddsMap = await _svc.getLeagueOdds(leagueId, sport: _sport);
-      if (!mounted) return;
-      setState(() {
-        _loadingLeagueIds.remove(leagueId);
-        _prefetchedLeagueIds.add(leagueId);
-        final list = _today[_sport];
-        if (list == null) return;
-        final updated = [
-          for (final m in list)
-            (m.leagueId == leagueId && oddsMap[m.id] != null)
-                ? m.copyWith(odds: oddsMap[m.id]!)
-                : m,
-        ];
-        _today[_sport] = updated;
-      });
-    } catch (_) {
-      if (!mounted) return;
-      setState(() => _loadingLeagueIds.remove(leagueId));
-    }
+    // Cotes deja presentes sur les matchs : plus de fetch par ligue.
+    _prefetchedLeagueIds.add(leagueId);
   }
 
-  /// 1 appel API /{sport}/odds/live -> Map<matchId, MatchOdds>.
-  /// Enrichit tous les matchs live en une passe.
-  Future<void> _prefetchLiveOdds(Sport sport) async {
-    final oddsMap = await _svc.getLiveOdds(sport: sport);
-    if (oddsMap.isEmpty) return;
-    if (!mounted || _sport != sport) return;
-    setState(() {
-      final list = _live[sport];
-      if (list == null) return;
-      final updated = [
-        for (final m in list)
-          oddsMap[m.id] != null ? m.copyWith(odds: oddsMap[m.id]) : m,
-      ];
-      _live[sport] = updated;
-    });
-  }
+  // ignore: unused_element
+  Future<void> _prefetchLiveOdds(Sport sport) async {/* cotes deja inline */}
 
   void _startPolling() {
     _pollTimer?.cancel();
@@ -335,14 +404,9 @@ class _BettingScreenState extends State<BettingScreen>
 
   Future<void> _refreshLive() async {
     try {
-      final live = await _svc.getLiveMatches(sport: _sport);
+      final scores = await SportsData.active.getLiveMatches(sport: _sport);
       if (!mounted) return;
-      setState(() => _live[_sport] = live);
-      // Soccer : re-prefetch live odds (endpoint dedie /odds/live)
-      // NBA : odds deja inclus dans /nba/livescores parsing -> skip
-      if (_sport != Sport.basketball) {
-        unawaited(_prefetchLiveOdds(_sport));
-      }
+      _applyLiveScores(scores); // fusionne scores -> _today (cotes) + _live
     } catch (_) {/* silencieux */}
   }
 
@@ -361,9 +425,12 @@ class _BettingScreenState extends State<BettingScreen>
   double? _oddsValue(MatchOdds? o, String code) {
     if (o == null) return null;
     switch (code) {
-      case 'home': return o.home;
-      case 'draw': return o.draw;
-      case 'away': return o.away;
+      case 'home':
+        return o.home;
+      case 'draw':
+        return o.draw;
+      case 'away':
+        return o.away;
     }
     return null;
   }
@@ -376,12 +443,21 @@ class _BettingScreenState extends State<BettingScreen>
       matchLabel: '${m.homeName} vs ${m.awayName}',
       marketCode: market,
       marketLabel: MarketLabels.selectionLabel(
-        market, m.sport,
-        homeName: m.homeName, awayName: m.awayName,
+        market,
+        m.sport,
+        homeName: m.homeName,
+        awayName: m.awayName,
       ),
       odds: value,
       kickoff: m.startTime,
       isLive: m.isLive,
+      // 2Up : sport canonique + sport_key (detecteur) + eligibilite (indice UI)
+      sport: canonicalSportName(m.sport),
+      leagueKey: m.leagueId,
+      sportName: m.sport.name,
+      twoUpEligible: SportsData.active.supports2Up(m.sport) &&
+          !m.isLive &&
+          (market == 'home' || market == 'away'),
     );
   }
 
@@ -405,14 +481,16 @@ class _BettingScreenState extends State<BettingScreen>
   void _onOpenDetail(BettingMatch m) {
     Navigator.push(
       context,
-      MaterialPageRoute(
-          builder: (_) => BettingMatchDetailScreen(match: m)),
+      MaterialPageRoute(builder: (_) => BettingMatchDetailScreen(match: m)),
     );
   }
 
   /// Liste filtree + groupee par ligue. Cle = nom ligue.
   Map<String, List<BettingMatch>> _grouped() {
-    final list = [...(_live[_sport] ?? const <BettingMatch>[]), ...(_today[_sport] ?? const <BettingMatch>[])];
+    final list = [
+      ...(_live[_sport] ?? const <BettingMatch>[]),
+      ...(_today[_sport] ?? const <BettingMatch>[])
+    ];
     Iterable<BettingMatch> filtered = list;
 
     // FILTRE GLOBAL : on n'affiche que les matchs avec au moins 1X2 dispo.
@@ -421,8 +499,8 @@ class _BettingScreenState extends State<BettingScreen>
     filtered = filtered.where((m) {
       final hasOdds = m.odds != null &&
           (m.odds!.home != null ||
-           m.odds!.draw != null ||
-           m.odds!.away != null);
+              m.odds!.draw != null ||
+              m.odds!.away != null);
       if (_filter == _Filter.favoris) {
         return _favorites.contains(m.id);
       }
@@ -466,343 +544,888 @@ class _BettingScreenState extends State<BettingScreen>
   /// Nombre de matchs LIVE avec cotes (les seuls visibles dans le filtre Live).
   int get _liveCount {
     final list = _live[_sport] ?? const <BettingMatch>[];
-    return list.where((m) =>
-        m.odds != null &&
-        (m.odds!.home != null || m.odds!.draw != null || m.odds!.away != null)).length;
+    return list
+        .where((m) =>
+            m.odds != null &&
+            (m.odds!.home != null ||
+                m.odds!.draw != null ||
+                m.odds!.away != null))
+        .length;
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
+      // Sports garde le fond thémé ; les autres sections (Top, Jeux,
+      // Casino, À venir) adoptent le chrome sombre bleu-nuit.
+      backgroundColor:
+          _category == 1 ? AppColors.bettingBackground : AppColors.bgDark,
       body: SafeArea(
-        child: Stack(children: [
-          _body(),
-          Positioned(
-            left: 0, right: 0, bottom: 0,
-            child: BetSlipPill(
-              onTap: () => showBetSlipSheet(context),
-            ),
-          ),
-        ]),
+        child: Stack(
+          children: [
+            _body(),
+            _betSlipFloatingBar(),
+          ],
+        ),
       ),
     );
   }
 
   Widget _body() {
-    // Plus de loader local : le splash a deja chauffe les caches.
-    // Si erreur ET aucune donnee -> error view, sinon on affiche ce qu'on a
-    // (potentiellement vide quelques ms le temps que le cache resolve).
-    final hasAnyData = (_live[_sport]?.isNotEmpty ?? false) ||
-        (_today[_sport]?.isNotEmpty ?? false);
-    if (_error != null && !hasAnyData) {
-      return _errorView();
-    }
-
-    final grouped = _grouped();
     return RefreshIndicator(
-      color: AppColors.neonGreen,
-      backgroundColor: AppColors.bgCard,
+      color: AppColors.primaryInk,
+      backgroundColor: AppColors.bettingSurface,
       onRefresh: _loadCurrentSport,
       child: CustomScrollView(slivers: [
         SliverToBoxAdapter(child: _header()),
-        SliverToBoxAdapter(child: _promoBanner()),
-        SliverToBoxAdapter(child: _virtualEntryCard()),
-        SliverToBoxAdapter(child: _sportTabBar()),
-        SliverToBoxAdapter(child: _dateStrip()),
-        SliverToBoxAdapter(child: _searchBar()),
-        SliverToBoxAdapter(child: _filtersRow()),
-        if (grouped.isEmpty)
-          SliverFillRemaining(hasScrollBody: false, child: _emptyView())
-        else
-          for (final entry in grouped.entries)
-            _leagueSection(entry.key, entry.value),
-        const SliverToBoxAdapter(child: SizedBox(height: 90)),
+        SliverToBoxAdapter(child: _categoryBar()),
+        ..._sectionSlivers(),
+        const SliverToBoxAdapter(child: SizedBox(height: 130)),
       ]),
     );
   }
 
-  Widget _header() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 14, 16, 8),
-      child: Row(children: [
-        Icon(Icons.bolt_rounded, color: AppColors.neonYellow, size: 24),
-        const SizedBox(width: 8),
-        Text('Paris',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 22,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.5,
-            )),
-        const Spacer(),
-        if (_liveCount > 0)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-            decoration: BoxDecoration(
-              color: AppColors.neonRed.withValues(alpha: 0.15),
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: AppColors.neonRed.withValues(alpha: 0.4),
-                  width: 0.6),
-            ),
-            child: Row(mainAxisSize: MainAxisSize.min, children: [
-              Container(
-                width: 6, height: 6,
-                decoration: BoxDecoration(
-                    color: AppColors.neonRed, shape: BoxShape.circle),
-              ),
-              const SizedBox(width: 6),
-              Text('$_liveCount live',
-                  style: TextStyle(
-                    color: AppColors.neonRed,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w800,
-                  )),
-            ]),
-          ),
-        const SizedBox(width: 8),
-        InkWell(
-          onTap: () => Navigator.push(context,
-              MaterialPageRoute(builder: (_) => const BetsHistoryScreen())),
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.all(6),
-            decoration: BoxDecoration(
-              color: AppColors.bgElevated,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(
-                  color: AppColors.divider.withValues(alpha: 0.5),
-                  width: 0.5),
-            ),
-            child: Icon(Icons.receipt_long_rounded,
-                size: 18, color: AppColors.textPrimary),
+  /// Corps variable selon la catégorie active de la topbar. Aucune
+  /// navigation vers un autre écran : on garde header + barre du bas.
+  List<Widget> _sectionSlivers() {
+    switch (_category) {
+      case 1:
+        return _sportsbookSlivers();
+      case 2:
+        return _jeuxSlivers();
+      case 3:
+        return _casinoSlivers();
+      case 4:
+        return _aVenirSlivers();
+      case 0:
+      default:
+        return _topSlivers();
+    }
+  }
+
+  void _openGameEntry(GameEntry g) {
+    Navigator.push(context, MaterialPageRoute(builder: g.builder));
+  }
+
+  void _openPromotions() {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => const PromotionsScreen()),
+    );
+  }
+
+  // Ouvre le détail de CETTE promo précise (corrige le bug : avant, toutes
+  // les cartes ouvraient la page globale des promotions).
+  void _openPromoDetail(PromoItem p) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PromoDetailScreen(promoId: p.id)),
+    );
+  }
+
+  // ── SPORTS : paris réels uniquement (sans le carousel d'affiches) ──
+  List<Widget> _sportsbookSlivers() {
+    final hasAnyData = (_live[_sport]?.isNotEmpty ?? false) ||
+        (_today[_sport]?.isNotEmpty ?? false);
+    if (_error != null && !hasAnyData) {
+      return [SliverFillRemaining(hasScrollBody: false, child: _errorView())];
+    }
+    final grouped = _grouped();
+    return [
+      SliverToBoxAdapter(child: _virtualEntryCard()),
+      SliverToBoxAdapter(child: _sportTabBar()),
+      SliverToBoxAdapter(child: _dateStrip()),
+      SliverToBoxAdapter(child: _searchBar()),
+      SliverToBoxAdapter(child: _filtersRow()),
+      if (grouped.isEmpty)
+        SliverFillRemaining(hasScrollBody: false, child: _emptyView())
+      else
+        for (final entry in grouped.entries)
+          _leagueSection(entry.key, entry.value),
+    ];
+  }
+
+  // ── TOP : hub de découverte (rails scrollables + assistance) ──
+  List<Widget> _topSlivers() {
+    final promos = context.watch<PromoProvider>().promotions;
+    final jeux = kGamesCatalog
+        .where((g) =>
+            !g.tags.contains(GameCategory.casino) &&
+            !g.tags.contains(GameCategory.fantasy))
+        .toList();
+    final casino = kCasinoGames;
+    final fantasy = kGamesCatalog
+        .where((g) => g.tags.contains(GameCategory.fantasy))
+        .toList();
+    final leagues = _grouped().keys.toList();
+
+    return [
+      // Hero : compte à rebours CDM + promo (réutilise l'existant).
+      SliverToBoxAdapter(child: _promoBanner()),
+      if (promos.isNotEmpty)
+        SliverToBoxAdapter(
+          child: SectionRail(
+            title: 'Promotions',
+            onSeeAll: _openPromotions,
+            children: [
+              for (final p in promos)
+                MiniPoster(
+                  imageAsset: p.imageUrl.isEmpty ? null : p.imageUrl,
+                  title: p.title,
+                  subtitle: p.highlightedReward,
+                  fallbackIcon: Icons.card_giftcard_rounded,
+                  badge: p.badgeLabel ?? 'PROMO',
+                  onTap: () => _openPromoDetail(p),
+                ),
+            ],
           ),
         ),
-      ]),
-    );
+      if (fantasy.isNotEmpty)
+        SliverToBoxAdapter(
+          child: SectionRail(
+            title: 'Fantasy',
+            onSeeAll: () => _openGameEntry(fantasy.first),
+            children: [
+              for (final g in fantasy)
+                MiniPoster(
+                  imageAsset: g.imageAsset,
+                  title: g.title,
+                  subtitle: g.subtitle,
+                  fallbackIcon: g.icon,
+                  badge: 'FANTASY',
+                  onTap: () => _openGameEntry(g),
+                ),
+            ],
+          ),
+        ),
+      SliverToBoxAdapter(
+        child: SectionRail(
+          title: 'Jeux',
+          onSeeAll: () => setState(() => _category = 2),
+          children: [
+            for (final g in jeux)
+              MiniPoster(
+                imageAsset: g.imageAsset,
+                title: g.title,
+                subtitle: g.subtitle,
+                fallbackIcon: g.icon,
+                badge: g.hot ? 'HOT' : null,
+                onTap: () => _openGameEntry(g),
+              ),
+          ],
+        ),
+      ),
+      SliverToBoxAdapter(
+        child: SectionRail(
+          title: 'Casino',
+          onSeeAll: () => setState(() => _category = 3),
+          children: [
+            for (final g in casino)
+              MiniPoster(
+                imageAsset: g.imageAsset,
+                title: g.title,
+                subtitle: g.subtitle,
+                fallbackIcon: g.icon,
+                badge: g.hot ? 'HOT' : null,
+                onTap: () => _openGameEntry(g),
+              ),
+          ],
+        ),
+      ),
+      if (leagues.isNotEmpty)
+        SliverToBoxAdapter(
+          child: SectionRail(
+            title: 'Championnats à venir',
+            onSeeAll: () => setState(() => _category = 1),
+            children: [
+              for (final lg in leagues.take(10))
+                MiniPoster(
+                  imageAsset: null,
+                  title: lg,
+                  fallbackIcon: AppIcons.trophy,
+                  onTap: () => setState(() => _category = 1),
+                ),
+            ],
+          ),
+        ),
+      SliverToBoxAdapter(child: _assistanceBlock()),
+    ];
   }
 
-  /// Banner promo CDM 2026 avec countdown live.
-  /// Disparait apres le coup d'envoi (J-0).
-  Widget _promoBanner() {
-    final now = DateTime.now().toUtc();
-    final remaining = _worldCupKickoff.difference(now);
-    if (remaining.isNegative) {
-      // CDM commencee -> banner "EN COURS"
-      return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
-        child: _liveCupBanner(),
-      );
-    }
-    final days = remaining.inDays;
-    final hours = remaining.inHours.remainder(24);
-    final minutes = remaining.inMinutes.remainder(60);
-    final seconds = remaining.inSeconds.remainder(60);
-    final hh = hours.toString().padLeft(2, '0');
-    final mm = minutes.toString().padLeft(2, '0');
-    final ss = seconds.toString().padLeft(2, '0');
+  // ── JEUX : grille complète, chrome conservé ──
+  List<Widget> _jeuxSlivers() {
+    return [
+      SliverToBoxAdapter(child: _sectionTitle('Tous les jeux')),
+      _gamesGridSliver(kGamesCatalog),
+    ];
+  }
 
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+  // ── CASINO : recherche + filtres + grille ──
+  List<Widget> _casinoSlivers() {
+    final q = _casinoQuery.toLowerCase();
+    final games = kCasinoGames.where((g) {
+      final byTag = _casinoTag == null || g.tags.contains(_casinoTag);
+      final byQ =
+          q.isEmpty || '${g.title} ${g.subtitle}'.toLowerCase().contains(q);
+      return byTag && byQ;
+    }).toList();
+    return [
+      SliverToBoxAdapter(child: _sectionTitle('Casino')),
+      SliverToBoxAdapter(child: _casinoSearch()),
+      SliverToBoxAdapter(child: _casinoFilters()),
+      if (games.isEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: const EdgeInsets.all(40),
+            child: Center(
+              child: Text('Aucun jeu casino trouvé.',
+                  style: TextStyle(color: AppColors.textMuted)),
+            ),
+          ),
+        )
+      else
+        _gamesGridSliver(games),
+    ];
+  }
+
+  // ── À VENIR : jeux bientôt disponibles ──
+  List<Widget> _aVenirSlivers() {
+    return [
+      SliverToBoxAdapter(child: _sectionTitle('Bientôt disponibles')),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+          child: Text(
+            'Ces sections arrivent très bientôt sur Plugbet. Reste connecté !',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+          ),
+        ),
+      ),
+      // ── E-Sports (teasers "bientôt") ──
+      SliverToBoxAdapter(child: _sectionTitle('E-Sports')),
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+          child: Text(
+            'Parie bientôt sur tes jeux préférés — les plus grandes compétitions '
+            'e-sport arrivent sur Plugbet.',
+            style: TextStyle(color: AppColors.textMuted, fontSize: 13, height: 1.4),
+          ),
+        ),
+      ),
+      SliverPadding(
+        padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+        sliver: SliverGrid(
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisSpacing: 12,
+            crossAxisSpacing: 12,
+            childAspectRatio: 1.45,
+          ),
+          delegate: SliverChildBuilderDelegate(
+            (context, i) => _esportCard(_esports[i]),
+            childCount: _esports.length,
+          ),
+        ),
+      ),
+    ];
+  }
+
+  Widget _esportCard(_EsportTeaser e) {
+    return GestureDetector(
+      onTap: () => _showEsportComingSoon(e.name),
       child: Container(
         padding: const EdgeInsets.all(14),
         decoration: BoxDecoration(
           gradient: LinearGradient(
+            colors: [
+              e.color.withValues(alpha: 0.30),
+              e.color.withValues(alpha: 0.08),
+            ],
             begin: Alignment.topLeft,
             end: Alignment.bottomRight,
-            colors: [
-              AppColors.neonGreen.withValues(alpha: 0.18),
-              AppColors.neonYellow.withValues(alpha: 0.10),
-              AppColors.bgCard,
-            ],
           ),
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-              color: AppColors.neonGreen.withValues(alpha: 0.4),
-              width: 0.8),
-          boxShadow: [
-            BoxShadow(
-              color: AppColors.neonGreen.withValues(alpha: 0.12),
-              blurRadius: 10, offset: const Offset(0, 3),
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(color: e.color.withValues(alpha: 0.45)),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Text(e.emoji, style: const TextStyle(fontSize: 30)),
+                const Spacer(),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: e.color.withValues(alpha: 0.9),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: const Text('BIENTÔT',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 9,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                      )),
+                ),
+              ],
             ),
+            const Spacer(),
+            Text(e.name,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.2,
+                )),
+            const SizedBox(height: 2),
+            Text(e.genre,
+                style: TextStyle(color: AppColors.textMuted, fontSize: 11.5)),
           ],
         ),
-        child: Column(crossAxisAlignment: CrossAxisAlignment.stretch, children: [
-          Row(children: [
-            Text('🏆',
-                style: const TextStyle(fontSize: 18)),
-            const SizedBox(width: 6),
+      ),
+    );
+  }
+
+  void _showEsportComingSoon(String name) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('🎮 $name arrive bientôt sur Plugbet !'),
+        backgroundColor: AppColors.primary,
+        behavior: SnackBarBehavior.floating,
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
+
+  // ── Helpers de sections ──────────────────────────────────────
+
+  Widget _sectionTitle(String t) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+      child: Text(
+        t,
+        style: TextStyle(
+          color: AppColors.textPrimary,
+          fontSize: 20,
+          fontWeight: FontWeight.w900,
+          letterSpacing: -0.4,
+        ),
+      ),
+    );
+  }
+
+  Widget _gamesGridSliver(List<GameEntry> games) {
+    return SliverPadding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      sliver: SliverGrid(
+        gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: 3,
+          mainAxisSpacing: 12,
+          crossAxisSpacing: 12,
+          childAspectRatio: 0.74,
+        ),
+        delegate: SliverChildBuilderDelegate(
+          (context, i) {
+            final g = games[i];
+            return MiniPoster(
+              imageAsset: g.imageAsset,
+              title: g.title,
+              fallbackIcon: g.icon,
+              badge: g.hot ? 'HOT' : null,
+              width: null,
+              onTap: () => _openGameEntry(g),
+            );
+          },
+          childCount: games.length,
+        ),
+      ),
+    );
+  }
+
+  Widget _casinoSearch() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+      child: Container(
+        height: 46,
+        padding: const EdgeInsets.symmetric(horizontal: 14),
+        decoration: BoxDecoration(
+          color: AppColors.bgCard,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.divider),
+        ),
+        child: Row(
+          children: [
+            Icon(AppIcons.search, size: 18, color: AppColors.textMuted),
+            const SizedBox(width: 10),
             Expanded(
-              child: Text('COUPE DU MONDE 2026',
-                  style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13,
-                    fontWeight: FontWeight.w900,
-                    letterSpacing: 1,
-                  )),
-            ),
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-              decoration: BoxDecoration(
-                color: AppColors.neonYellow.withValues(alpha: 0.2),
-                borderRadius: BorderRadius.circular(5),
-                border: Border.all(
-                    color: AppColors.neonYellow.withValues(alpha: 0.5),
-                    width: 0.5),
+              child: TextField(
+                controller: _casinoSearchCtrl,
+                onChanged: (v) => setState(() => _casinoQuery = v.trim()),
+                style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
+                cursorColor: kPlugbetGreen,
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  isCollapsed: true,
+                  hintText: 'Rechercher un jeu casino',
+                  hintStyle: TextStyle(color: AppColors.textMuted),
+                ),
               ),
-              child: Text('J-$days',
-                  style: TextStyle(
-                    color: AppColors.neonYellow,
-                    fontSize: 11,
-                    fontWeight: FontWeight.w900,
-                  )),
             ),
-          ]),
-          const SizedBox(height: 10),
-          Row(children: [
-            _countCell('$days', 'jours'),
-            const SizedBox(width: 6),
-            _countCell(hh, 'h'),
-            const SizedBox(width: 6),
-            _countCell(mm, 'min'),
-            const SizedBox(width: 6),
-            _countCell(ss, 'sec'),
-          ]),
-          const SizedBox(height: 10),
+            if (_casinoQuery.isNotEmpty)
+              GestureDetector(
+                onTap: () {
+                  _casinoSearchCtrl.clear();
+                  setState(() => _casinoQuery = '');
+                },
+                child: Icon(Icons.close_rounded,
+                    size: 18, color: AppColors.textMuted),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _casinoFilters() {
+    const chips = <(String, GameCategory?)>[
+      ('Tous', null),
+      ('Multijoueur', GameCategory.multiplayer),
+      ('Arcade', GameCategory.arcade),
+    ];
+    return SizedBox(
+      height: 40,
+      child: ListView(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          for (final c in chips)
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: _casinoChip(c.$1, c.$2),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _casinoChip(String label, GameCategory? tag) {
+    final active = _casinoTag == tag;
+    return GestureDetector(
+      onTap: () => setState(() => _casinoTag = tag),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: active ? kPlugbetGreen : AppColors.bgCard,
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(
+            color: active ? kPlugbetGreen : AppColors.divider,
+          ),
+        ),
+        child: Text(
+          label,
+          style: TextStyle(
+            color: active ? Colors.black : AppColors.textPrimary,
+            fontSize: 13,
+            fontWeight: FontWeight.w800,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _assistanceBlock() {
+    const legal =
+        'Vos paris et paiements sont traités par Ennovative Gaming Sarl, '
+        'qui est autorisé et réglementé par le Ministère de l\'Administration '
+        'Territoriale du Cameroun.\n\n'
+        'Licence n° 000975/A/MINAT/SG/DAP/SDLP/SJ/\n\n'
+        'Vous devez être âgé d\'au moins 21 ans pour parier.\n'
+        'Les paris créent une dépendance et peuvent être psychologiquement '
+        'néfastes.';
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 8),
+      child: Column(
+        children: [
+          SizedBox(
+            width: double.infinity,
+            height: 56,
+            child: ElevatedButton.icon(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const SupportScreen()),
+              ),
+              icon: const Icon(AppIcons.support, size: 20, color: Colors.black),
+              label: const Text(
+                'Assistance & Support',
+                style: TextStyle(
+                  fontSize: 16,
+                  fontWeight: FontWeight.w900,
+                  color: Colors.black,
+                ),
+              ),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: kPlugbetGreen,
+                elevation: 0,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(14),
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(height: 16),
           Text(
-            '🇺🇸 États-Unis · 🇨🇦 Canada · 🇲🇽 Mexique',
+            legal,
+            textAlign: TextAlign.center,
             style: TextStyle(
               color: AppColors.textMuted,
               fontSize: 11,
-              fontWeight: FontWeight.w700,
+              height: 1.5,
+              fontWeight: FontWeight.w500,
             ),
           ),
-          const SizedBox(height: 10),
-          InkWell(
-            onTap: () {
-              // Cherche large : 'world' matche "World: Friendly International"
-              // (matchs prepa CDM aujourd'hui) ET "World Cup 2026" (post 11 juin).
-              _searchCtrl.text = 'world';
-              // Reset date pour voir TOUS les jours (CDM = +9 jours)
-              setState(() => _selectedDate = null);
-            },
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(vertical: 9, horizontal: 12),
-              decoration: BoxDecoration(
-                color: AppColors.neonGreen,
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: Row(mainAxisSize: MainAxisSize.min, children: [
-                const Icon(Icons.search_rounded,
-                    size: 14, color: Colors.black),
-                const SizedBox(width: 6),
-                const Text('Matchs internationaux + CDM',
-                    style: TextStyle(
-                      color: Colors.black,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w900,
-                      letterSpacing: 0.3,
-                    )),
-              ]),
-            ),
-          ),
-        ]),
+        ],
       ),
+    );
+  }
+
+  /// Header sombre (bleu-nuit, identique a la barre du bas) : logo
+  /// « PLUGBET » centre (PLUG blanc + BET vert), pastille live a gauche
+  /// et cloche de notifications a droite.
+  Widget _header() {
+    return Container(
+      color: AppColors.bgDark,
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
+      child: SafeArea(
+        bottom: false,
+        child: SizedBox(
+          height: 44,
+          child: Stack(
+            alignment: Alignment.center,
+            children: [
+              // Logo image (adaptatif clair/sombre) centre.
+              const Center(child: PlugbetLogoImage(height: 30)),
+              // Pastille live a gauche.
+              Align(
+                alignment: Alignment.centerLeft,
+                child: _LivePill(
+                  count: _liveCount,
+                  pulse: _livePulseCtrl,
+                ),
+              ),
+              // Cloche a droite.
+              Align(
+                alignment: Alignment.centerRight,
+                child: InkWell(
+                  onTap: () => Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                        builder: (_) => const BetsHistoryScreen()),
+                  ),
+                  borderRadius: BorderRadius.circular(16),
+                  child: Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: AppColors.bgCard,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(color: AppColors.divider),
+                    ),
+                    child: Icon(
+                      AppIcons.notification,
+                      size: 20,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ── Barre de categories (sous le header) ─────────────────────
+  // Top / Sports restent sur le sportsbook (categories residentes) ;
+  // Jeux & Casino ouvrent l'ecran Jeux ; A venir ouvre les matchs
+  // virtuels. L'item actif porte un soulignement + texte vert.
+  Widget _categoryBar() {
+    const cats = <_CategoryTab>[
+      _CategoryTab(AppIcons.flame, 'Top'),
+      _CategoryTab(AppIcons.trophy, 'Sports'),
+      _CategoryTab(AppIcons.games, 'Jeux'),
+      _CategoryTab(AppIcons.cards, 'Casino'),
+      _CategoryTab(AppIcons.calendar, 'À venir'),
+    ];
+
+    const underlineW = 24.0;
+    const barHeight = 60.0;
+
+    return Container(
+      color: AppColors.bgDark,
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          final itemW = constraints.maxWidth / cats.length;
+          return SizedBox(
+            height: barHeight,
+            child: Stack(
+              children: [
+                Row(
+                  children: [
+                    for (var i = 0; i < cats.length; i++)
+                      Expanded(child: _categoryItem(cats[i], i)),
+                  ],
+                ),
+                // Soulignement unique qui GLISSE de l'ancienne à la
+                // nouvelle position lors du changement de catégorie.
+                AnimatedPositioned(
+                  duration: const Duration(milliseconds: 260),
+                  curve: Curves.easeOutCubic,
+                  left: itemW * _category + (itemW - underlineW) / 2,
+                  bottom: 8,
+                  child: Container(
+                    width: underlineW,
+                    height: 3,
+                    decoration: BoxDecoration(
+                      color: kPlugbetGreen,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _categoryItem(_CategoryTab cat, int index) {
+    final active = _category == index;
+    final color = active ? kPlugbetGreen : AppColors.textMuted;
+
+    return InkWell(
+      // Navigation INTERNE : on change juste la section affichée, le
+      // header et la barre du bas restent en place.
+      onTap: () => setState(() => _category = index),
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Icon(cat.icon, size: 22, color: color),
+          const SizedBox(height: 4),
+          Text(
+            cat.label,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(
+              color: color,
+              fontSize: 11,
+              fontWeight: active ? FontWeight.w800 : FontWeight.w600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// Carousel principal : compte a rebours CDM + promo statique.
+  Widget _promoBanner() {
+    final now = DateTime.now().toUtc();
+    final remaining = _worldCupKickoff.difference(now);
+    final positive = remaining.isNegative ? Duration.zero : remaining;
+    final days = positive.inDays;
+    final hh = positive.inHours.remainder(24).toString().padLeft(2, '0');
+    final mm = positive.inMinutes.remainder(60).toString().padLeft(2, '0');
+    final ss = positive.inSeconds.remainder(60).toString().padLeft(2, '0');
+
+    return Column(
+      children: [
+        SizedBox(
+          height: 190,
+          child: PageView(
+            controller: _heroCtrl,
+            onPageChanged: (index) => setState(() => _heroIndex = index),
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _worldCupCountdownSlide(days.toString(), hh, mm, ss),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: _downloadPromoSlide(),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 9),
+        _heroDots(2),
+      ],
     );
   }
 
   Widget _countCell(String value, String label) {
-    return Expanded(
-      child: Container(
-        padding: const EdgeInsets.symmetric(vertical: 8),
-        decoration: BoxDecoration(
-          color: AppColors.bgDark.withValues(alpha: 0.6),
-          borderRadius: BorderRadius.circular(8),
-          border: Border.all(
-              color: AppColors.divider.withValues(alpha: 0.4), width: 0.5),
-        ),
-        child: Column(mainAxisSize: MainAxisSize.min, children: [
-          Text(value,
-              style: TextStyle(
-                color: AppColors.neonGreen,
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 1,
-              )),
-          Text(label,
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 9,
-                fontWeight: FontWeight.w800,
-                letterSpacing: 0.5,
-              )),
-        ]),
-      ),
-    );
-  }
-
-  Widget _liveCupBanner() {
     return Container(
-      padding: const EdgeInsets.all(14),
+      width: 45,
+      padding: const EdgeInsets.symmetric(vertical: 7),
       decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [
-            AppColors.neonRed.withValues(alpha: 0.2),
-            AppColors.bgCard,
-          ],
-        ),
-        borderRadius: BorderRadius.circular(14),
+        color: AppColors.bettingImageScrim,
+        borderRadius: BorderRadius.circular(12),
         border: Border.all(
-            color: AppColors.neonRed.withValues(alpha: 0.5), width: 1),
+          color: AppColors.bettingOnImage.withValues(alpha: 0.14),
+        ),
       ),
-      child: Row(children: [
-        Container(
-          width: 8, height: 8,
-          decoration: BoxDecoration(
-              color: AppColors.neonRed, shape: BoxShape.circle),
-        ),
-        const SizedBox(width: 8),
-        Expanded(
-          child: Text(
-            '🏆 COUPE DU MONDE 2026 — EN COURS',
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            value,
             style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13,
+              color: AppColors.bettingOnImage,
+              fontSize: 21,
               fontWeight: FontWeight.w900,
-              letterSpacing: 0.5,
+              height: 1,
             ),
           ),
-        ),
-        InkWell(
-          onTap: () => _searchCtrl.text = 'world cup',
-          borderRadius: BorderRadius.circular(8),
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-            decoration: BoxDecoration(
-              color: AppColors.neonRed,
-              borderRadius: BorderRadius.circular(8),
+          const SizedBox(height: 4),
+          Text(
+            label.toUpperCase(),
+            style: TextStyle(
+              color: AppColors.bettingOnImageMuted,
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.7,
             ),
-            child: const Text('Parier',
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: 11,
-                  fontWeight: FontWeight.w900,
-                )),
           ),
-        ),
-      ]),
+        ],
+      ),
     );
   }
 
-  /// Card d'entree vers les matchs virtuels. Style violet/neon pour
-  /// se distinguer nettement des matchs reels en dessous.
+  Widget _worldCupCountdownSlide(String days, String hh, String mm, String ss) {
+    return _ImageBannerFrame(
+      asset: 'assets/images/afficheCoupeDuMonde.png',
+      alignment: Alignment.centerRight,
+      child: Stack(
+        children: [
+          Positioned(
+            top: 14,
+            left: 14,
+            child: _ImageBadge(
+              label: 'EN DIRECT',
+              background: AppColors.bettingYellow,
+              foreground: AppColors.onPrimary,
+            ),
+          ),
+          Positioned(
+            top: 14,
+            right: 14,
+            child: _OutlineImageBadge(
+              label: 'LIVE',
+              color: AppColors.bettingOrange,
+            ),
+          ),
+          Positioned(
+            left: 18,
+            right: 18,
+            bottom: 18,
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'La Coupe du Monde',
+                  style: TextStyle(
+                    color: AppColors.bettingOnImage,
+                    fontSize: 20,
+                    fontWeight: FontWeight.w900,
+                    height: 1.05,
+                  ),
+                ),
+                const SizedBox(height: 5),
+                Text(
+                  'États-Unis · Canada · Mexique',
+                  style: TextStyle(
+                    color: AppColors.bettingOnImageMuted,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    _countCell(days, 'Jours'),
+                    _countSeparator(),
+                    _countCell(hh, 'Hrs'),
+                    _countSeparator(),
+                    _countCell(mm, 'Min'),
+                    _countSeparator(),
+                    _countCell(ss, 'Sec'),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _countSeparator() {
+    return Text(
+      ':',
+      style: TextStyle(
+        color: AppColors.bettingOnImageMuted,
+        fontSize: 18,
+        fontWeight: FontWeight.w900,
+      ),
+    );
+  }
+
+  Widget _downloadPromoSlide() {
+    return const _ImageBannerFrame(
+      asset: 'assets/images/AffichePrincipal.png',
+      fit: BoxFit.fill,
+      overlay: false,
+      child: SizedBox.shrink(),
+    );
+  }
+
+  Widget _heroDots(int count) {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        for (var i = 0; i < count; i++) ...[
+          AnimatedContainer(
+            duration: const Duration(milliseconds: 180),
+            width: _heroIndex == i ? 24 : 7,
+            height: 7,
+            decoration: BoxDecoration(
+              color: _heroIndex == i
+                  ? AppColors.primary
+                  : AppColors.bettingInactive.withValues(alpha: 0.55),
+              borderRadius: BorderRadius.circular(999),
+            ),
+          ),
+          if (i != count - 1) const SizedBox(width: 6),
+        ],
+      ],
+    );
+  }
+
+  /// Bannière secondaire EA Sports. Elle garde l'entrée vers les matchs
+  /// virtuels déjà branchée, sans toucher au service.
   Widget _virtualEntryCard() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
       child: Material(
-        color: Colors.transparent,
+        color: AppColors.transparent,
         child: InkWell(
           onTap: () => Navigator.push(
             context,
@@ -812,130 +1435,37 @@ class _BettingScreenState extends State<BettingScreen>
           child: AnimatedBuilder(
             animation: VirtualMatchService.instance,
             builder: (context, _) {
-              final all = VirtualMatchService.instance.matches;
-              final liveN = all.where((m) => m.isLive).length;
-              final upcomingN =
-                  all.where((m) => m.state == VirtualState.upcoming).length;
-              return Container(
-                padding: const EdgeInsets.all(14),
-                decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                    colors: [
-                      AppColors.neonPurple.withValues(alpha: 0.22),
-                      AppColors.neonBlue.withValues(alpha: 0.10),
-                      AppColors.bgCard,
+              final liveN = VirtualMatchService.instance.matches
+                  .where((m) => m.isLive)
+                  .length;
+              return SizedBox(
+                height: 110,
+                child: _ImageBannerFrame(
+                  asset: 'assets/images/afficheEASports.png',
+                  radius: 14,
+                  borderColor: AppColors.bettingViolet,
+                  fit: BoxFit.fill,
+                  overlay: false,
+                  child: Stack(
+                    children: [
+                      Positioned(
+                        left: 12,
+                        top: 12,
+                        child: _EaLiveCountBadge(
+                          count: liveN,
+                          pulse: _livePulseCtrl,
+                        ),
+                      ),
+                      Positioned(
+                        right: 12,
+                        bottom: 12,
+                        child: _PlayImageButton(
+                          color: AppColors.bettingViolet,
+                        ),
+                      ),
                     ],
                   ),
-                  borderRadius: BorderRadius.circular(14),
-                  border: Border.all(
-                    color: AppColors.neonPurple.withValues(alpha: 0.45),
-                    width: 0.8,
-                  ),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.neonPurple.withValues(alpha: 0.10),
-                      blurRadius: 10, offset: const Offset(0, 3),
-                    ),
-                  ],
                 ),
-                child: Row(children: [
-                  Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(
-                      color: AppColors.neonPurple.withValues(alpha: 0.22),
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                          color: AppColors.neonPurple.withValues(alpha: 0.5),
-                          width: 0.6),
-                    ),
-                    child: Icon(Icons.flash_on_rounded,
-                        color: AppColors.neonPurple, size: 26),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(children: [
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: AppColors.neonPurple,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                            child: const Text('FLASH',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 9,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: 0.6,
-                                )),
-                          ),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text('Matchs Flash',
-                                overflow: TextOverflow.ellipsis,
-                                style: TextStyle(
-                                  color: AppColors.textPrimary,
-                                  fontSize: 13,
-                                  fontWeight: FontWeight.w900,
-                                  letterSpacing: -0.2,
-                                )),
-                          ),
-                        ]),
-                        const SizedBox(height: 4),
-                        Row(children: [
-                          if (liveN > 0) ...[
-                            Container(
-                              width: 6, height: 6,
-                              decoration: BoxDecoration(
-                                color: AppColors.neonRed,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text('$liveN en cours',
-                                style: TextStyle(
-                                  color: AppColors.neonRed,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                )),
-                            const SizedBox(width: 10),
-                          ],
-                          if (upcomingN > 0) ...[
-                            Container(
-                              width: 6, height: 6,
-                              decoration: BoxDecoration(
-                                color: AppColors.neonYellow,
-                                shape: BoxShape.circle,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            Text('$upcomingN à venir',
-                                style: TextStyle(
-                                  color: AppColors.neonYellow,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w800,
-                                )),
-                          ],
-                          if (liveN == 0 && upcomingN == 0)
-                            Text('Pariez 24/7 · Résultat en 30s',
-                                style: TextStyle(
-                                  color: AppColors.textMuted,
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.w700,
-                                )),
-                        ]),
-                      ],
-                    ),
-                  ),
-                  Icon(Icons.chevron_right_rounded,
-                      color: AppColors.neonPurple, size: 24),
-                ]),
               );
             },
           ),
@@ -946,48 +1476,71 @@ class _BettingScreenState extends State<BettingScreen>
 
   Widget _sportTabBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 10),
       child: Container(
-        padding: const EdgeInsets.all(3),
+        height: 52,
+        padding: const EdgeInsets.all(4),
         decoration: BoxDecoration(
-          color: AppColors.bgElevated,
+          color: AppColors.bettingSurfaceElevated,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: AppColors.divider.withValues(alpha: 0.5), width: 0.5),
+          border: Border.all(color: AppColors.bettingBorder),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.bettingSoftShadow,
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
-        child: Row(children: [
-          _sportTabChip(Sport.soccer, Icons.sports_soccer, 'Football'),
-          _sportTabChip(Sport.basketball, Icons.sports_basketball, 'Basket'),
-        ]),
+        child: ListView.separated(
+          scrollDirection: Axis.horizontal,
+          physics: const BouncingScrollPhysics(),
+          itemCount: _sportTabs.length,
+          separatorBuilder: (_, __) => const SizedBox(width: 6),
+          itemBuilder: (_, i) => _sportSwitchOption(_sportTabs[i], i),
+        ),
       ),
     );
   }
 
-  Widget _sportTabChip(Sport s, IconData icon, String label) {
-    final active = _sport == s;
-    return Expanded(
-      child: InkWell(
-        onTap: () => _sportTab.index = s.index,
+  Widget _sportSwitchOption(_SportTabItem item, int index) {
+    final active = _sport == item.sport;
+    final fg = active
+        ? AppSurfaces.inkOn(AppColors.primary)
+        : AppColors.bettingTextSecondary;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 220),
+      curve: Curves.easeOutCubic,
+      width: item.width,
+      decoration: BoxDecoration(
+        color: active ? AppColors.primary : Colors.transparent,
         borderRadius: BorderRadius.circular(10),
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(vertical: 10),
-          decoration: BoxDecoration(
-            color: active ? AppColors.neonGreen : Colors.transparent,
-            borderRadius: BorderRadius.circular(10),
-          ),
+        boxShadow: active
+            ? [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  offset: const Offset(0, 4),
+                ),
+              ]
+            : null,
+      ),
+      child: InkWell(
+        onTap: () {
+          if (_sportTab.index != index) _sportTab.animateTo(index);
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: Center(
           child: Row(
-            mainAxisAlignment: MainAxisAlignment.center,
+            mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(icon,
-                  size: 16, color: active ? Colors.black : AppColors.textMuted),
+              Icon(item.icon, size: 16, color: fg),
               const SizedBox(width: 6),
-              Text(label,
+              Text(item.label,
                   style: TextStyle(
-                    color: active ? Colors.black : AppColors.textPrimary,
+                    color: active ? fg : AppColors.bettingTextSecondary,
                     fontSize: 13,
                     fontWeight: FontWeight.w900,
-                    letterSpacing: 0.2,
                   )),
             ],
           ),
@@ -1001,53 +1554,59 @@ class _BettingScreenState extends State<BettingScreen>
   Widget _dateStrip() {
     final today = _dateOnly(DateTime.now());
     // Genere dates aujourd'hui + 14 jours suivants
-    final dates = List.generate(_daysAhead + 1, (i) => today.add(Duration(days: i)));
+    final dates =
+        List.generate(_daysAhead + 1, (i) => today.add(Duration(days: i)));
     final cdmKickoffLocal = _worldCupKickoff.toLocal();
-    final cdmDate = DateTime(cdmKickoffLocal.year, cdmKickoffLocal.month, cdmKickoffLocal.day);
+    final cdmDate = DateTime(
+        cdmKickoffLocal.year, cdmKickoffLocal.month, cdmKickoffLocal.day);
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(0, 4, 0, 8),
+      padding: const EdgeInsets.fromLTRB(0, 2, 0, 8),
       child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(16, 4, 16, 6),
+          padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
           child: Row(children: [
-            Icon(Icons.calendar_month_rounded,
-                size: 14, color: AppColors.textMuted),
+            Icon(
+              AppIcons.calendar,
+              size: 15,
+              color: AppColors.bettingTextSecondary,
+            ),
             const SizedBox(width: 6),
-            Text('Calendrier',
+            Text('CALENDRIER',
                 style: TextStyle(
-                  color: AppColors.textMuted,
+                  color: AppColors.bettingTextSecondary,
                   fontSize: 10,
                   fontWeight: FontWeight.w900,
-                  letterSpacing: 0.6,
+                  letterSpacing: 1,
                 )),
             const Spacer(),
             if (_selectedDate != null)
               InkWell(
-                onTap: () => setState(() => _selectedDate = null),
+                onTap: () => setState(() => _selectedDate = today),
                 borderRadius: BorderRadius.circular(6),
                 child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                   child: Text('Tous',
                       style: TextStyle(
-                        color: AppColors.neonGreen,
-                        fontSize: 10,
+                        color: AppColors.primaryInk,
+                        fontSize: 11,
                         fontWeight: FontWeight.w800,
                         decoration: TextDecoration.underline,
                         decorationColor:
-                            AppColors.neonGreen.withValues(alpha: 0.5),
+                            AppColors.primaryInk.withValues(alpha: 0.5),
                       )),
                 ),
               ),
           ]),
         ),
         SizedBox(
-          height: 56,
+          height: 70,
           child: ListView.separated(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 16),
             itemCount: dates.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 6),
+            separatorBuilder: (_, __) => const SizedBox(width: 8),
             itemBuilder: (_, i) {
               final d = dates[i];
               return _dateChip(d, today, cdmDate);
@@ -1065,71 +1624,64 @@ class _BettingScreenState extends State<BettingScreen>
         _selectedDate!.day == date.day;
     final isToday = date == today;
     final isCdm = date == cdmDate;
-    final isWeekend = date.weekday == DateTime.saturday ||
-        date.weekday == DateTime.sunday;
-    // StatPal v2 ne renvoie que today (offset=0). Les autres dates sont
-    // marquees "futur" -> selection autorisee mais affiche un message clair
-    // dans l'empty view.
-    final isFuture = date.isAfter(today);
-
     const dayShort = ['Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam', 'Dim'];
     final dayLabel = isToday ? 'Auj.' : dayShort[date.weekday - 1];
 
-    final Color bg;
     final Color fg;
     final Color borderColor;
+    final Color background;
     if (isSelected) {
-      bg = AppColors.neonGreen;
-      fg = Colors.black;
-      borderColor = AppColors.neonGreen;
+      background = AppColors.primary;
+      fg = AppSurfaces.inkOn(AppColors.primary);
+      borderColor = AppColors.primary;
     } else if (isCdm) {
-      bg = AppColors.neonYellow.withValues(alpha: 0.12);
-      fg = AppColors.neonYellow;
-      borderColor = AppColors.neonYellow.withValues(alpha: 0.5);
-    } else if (isFuture) {
-      bg = AppColors.bgElevated.withValues(alpha: 0.5);
-      fg = AppColors.textMuted;
-      borderColor = AppColors.divider.withValues(alpha: 0.3);
+      background = AppSurfaces.tint(
+        AppColors.bettingSurfaceElevated,
+        AppColors.bettingYellow,
+        0.12,
+      );
+      fg = AppColors.bettingYellow;
+      borderColor = AppColors.bettingYellow.withValues(alpha: 0.45);
     } else {
-      bg = AppColors.bgElevated;
-      fg = isWeekend
-          ? AppColors.textPrimary
-          : AppColors.textPrimary.withValues(alpha: 0.85);
-      borderColor = AppColors.divider.withValues(alpha: 0.5);
+      background = AppColors.bettingSurfaceElevated;
+      fg = AppColors.bettingTextSecondary;
+      borderColor = AppColors.bettingBorder;
     }
 
     return InkWell(
       onTap: () => setState(() => _selectedDate = date),
-      borderRadius: BorderRadius.circular(10),
+      borderRadius: BorderRadius.circular(12),
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 150),
-        width: 54,
+        width: 60,
         decoration: BoxDecoration(
-          color: bg,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: borderColor, width: isSelected ? 1.2 : 0.5),
-          boxShadow: isSelected
-              ? [
-                  BoxShadow(
-                    color: AppColors.neonGreen.withValues(alpha: 0.4),
-                    blurRadius: 8, offset: const Offset(0, 2),
-                  ),
-                ]
-              : null,
+          color: background,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: borderColor, width: isSelected ? 1.2 : 1),
+          boxShadow: [
+            BoxShadow(
+              color: isSelected
+                  ? AppColors.primary.withValues(alpha: 0.22)
+                  : AppColors.bettingSoftShadow,
+              blurRadius: isSelected ? 13 : 8,
+              offset: const Offset(0, 4),
+            ),
+          ],
         ),
         child: Stack(children: [
-          if (isCdm && !isSelected)
-            Positioned(
-              top: 2, right: 4,
-              child: Text('🏆', style: TextStyle(fontSize: 10)),
-            )
-          else if (isFuture && !isSelected)
-            Positioned(
-              top: 3, right: 4,
-              child: Icon(Icons.lock_outline_rounded,
-                  size: 9, color: AppColors.textMuted),
+          Positioned(
+            top: 5,
+            right: 6,
+            child: Icon(
+              isCdm ? AppIcons.trophy : AppIcons.lock,
+              size: 10,
+              color: isSelected
+                  ? AppSurfaces.inkOn(AppColors.primary).withValues(alpha: 0.82)
+                  : (isCdm
+                      ? AppColors.bettingYellow
+                      : AppColors.bettingInactive),
             ),
+          ),
           Center(
             child: Column(
               mainAxisAlignment: MainAxisAlignment.center,
@@ -1140,15 +1692,13 @@ class _BettingScreenState extends State<BettingScreen>
                       color: fg.withValues(alpha: 0.75),
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
-                      letterSpacing: 0.3,
                     )),
-                const SizedBox(height: 2),
+                const SizedBox(height: 3),
                 Text('${date.day}',
                     style: TextStyle(
                       color: fg,
-                      fontSize: 16,
+                      fontSize: 18,
                       fontWeight: FontWeight.w900,
-                      letterSpacing: -0.5,
                     )),
               ],
             ),
@@ -1160,50 +1710,64 @@ class _BettingScreenState extends State<BettingScreen>
 
   Widget _searchBar() {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 4, 16, 10),
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
       child: Container(
-        height: 44,
+        height: 50,
         decoration: BoxDecoration(
-          color: AppColors.bgElevated,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: AppColors.divider.withValues(alpha: 0.5), width: 0.5),
+          color: AppColors.bettingSurfaceElevated,
+          borderRadius: BorderRadius.circular(25),
+          border: Border.all(color: AppColors.bettingBorder),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.bettingSoftShadow,
+              blurRadius: 10,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Row(children: [
-          const SizedBox(width: 12),
-          Icon(Icons.search, size: 18, color: AppColors.textMuted),
+          const SizedBox(width: 14),
+          Icon(
+            AppIcons.search,
+            size: 18,
+            color: AppColors.bettingTextSecondary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
               controller: _searchCtrl,
-              cursorColor: AppColors.neonGreen,
+              cursorColor: AppColors.primaryInk,
               style: TextStyle(
-                color: AppColors.textPrimary,
+                color: AppColors.bettingTextPrimary,
                 fontSize: 13,
                 fontWeight: FontWeight.w600,
               ),
               decoration: InputDecoration(
-                hintText: 'Recherche équipe ou ligue',
+                hintText: 'Rechercher une équipe ou une ligue',
                 hintStyle: TextStyle(
-                  color: AppColors.textMuted,
+                  color: AppColors.bettingTextSecondary,
                   fontSize: 13,
                   fontWeight: FontWeight.w600,
                 ),
                 border: InputBorder.none,
                 isDense: true,
-                contentPadding: const EdgeInsets.symmetric(vertical: 12),
+                contentPadding: const EdgeInsets.symmetric(vertical: 14),
               ),
             ),
           ),
           if (_query.isNotEmpty)
             IconButton(
-              icon: Icon(Icons.close, size: 16, color: AppColors.textMuted),
+              icon: Icon(
+                AppIcons.close,
+                size: 16,
+                color: AppColors.bettingTextSecondary,
+              ),
               onPressed: () => _searchCtrl.clear(),
               splashRadius: 16,
               padding: EdgeInsets.zero,
               constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             ),
-          const SizedBox(width: 6),
+          const SizedBox(width: 8),
         ]),
       ),
     );
@@ -1211,51 +1775,54 @@ class _BettingScreenState extends State<BettingScreen>
 
   Widget _filtersRow() {
     final chips = [
-      (_Filter.tous,    Icons.apps,           'Tous'),
-      (_Filter.live,    Icons.flash_on,       'Live'),
-      (_Filter.favoris, Icons.star_rounded,   'Favoris'),
+      (_Filter.tous, AppIcons.grid, 'Tous'),
+      (_Filter.live, AppIcons.bets, 'Live'),
+      (_Filter.favoris, AppIcons.starFilled, 'Favoris'),
     ];
     return SizedBox(
-      height: 36,
+      height: 46,
       child: ListView.separated(
         scrollDirection: Axis.horizontal,
         padding: const EdgeInsets.symmetric(horizontal: 16),
         itemCount: chips.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
         itemBuilder: (_, i) {
           final (filter, icon, label) = chips[i];
           final active = _filter == filter;
+          final fg =
+              active ? AppColors.primaryInk : AppColors.bettingTextSecondary;
           return InkWell(
             onTap: () => setState(() => _filter = filter),
-            borderRadius: BorderRadius.circular(10),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+            borderRadius: BorderRadius.circular(12),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
               decoration: BoxDecoration(
                 color: active
-                    ? AppColors.neonGreen.withValues(alpha: 0.18)
-                    : AppColors.bgElevated,
-                borderRadius: BorderRadius.circular(10),
+                    ? AppColors.primary.withValues(alpha: 0.12)
+                    : AppColors.bettingSurfaceElevated,
+                borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: active
-                      ? AppColors.neonGreen
-                      : AppColors.divider.withValues(alpha: 0.5),
-                  width: active ? 1 : 0.5,
+                  color:
+                      active ? AppColors.primaryInk : AppColors.bettingBorder,
+                  width: active ? 1.1 : 0.8,
                 ),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.bettingSoftShadow,
+                    blurRadius: 8,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
               ),
               child: Row(mainAxisSize: MainAxisSize.min, children: [
-                Icon(icon,
-                    size: 13,
-                    color: active
-                        ? AppColors.neonGreen
-                        : AppColors.textMuted),
-                const SizedBox(width: 5),
+                Icon(icon, size: 14, color: fg),
+                const SizedBox(width: 6),
                 Text(label,
                     style: TextStyle(
-                      color: active
-                          ? AppColors.neonGreen
-                          : AppColors.textPrimary,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
+                      color: fg,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w900,
                     )),
               ]),
             ),
@@ -1277,7 +1844,8 @@ class _BettingScreenState extends State<BettingScreen>
           orElse: () => ms.first,
         )
         .leagueId;
-    if (leagueId != null && leagueId.isNotEmpty &&
+    if (leagueId != null &&
+        leagueId.isNotEmpty &&
         !_prefetchedLeagueIds.contains(leagueId) &&
         !_loadingLeagueIds.contains(leagueId)) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -1299,19 +1867,20 @@ class _BettingScreenState extends State<BettingScreen>
             padding: const EdgeInsets.fromLTRB(16, 14, 16, 6),
             child: Row(children: [
               Icon(
-                isCollapsed
-                    ? Icons.keyboard_arrow_right_rounded
-                    : Icons.keyboard_arrow_down_rounded,
+                isCollapsed ? AppIcons.chevronRight : AppIcons.chevronDown,
                 size: 18,
                 color: AppColors.textMuted,
               ),
               const SizedBox(width: 4),
               if (hasLive) ...[
                 Container(
-                  width: 6, height: 6,
+                  width: 6,
+                  height: 6,
                   decoration: BoxDecoration(
-                    color: AppColors.neonRed,
+                    color: AppColors.primary,
                     shape: BoxShape.circle,
+                    boxShadow:
+                        AppSurfaces.glowOnly(AppColors.primary, strength: 0.7),
                   ),
                 ),
                 const SizedBox(width: 6),
@@ -1320,22 +1889,20 @@ class _BettingScreenState extends State<BettingScreen>
                 child: Text(league.toUpperCase(),
                     overflow: TextOverflow.ellipsis,
                     style: TextStyle(
-                      color: AppColors.textMuted,
+                      color: AppColors.bettingTextSecondary,
                       fontSize: 11,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.6,
                     )),
               ),
-              Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
-                decoration: BoxDecoration(
-                  color: AppColors.bgElevated,
-                  borderRadius: BorderRadius.circular(6),
-                ),
+              // Compteur gravé : il compte, il ne s'impose pas.
+              InsetPanel(
+                radius: 6,
+                depth: 0.6,
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 1),
                 child: Text('${ms.length}',
                     style: TextStyle(
-                      color: AppColors.textPrimary,
+                      color: AppColors.bettingTextPrimary,
                       fontSize: 10,
                       fontWeight: FontWeight.w800,
                     )),
@@ -1357,8 +1924,8 @@ class _BettingScreenState extends State<BettingScreen>
                   final selectedMarket =
                       BetSlipController.instance.marketFor(m.id);
                   final lid = m.leagueId;
-                  final isOddsLoading = lid != null &&
-                      _loadingLeagueIds.contains(lid);
+                  final isOddsLoading =
+                      lid != null && _loadingLeagueIds.contains(lid);
                   return BettingMatchCard(
                     match: m,
                     isFavorite: _favorites.contains(m.id),
@@ -1377,25 +1944,146 @@ class _BettingScreenState extends State<BettingScreen>
     ]);
   }
 
+  Widget _betSlipFloatingBar() {
+    return AnimatedBuilder(
+      animation: BetSlipController.instance,
+      builder: (context, _) {
+        final ctrl = BetSlipController.instance;
+        if (ctrl.count == 0) return const SizedBox.shrink();
+        final odds = ctrl.combinedOdds.toStringAsFixed(2);
+        final label = ctrl.count == 1 ? 'Pari simple' : 'Pari combiné';
+
+        return Positioned(
+          left: 16,
+          right: 16,
+          bottom: 14,
+          child: SafeArea(
+            top: false,
+            child: Material(
+              color: AppColors.transparent,
+              child: InkWell(
+                onTap: () => showBetSlipSheet(context),
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.primary.withValues(alpha: 0.28),
+                        blurRadius: 18,
+                        offset: const Offset(0, 8),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        width: 34,
+                        height: 34,
+                        decoration: BoxDecoration(
+                          color: AppColors.bettingOnImage,
+                          shape: BoxShape.circle,
+                        ),
+                        child: Center(
+                          child: Text(
+                            '${ctrl.count}',
+                            style: TextStyle(
+                              color: AppColors.primaryInk,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              label,
+                              style: TextStyle(
+                                color: AppSurfaces.inkOn(AppColors.primary),
+                                fontSize: 14,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(height: 2),
+                            Text(
+                              'Cote totale ×$odds',
+                              style: TextStyle(
+                                color: AppSurfaces.inkOn(AppColors.primary)
+                                    .withValues(alpha: 0.72),
+                                fontSize: 11,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 9,
+                        ),
+                        decoration: BoxDecoration(
+                          color: AppColors.bettingOnImage,
+                          borderRadius: BorderRadius.circular(999),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              'Parier',
+                              style: TextStyle(
+                                color: AppColors.primaryInk,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w900,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(
+                              AppIcons.forward,
+                              size: 13,
+                              color: AppColors.primaryInk,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _emptyView() {
     String msg;
     // Cas special : la recherche 'world' (bouton CDM) n'a rien renvoye.
-    final isWorldSearch = _query == 'world' || _query == 'world cup' ||
+    final isWorldSearch = _query == 'world' ||
+        _query == 'world cup' ||
         _query == 'coupe du monde';
     if (isWorldSearch) {
       final remaining = _worldCupKickoff.difference(DateTime.now().toUtc());
       final days = remaining.inDays;
       if (remaining.isNegative) {
         msg = 'Aucun match international avec cotes en ce moment.\n'
-              'La Coupe du Monde est en cours, reviens dans la journée.';
+            'La Coupe du Monde est en cours, reviens dans la journée.';
       } else if (days > 0) {
         msg = 'Pas encore de matchs Coupe du Monde dans StatPal.\n'
-              'Coup d\'envoi dans $days jours (11 juin 2026).\n\n'
-              'Aujourd\'hui, regarde aussi les matchs amicaux\n'
-              'internationaux préparatoires (World: Friendly).';
+            'Coup d\'envoi dans $days jours (11 juin 2026).\n\n'
+            'Aujourd\'hui, regarde aussi les matchs amicaux\n'
+            'internationaux préparatoires (World: Friendly).';
       } else {
         msg = 'Coupe du Monde 2026 démarre dans quelques heures.\n'
-              'Les cotes vont apparaître peu avant le coup d\'envoi.';
+            'Les cotes vont apparaître peu avant le coup d\'envoi.';
       }
     } else if (_filter == _Filter.favoris) {
       msg = 'Aucun favori. Étoile un match pour l\'ajouter ici.';
@@ -1403,33 +2091,28 @@ class _BettingScreenState extends State<BettingScreen>
       msg = 'Aucun match en direct avec cotes pour le moment.';
     } else if (_query.isNotEmpty) {
       msg = 'Aucun match ne correspond à "$_query".';
-    } else if (_sport == Sport.basketball) {
-      msg = 'Aucun match basket disponible. Hors saison NBA peut-être ?';
+    } else if (_sport != Sport.soccer) {
+      msg = 'Aucun match ${_sportEmptyName(_sport)} disponible pour le moment.';
     } else if (_selectedDate != null) {
       final today = _dateOnly(DateTime.now());
       final isFuture = _selectedDate!.isAfter(today);
       if (isFuture) {
-        msg = '🔒 Les matchs ${_formatDateFr(_selectedDate!)} ne sont pas\n'
-              'encore disponibles dans StatPal.\n\n'
-              'Les cotes seront ajoutées progressivement\n'
-              'à l\'approche de la date.';
+        msg = 'Les matchs ${_formatDateFr(_selectedDate!)} ne sont pas\n'
+            'encore disponibles dans StatPal.\n\n'
+            'Les cotes seront ajoutées progressivement\n'
+            'à l\'approche de la date.';
       } else {
         msg = 'Aucun match avec cotes ${_formatDateFr(_selectedDate!)}.';
       }
     } else {
       msg = 'Aucun match avec cotes aujourd\'hui.\n'
-            'Reviens demain ou attends la Coupe du Monde 2026 (11 juin).';
+          'Reviens demain ou attends la Coupe du Monde 2026 (11 juin).';
     }
     return Center(
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(
-              _sport == Sport.basketball
-                  ? Icons.sports_basketball
-                  : Icons.sports_soccer,
-              size: 56,
-              color: AppColors.textMuted),
+          Icon(_sportIconFor(_sport), size: 56, color: AppColors.textMuted),
           const SizedBox(height: 12),
           Text(msg,
               textAlign: TextAlign.center,
@@ -1448,7 +2131,7 @@ class _BettingScreenState extends State<BettingScreen>
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.error_outline, size: 56, color: AppColors.neonRed),
+          Icon(AppIcons.warning, size: 56, color: AppColors.neonRed),
           const SizedBox(height: 12),
           Text('Erreur de chargement',
               style: TextStyle(
@@ -1461,19 +2144,311 @@ class _BettingScreenState extends State<BettingScreen>
               textAlign: TextAlign.center,
               style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
           const SizedBox(height: 16),
-          ElevatedButton(
+          ReliefButton(
+            label: 'Réessayer',
+            icon: AppIcons.refresh,
             onPressed: _initialLoad,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonGreen,
-              foregroundColor: Colors.black,
-              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(10)),
-            ),
-            child: const Text('Reessayer',
-                style: TextStyle(fontWeight: FontWeight.w900)),
+            height: 44,
           ),
         ]),
+      ),
+    );
+  }
+}
+
+class _LivePill extends StatelessWidget {
+  final int count;
+  final Animation<double> pulse;
+
+  const _LivePill({
+    required this.count,
+    required this.pulse,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 38,
+      padding: const EdgeInsets.symmetric(horizontal: 11),
+      decoration: BoxDecoration(
+        color: AppColors.primary.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: AppColors.primaryInk.withValues(alpha: 0.55)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: pulse,
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+                boxShadow: AppSurfaces.glowOnly(
+                  AppColors.primary,
+                  strength: 0.65,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            '$count LIVE',
+            style: TextStyle(
+              color: AppColors.primaryInk,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _EaLiveCountBadge extends StatelessWidget {
+  final int count;
+  final Animation<double> pulse;
+
+  const _EaLiveCountBadge({
+    required this.count,
+    required this.pulse,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
+      decoration: BoxDecoration(
+        color: AppColors.bettingImageScrim,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: AppColors.primaryInk.withValues(alpha: 0.65)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          FadeTransition(
+            opacity: pulse,
+            child: Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                color: AppColors.primary,
+                shape: BoxShape.circle,
+                boxShadow: AppSurfaces.glowOnly(
+                  AppColors.primary,
+                  strength: 0.65,
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 7),
+          Text(
+            '$count LIVE',
+            style: TextStyle(
+              color: AppColors.primary,
+              fontSize: 10,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _PlayImageButton extends StatelessWidget {
+  final Color color;
+
+  const _PlayImageButton({
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 13, vertical: 8),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: color.withValues(alpha: 0.28),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            'Jouer',
+            style: TextStyle(
+              color: AppColors.bettingOnImage,
+              fontSize: 12,
+              fontWeight: FontWeight.w900,
+            ),
+          ),
+          const SizedBox(width: 5),
+          Icon(
+            AppIcons.forward,
+            size: 13,
+            color: AppColors.bettingOnImage,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ImageBannerFrame extends StatelessWidget {
+  final String asset;
+  final Widget child;
+  final double radius;
+  final Color? borderColor;
+  final BoxFit fit;
+  final AlignmentGeometry alignment;
+  final bool overlay;
+
+  const _ImageBannerFrame({
+    required this.asset,
+    required this.child,
+    this.radius = 18,
+    this.borderColor,
+    this.fit = BoxFit.cover,
+    this.alignment = Alignment.center,
+    this.overlay = true,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.all(1.2),
+      decoration: BoxDecoration(
+        color: AppColors.bettingSurfaceElevated,
+        borderRadius: BorderRadius.circular(radius),
+        border: Border.all(
+          color: borderColor ?? AppColors.bettingBorder,
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.bettingSoftShadow,
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(radius - 1.2),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            Image.asset(
+              asset,
+              fit: fit,
+              alignment: alignment,
+              errorBuilder: (_, __, ___) => DecoratedBox(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                    colors: [
+                      AppColors.bettingViolet.withValues(alpha: 0.75),
+                      AppColors.primaryInk.withValues(alpha: 0.52),
+                      AppColors.bettingImageOverlayStrong,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+            if (overlay)
+              Positioned.fill(
+                child: DecoratedBox(
+                  decoration: BoxDecoration(
+                    gradient: LinearGradient(
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
+                      stops: const [0, 0.46, 1],
+                      colors: [
+                        AppColors.bettingImageOverlaySoft,
+                        AppColors.bettingImageOverlaySoft,
+                        AppColors.bettingImageOverlayStrong,
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            Positioned.fill(child: child),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _ImageBadge extends StatelessWidget {
+  final String label;
+  final Color background;
+  final Color foreground;
+
+  const _ImageBadge({
+    required this.label,
+    required this.background,
+    required this.foreground,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: background,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: foreground,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.4,
+        ),
+      ),
+    );
+  }
+}
+
+class _OutlineImageBadge extends StatelessWidget {
+  final String label;
+  final Color color;
+
+  const _OutlineImageBadge({
+    required this.label,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: AppColors.bettingImageScrim,
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withValues(alpha: 0.88)),
+      ),
+      child: Text(
+        label,
+        style: TextStyle(
+          color: color,
+          fontSize: 10,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.5,
+        ),
       ),
     );
   }

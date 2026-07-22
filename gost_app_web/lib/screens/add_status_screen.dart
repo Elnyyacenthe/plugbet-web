@@ -1,10 +1,7 @@
 // ============================================================
-// AddStatusScreen — Creer un statut image (24h) - WEB COMPATIBLE
+// AddStatusScreen — Creer un statut image (24h)
 // ============================================================
-// Utilise XFile + Uint8List bytes au lieu de dart:io File
-// pour fonctionner sur web (ou File et Image.file ne marchent pas).
-// ============================================================
-import 'dart:typed_data';
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import '../services/messaging_service.dart';
@@ -12,14 +9,8 @@ import '../l10n/generated/app_localizations.dart';
 import '../theme/app_theme.dart';
 
 class AddStatusScreen extends StatefulWidget {
-  final Uint8List imageBytes;
-  final String fileExt; // 'jpg', 'png', etc.
-
-  const AddStatusScreen({
-    super.key,
-    required this.imageBytes,
-    this.fileExt = 'jpg',
-  });
+  final File imageFile;
+  const AddStatusScreen({super.key, required this.imageFile});
 
   /// Helper : ouvre le picker puis navigue vers ce screen
   static Future<bool> pickAndOpen(BuildContext context) async {
@@ -30,17 +21,10 @@ class AddStatusScreen extends StatefulWidget {
       maxWidth: 1920,
     );
     if (picked == null || !context.mounted) return false;
-
-    // Lecture bytes (cross-platform : marche sur web ET mobile)
-    final bytes = await picked.readAsBytes();
-    final name = picked.name;
-    final ext = name.contains('.') ? name.split('.').last.toLowerCase() : 'jpg';
-
-    if (!context.mounted) return false;
     return await Navigator.push<bool>(
           context,
           MaterialPageRoute(
-            builder: (_) => AddStatusScreen(imageBytes: bytes, fileExt: ext),
+            builder: (_) => AddStatusScreen(imageFile: File(picked.path)),
           ),
         ) ??
         false;
@@ -65,12 +49,9 @@ class _AddStatusScreenState extends State<AddStatusScreen> {
     if (_sending) return;
     setState(() => _sending = true);
 
-    final status = await _service.createImageStatusFromBytes(
-      widget.imageBytes,
-      fileExt: widget.fileExt,
-      caption: _captionCtrl.text.trim().isEmpty
-          ? null
-          : _captionCtrl.text.trim(),
+    final status = await _service.createImageStatus(
+      widget.imageFile,
+      caption: _captionCtrl.text.trim().isEmpty ? null : _captionCtrl.text.trim(),
     );
 
     if (!mounted) return;
@@ -103,13 +84,13 @@ class _AddStatusScreenState extends State<AddStatusScreen> {
       ),
       body: Column(
         children: [
-          // Image plein cadre (depuis bytes - web compatible)
+          // Image plein cadre
           Expanded(
             child: Container(
               width: double.infinity,
               color: Colors.black,
-              child: Image.memory(
-                widget.imageBytes,
+              child: Image.file(
+                widget.imageFile,
                 fit: BoxFit.contain,
               ),
             ),

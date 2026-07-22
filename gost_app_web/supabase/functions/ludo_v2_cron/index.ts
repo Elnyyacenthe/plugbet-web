@@ -44,7 +44,10 @@ Deno.serve(async (req) => {
   // 2. Toutes les heures (à minute 0-14) : cleanup rate limits + reconcile
   if (minute < 15) {
     try {
-      const { data, error } = await supabase.rpc('cleanup_old_rate_limits')
+      // [B13] Nom réel de la RPC = cleanup_old_rate_limit_buckets_v2
+      // (ludo_v2_perfection.sql). 'cleanup_old_rate_limits' n'existe pas
+      // -> nettoyage jamais exécuté, table rate_limit_buckets_v2 enflait.
+      const { data, error } = await supabase.rpc('cleanup_old_rate_limit_buckets_v2')
       results.rateCleanup = error ? { error: error.message } : { deleted: data }
     } catch (e) {
       results.rateCleanup = { error: String(e) }

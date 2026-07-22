@@ -1,231 +1,266 @@
 // ============================================================
 // Plugbet – Drawer latéral
 // ============================================================
+// Panneau de métal brossé qui glisse par-dessus l'écran : arête claire
+// sur son bord droit, ombre portée sur le contenu. Chaque entrée porte
+// un médaillon d'icône bombé plutôt qu'une icône posée à plat.
+// ============================================================
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
+import '../theme/app_surfaces.dart';
 import '../theme/app_theme.dart';
 import '../app_version.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/wallet_provider.dart';
 import '../providers/player_provider.dart';
 import '../models/player_models.dart';
+import '../services/hive_service.dart';
+import '../services/supabase_service.dart';
 import '../screens/profile_screen.dart';
 import '../screens/leaderboard_screen.dart';
 import '../screens/support_screen.dart';
 import '../screens/friends_screen.dart';
 import '../screens/favorites_screen.dart';
+import '../screens/promotions/promotions_screen.dart';
 import '../games/_hub/screens/games_home_page.dart';
 
 class AppDrawer extends StatelessWidget {
+  final HiveService hiveService;
+  final SupabaseService supabaseService;
   final void Function(int index)? onTabChange;
 
-  const AppDrawer({super.key, this.onTabChange});
+  const AppDrawer({
+    super.key,
+    required this.hiveService,
+    required this.supabaseService,
+    this.onTabChange,
+  });
 
   @override
   Widget build(BuildContext context) {
     final user = Supabase.instance.client.auth.currentUser;
     final wallet = context.watch<WalletProvider>();
     final t = AppLocalizations.of(context)!;
-    final username = wallet.username.isNotEmpty
-        ? wallet.username
-        : (user?.email ?? '');
+    final username =
+        wallet.username.isNotEmpty ? wallet.username : (user?.email ?? '');
 
     return Drawer(
-      backgroundColor: AppColors.bgDark,
-      child: SafeArea(
-        child: Column(
-          children: [
-            // ── Header ──
-            Container(
-              width: double.infinity,
-              padding: EdgeInsets.fromLTRB(20, 24, 20, 20),
-              decoration: BoxDecoration(
-                gradient: AppColors.headerGradient,
-                border: Border(
-                  bottom: BorderSide(color: AppColors.divider, width: 0.5),
-                ),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Logo
-                  Container(
-                    width: 48, height: 48,
-                    decoration: BoxDecoration(
-                      shape: BoxShape.circle,
-                      gradient: LinearGradient(colors: [
-                        AppColors.neonGreen.withValues(alpha: 0.2),
-                        AppColors.bgCard,
-                      ]),
-                      border: Border.all(
-                        color: AppColors.neonGreen.withValues(alpha: 0.5),
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Icon(Icons.sports_soccer,
-                        color: AppColors.neonGreen, size: 24),
-                  ),
-                  SizedBox(height: 10),
-                  // Nom app
-                  ShaderMask(
-                    shaderCallback: (bounds) => LinearGradient(
-                      colors: [AppColors.textPrimary, AppColors.neonGreen],
-                      stops: [0.6, 1.0],
-                    ).createShader(bounds),
-                    child: Text('Plugbet',
-                        style: TextStyle(
-                            fontSize: 22,
-                            fontWeight: FontWeight.w800,
-                            color: Colors.white)),
-                  ),
-                  // Username (entre logo et FCFA)
-                  if (username.isNotEmpty) ...[
-                    SizedBox(height: 3),
-                    Text(username,
-                        style: TextStyle(
-                            color: AppColors.textSecondary,
-                            fontSize: 13,
-                            fontWeight: FontWeight.w500)),
-                  ],
-                  SizedBox(height: 10),
-                  // Solde coins
-                  Container(
-                    padding: EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                    decoration: BoxDecoration(
-                      color: AppColors.neonYellow.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(
-                          color: AppColors.neonYellow.withValues(alpha: 0.3)),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.monetization_on,
-                            color: AppColors.neonYellow, size: 14),
-                        SizedBox(width: 5),
-                        Text('${wallet.coins} FCFA',
-                            style: TextStyle(
-                                color: AppColors.neonYellow,
-                                fontWeight: FontWeight.w700,
-                                fontSize: 13)),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-
-            // ── Contenu ──
-            Expanded(
-              child: ListView(
-                padding: EdgeInsets.symmetric(vertical: 8),
-                children: [
-                  // --- Profil & Social ---
-                  _sectionHeader('PROFIL & SOCIAL'),
-                  Consumer<PlayerProvider>(
-                    builder: (_, player, __) {
-                      final rank = player.rank;
-                      return ListTile(
-                        dense: true,
-                        leading: Container(
-                          width: 28, height: 28,
-                          decoration: BoxDecoration(
-                            color: rank.color.withValues(alpha: 0.15),
-                            shape: BoxShape.circle,
-                          ),
-                          child: Icon(rank.icon, size: 14, color: rank.color),
-                        ),
-                        title: Text(t.drawerMyProfile,
-                            style: TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.w600,
-                                color: AppColors.textPrimary)),
-                        subtitle: Text('${rank.label} • ${player.xp} XP',
-                            style: TextStyle(fontSize: 11, color: rank.color)),
-                        trailing: Icon(Icons.chevron_right,
-                            size: 18, color: AppColors.textMuted),
-                        onTap: () {
-                          Navigator.pop(context);
-                          Navigator.push(context,
-                              MaterialPageRoute(builder: (_) => const ProfileScreen()));
-                        },
-                      );
-                    },
-                  ),
-                  _menuItem(Icons.leaderboard_rounded, t.drawerLeaderboard, () {
-                    Navigator.pop(context);
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const LeaderboardScreen()));
-                  }),
-                  _menuItem(Icons.people_alt_rounded, t.profileTabFriends, () {
-                    Navigator.pop(context);
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const FriendsScreen()));
-                  }),
-                  _menuItem(Icons.star_rounded, t.drawerFavorites, () {
-                    Navigator.pop(context);
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const FavoritesScreen()));
-                  }),
-
-                  Divider(color: AppColors.divider, height: 24, indent: 16, endIndent: 16),
-
-                  // --- Jeux ---
-                  _sectionHeader('JEUX'),
-                  _menuItem(Icons.sports_esports_rounded, t.tabGames, () {
-                    Navigator.pop(context);
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const GamesHomePage()));
-                  }),
-
-                  Divider(color: AppColors.divider, height: 24, indent: 16, endIndent: 16),
-
-                  // --- Info ---
-                  _sectionHeader('INFO'),
-                  _menuItem(Icons.help_outline, t.drawerHelp, () {
-                    Navigator.pop(context);
-                    _showAideDialog(context);
-                  }),
-                  _menuItem(Icons.privacy_tip_outlined, t.drawerPrivacy, () {
-                    Navigator.pop(context);
-                    launchUrl(Uri.parse('https://plugbet.com/privacy'),
-                        mode: LaunchMode.externalApplication);
-                  }),
-                  _menuItem(Icons.support_agent, t.drawerContact, () {
-                    Navigator.pop(context);
-                    Navigator.push(context,
-                        MaterialPageRoute(builder: (_) => const SupportScreen()));
-                  }),
-                ],
-              ),
-            ),
-
-            // ── Footer ──
-            Container(
-              padding: EdgeInsets.all(16),
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: AppColors.divider, width: 0.5),
-                ),
-              ),
-              child: Text('v$kAppVersion',
-                  style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+      backgroundColor: Colors.transparent,
+      elevation: 0,
+      child: Container(
+        decoration: BoxDecoration(
+          gradient: AppSurfaces.metal,
+          border: Border(
+            right: BorderSide(color: AppSurfaces.edgeLight, width: 1),
+          ),
+          boxShadow: [
+            BoxShadow(
+              color:
+                  Colors.black.withValues(alpha: AppColors.isDark ? 0.6 : 0.18),
+              blurRadius: 24,
+              offset: const Offset(6, 0),
             ),
           ],
+        ),
+        child: SafeArea(
+          child: Column(
+            children: [
+              _buildHeader(context, username, wallet),
+              Expanded(
+                child: ListView(
+                  padding: const EdgeInsets.symmetric(vertical: 10),
+                  children: [
+                    _sectionHeader('PROFIL & SOCIAL'),
+                    _buildRankTile(context, t),
+                    _MenuItem(
+                      icon: AppIcons.leaderboard,
+                      color: AppColors.neonYellow,
+                      label: t.drawerLeaderboard,
+                      onTap: () => _go(context, const LeaderboardScreen()),
+                    ),
+                    _MenuItem(
+                      icon: AppIcons.friends,
+                      color: AppColors.neonBlue,
+                      label: t.profileTabFriends,
+                      onTap: () => _go(context, const FriendsScreen()),
+                    ),
+                    _MenuItem(
+                      icon: AppIcons.starFilled,
+                      color: AppColors.neonOrange,
+                      label: t.drawerFavorites,
+                      onTap: () => _go(context, const FavoritesScreen()),
+                    ),
+                    _MenuItem(
+                      icon: AppIcons.gift,
+                      color: AppColors.neonPurple,
+                      label: 'Promotions',
+                      onTap: () => _go(context, const PromotionsScreen()),
+                    ),
+                    const ReliefDivider(indent: 16, height: 26),
+                    _sectionHeader('JEUX'),
+                    _MenuItem(
+                      icon: AppIcons.games,
+                      color: AppColors.neonPurple,
+                      label: t.tabGames,
+                      onTap: () => _go(context, const GamesHomePage()),
+                    ),
+                    const ReliefDivider(indent: 16, height: 26),
+                    _sectionHeader('INFO'),
+                    _MenuItem(
+                      icon: AppIcons.help,
+                      color: AppColors.textSecondary,
+                      label: t.drawerHelp,
+                      onTap: () {
+                        Navigator.pop(context);
+                        _showAideDialog(context);
+                      },
+                    ),
+                    _MenuItem(
+                      icon: AppIcons.privacy,
+                      color: AppColors.textSecondary,
+                      label: t.drawerPrivacy,
+                      onTap: () {
+                        Navigator.pop(context);
+                        launchUrl(Uri.parse('https://plugbet.com/privacy'),
+                            mode: LaunchMode.externalApplication);
+                      },
+                    ),
+                    _MenuItem(
+                      icon: AppIcons.support,
+                      color: AppColors.textSecondary,
+                      label: t.drawerContact,
+                      onTap: () => _go(context, const SupportScreen()),
+                    ),
+                  ],
+                ),
+              ),
+              _buildFooter(),
+            ],
+          ),
         ),
       ),
     );
   }
 
+  void _go(BuildContext context, Widget screen) {
+    Navigator.pop(context);
+    Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+  }
+
+  // ── Header ──────────────────────────────────────────────────
+  Widget _buildHeader(
+      BuildContext context, String username, WalletProvider wallet) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.fromLTRB(20, 22, 20, 20),
+      decoration: BoxDecoration(
+        gradient: AppColors.headerGradient,
+        border: Border(
+          bottom: BorderSide(color: AppSurfaces.edgeDark, width: 1),
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          DomeIcon(
+            icon: AppIcons.football,
+            color: AppColors.primary,
+            size: 52,
+          ),
+          const SizedBox(height: 12),
+          ShaderMask(
+            shaderCallback: (bounds) => LinearGradient(
+              colors: [AppColors.textPrimary, AppColors.primaryInk],
+              stops: const [0.55, 1.0],
+            ).createShader(bounds),
+            child: const Text(
+              'Plugbet',
+              style: TextStyle(
+                fontSize: 23,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.4,
+                color: Colors.white,
+              ),
+            ),
+          ),
+          if (username.isNotEmpty) ...[
+            const SizedBox(height: 3),
+            Text(
+              username,
+              style: TextStyle(
+                color: AppColors.textSecondary,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ],
+          const SizedBox(height: 12),
+          ReliefPill(
+            label: '${wallet.coins} FCFA',
+            icon: AppIcons.coinsFilled,
+            color: AppColors.neonYellow,
+            fontSize: 13,
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ── Entrée « Mon profil », qui affiche le rang ──────────────
+  Widget _buildRankTile(BuildContext context, AppLocalizations t) {
+    return Consumer<PlayerProvider>(
+      builder: (_, player, __) {
+        final rank = player.rank;
+        return _MenuItem(
+          icon: rank.icon,
+          color: rank.color,
+          label: t.drawerMyProfile,
+          subtitle: '${rank.label} • ${player.xp} XP',
+          subtitleColor: rank.color,
+          onTap: () => _go(
+            context,
+            ProfileScreen(
+              hiveService: hiveService,
+              supabaseService: supabaseService,
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // ── Footer ──────────────────────────────────────────────────
+  Widget _buildFooter() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: AppSurfaces.edgeDark, width: 1)),
+      ),
+      child: Text(
+        'v$kAppVersion',
+        style: TextStyle(fontSize: 11, color: AppColors.textMuted),
+      ),
+    );
+  }
+
   void _showAideDialog(BuildContext context) {
+    final t = AppLocalizations.of(context)!;
     showDialog(
       context: context,
       builder: (dialogCtx) => AlertDialog(
         backgroundColor: AppColors.bgCard,
-        title: Text(AppLocalizations.of(context)!.drawerHelp, style: TextStyle(color: AppColors.textPrimary)),
+        shape: RoundedRectangleBorder(
+          borderRadius: AppRadius.brLg,
+          side: BorderSide(color: AppColors.primaryInk.withValues(alpha: 0.4)),
+        ),
+        title:
+            Text(t.drawerHelp, style: TextStyle(color: AppColors.textPrimary)),
         content: Text(
           'Plugbet – Chat & Bet\n\n'
           '• Matchs : scores en direct\n'
@@ -238,7 +273,8 @@ class AppDrawer extends StatelessWidget {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(dialogCtx),
-            child: Text(AppLocalizations.of(context)!.commonOk, style: TextStyle(color: AppColors.neonGreen)),
+            child:
+                Text(t.commonOk, style: TextStyle(color: AppColors.primaryInk)),
           ),
         ],
       ),
@@ -247,27 +283,98 @@ class AppDrawer extends StatelessWidget {
 
   Widget _sectionHeader(String title) {
     return Padding(
-      padding: EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Text(title,
-          style: TextStyle(
-              fontSize: 11,
-              fontWeight: FontWeight.w700,
-              color: AppColors.textMuted,
-              letterSpacing: 1.5)),
+      padding: const EdgeInsets.fromLTRB(20, 10, 16, 8),
+      child: Text(
+        title,
+        style: TextStyle(
+          fontSize: 10.5,
+          fontWeight: FontWeight.w800,
+          color: AppColors.textMuted,
+          letterSpacing: 1.6,
+        ),
+      ),
     );
   }
+}
 
-  Widget _menuItem(IconData icon, String label, VoidCallback onTap) {
-    return ListTile(
-      dense: true,
-      leading: Icon(icon, size: 20, color: AppColors.textSecondary),
-      title: Text(label,
-          style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-              color: AppColors.textPrimary)),
-      trailing: Icon(Icons.chevron_right, size: 18, color: AppColors.textMuted),
-      onTap: onTap,
+// ── Entrée de menu ────────────────────────────────────────────
+
+class _MenuItem extends StatefulWidget {
+  final IconData icon;
+  final Color color;
+  final String label;
+  final String? subtitle;
+  final Color? subtitleColor;
+  final VoidCallback onTap;
+
+  const _MenuItem({
+    required this.icon,
+    required this.color,
+    required this.label,
+    required this.onTap,
+    this.subtitle,
+    this.subtitleColor,
+  });
+
+  @override
+  State<_MenuItem> createState() => _MenuItemState();
+}
+
+class _MenuItemState extends State<_MenuItem> {
+  bool _hover = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: (_) => setState(() => _hover = true),
+      onTapUp: (_) => setState(() => _hover = false),
+      onTapCancel: () => setState(() => _hover = false),
+      behavior: HitTestBehavior.opaque,
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 130),
+        margin: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 9),
+        decoration: BoxDecoration(
+          borderRadius: AppRadius.brSm,
+          color: _hover
+              ? widget.color.withValues(alpha: 0.10)
+              : Colors.transparent,
+        ),
+        child: Row(
+          children: [
+            DomeIcon(icon: widget.icon, color: widget.color, size: 34),
+            const SizedBox(width: 13),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.label,
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  if (widget.subtitle != null) ...[
+                    const SizedBox(height: 2),
+                    Text(
+                      widget.subtitle!,
+                      style: TextStyle(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: widget.subtitleColor ?? AppColors.textMuted,
+                      ),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            Icon(AppIcons.chevronRight, size: 16, color: AppColors.textMuted),
+          ],
+        ),
+      ),
     );
   }
 }

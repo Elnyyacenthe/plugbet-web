@@ -109,7 +109,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.chatCannotOpenGallery), backgroundColor: Colors.red),
+          SnackBar(
+              content:
+                  Text(AppLocalizations.of(context)!.chatCannotOpenGallery),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -131,7 +134,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(AppLocalizations.of(context)!.chatCannotOpenCamera), backgroundColor: Colors.red),
+          SnackBar(
+              content: Text(AppLocalizations.of(context)!.chatCannotOpenCamera),
+              backgroundColor: Colors.red),
         );
       }
     }
@@ -149,7 +154,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
           children: [
-            _attachOption(Icons.photo_library, 'Galerie', AppColors.neonGreen, () {
+            _attachOption(Icons.photo_library, 'Galerie', AppColors.neonGreen,
+                () {
               Navigator.pop(ctx);
               _pickImage();
             }),
@@ -163,7 +169,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _attachOption(IconData icon, String label, Color color, VoidCallback onTap) {
+  Widget _attachOption(
+      IconData icon, String label, Color color, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Column(
@@ -178,7 +185,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
             child: Icon(icon, color: color, size: 26),
           ),
           SizedBox(height: 8),
-          Text(label, style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
+          Text(label,
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12)),
         ],
       ),
     );
@@ -206,13 +214,15 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         padding: EdgeInsets.symmetric(vertical: 20, horizontal: 16),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-          children: emojis.map((emoji) => GestureDetector(
-            onTap: () {
-              Navigator.pop(ctx);
-              _provider.toggleReaction(msg.id, emoji);
-            },
-            child: Text(emoji, style: TextStyle(fontSize: 32)),
-          )).toList(),
+          children: emojis
+              .map((emoji) => GestureDetector(
+                    onTap: () {
+                      Navigator.pop(ctx);
+                      _provider.toggleReaction(msg.id, emoji);
+                    },
+                    child: Text(emoji, style: TextStyle(fontSize: 32)),
+                  ))
+              .toList(),
         ),
       ),
     );
@@ -230,8 +240,12 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
           mainAxisSize: MainAxisSize.min,
           children: [
             SizedBox(height: 8),
-            Container(width: 40, height: 4, decoration: BoxDecoration(
-              color: AppColors.divider, borderRadius: BorderRadius.circular(2))),
+            Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                    color: AppColors.divider,
+                    borderRadius: BorderRadius.circular(2))),
             SizedBox(height: 16),
             if (!msg.isDeleted) ...[
               _optionTile(Icons.reply, 'Répondre', () {
@@ -243,15 +257,19 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 Navigator.pop(ctx);
                 _showReactions(msg);
               }),
-              _optionTile(Icons.copy, AppLocalizations.of(context)!.commonCopy, () {
+              _optionTile(Icons.copy, AppLocalizations.of(context)!.commonCopy,
+                  () {
                 Navigator.pop(ctx);
                 Clipboard.setData(ClipboardData(text: msg.content));
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text(AppLocalizations.of(context)!.commonCopied), duration: Duration(seconds: 1)),
+                  SnackBar(
+                      content: Text(AppLocalizations.of(context)!.commonCopied),
+                      duration: Duration(seconds: 1)),
                 );
               }),
               if (isMe)
-                _optionTile(Icons.delete_outline, AppLocalizations.of(context)!.commonDelete, () {
+                _optionTile(Icons.delete_outline,
+                    AppLocalizations.of(context)!.commonDelete, () {
                   Navigator.pop(ctx);
                   _confirmDelete(msg);
                 }, color: AppColors.neonRed),
@@ -263,10 +281,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
     );
   }
 
-  Widget _optionTile(IconData icon, String label, VoidCallback onTap, {Color? color}) {
+  Widget _optionTile(IconData icon, String label, VoidCallback onTap,
+      {Color? color}) {
     return ListTile(
       leading: Icon(icon, color: color ?? AppColors.textPrimary, size: 22),
-      title: Text(label, style: TextStyle(color: color ?? AppColors.textPrimary, fontSize: 15)),
+      title: Text(label,
+          style:
+              TextStyle(color: color ?? AppColors.textPrimary, fontSize: 15)),
       onTap: onTap,
     );
   }
@@ -284,14 +305,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text(AppLocalizations.of(context)!.commonCancel, style: TextStyle(color: AppColors.textMuted)),
+            child: Text(AppLocalizations.of(context)!.commonCancel,
+                style: TextStyle(color: AppColors.textMuted)),
           ),
           TextButton(
             onPressed: () {
               Navigator.pop(ctx);
               _provider.deleteMessage(msg.id);
             },
-            child: Text(AppLocalizations.of(context)!.commonDelete, style: TextStyle(color: AppColors.neonRed)),
+            child: Text(AppLocalizations.of(context)!.commonDelete,
+                style: TextStyle(color: AppColors.neonRed)),
           ),
         ],
       ),
@@ -301,10 +324,10 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
+      backgroundColor: AppColors.bettingBackground,
       appBar: _isSearching ? _buildSearchAppBar() : _buildNormalAppBar(),
       body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
+        color: AppColors.bettingBackground,
         child: Column(
           children: [
             // Typing indicator
@@ -318,12 +341,16 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     mainAxisSize: MainAxisSize.min,
                     children: [
                       SizedBox(
-                        width: 20, height: 12,
+                        width: 20,
+                        height: 12,
                         child: const TypingDots(),
                       ),
                       SizedBox(width: 8),
                       Text('${widget.otherUsername} écrit...',
-                          style: TextStyle(color: AppColors.neonGreen, fontSize: 12, fontStyle: FontStyle.italic)),
+                          style: TextStyle(
+                              color: AppColors.neonGreen,
+                              fontSize: 12,
+                              fontStyle: FontStyle.italic)),
                     ],
                   ),
                 );
@@ -343,16 +370,24 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                       child: Column(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          Icon(Icons.chat_bubble_outline, color: AppColors.textMuted.withValues(alpha: 0.3), size: 48),
+                          Icon(Icons.chat_bubble_outline,
+                              color: AppColors.textMuted.withValues(alpha: 0.3),
+                              size: 48),
                           SizedBox(height: 12),
-                          Text(AppLocalizations.of(context)!.chatSendFirstMessage,
-                              style: TextStyle(color: AppColors.textMuted.withValues(alpha: 0.5), fontSize: 14)),
+                          Text(
+                              AppLocalizations.of(context)!
+                                  .chatSendFirstMessage,
+                              style: TextStyle(
+                                  color: AppColors.textMuted
+                                      .withValues(alpha: 0.5),
+                                  fontSize: 14)),
                         ],
                       ),
                     );
                   }
 
-                  WidgetsBinding.instance.addPostFrameCallback((_) => _scrollToBottom());
+                  WidgetsBinding.instance
+                      .addPostFrameCallback((_) => _scrollToBottom());
 
                   return ListView.builder(
                     controller: _scrollController,
@@ -364,7 +399,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
                       // Séparateur de date
                       Widget? dateSeparator;
-                      if (index == 0 || !_sameDay(messages[index - 1].createdAt, msg.createdAt)) {
+                      if (index == 0 ||
+                          !_sameDay(
+                              messages[index - 1].createdAt, msg.createdAt)) {
                         dateSeparator = DateSeparator(date: msg.createdAt);
                       }
 
@@ -399,26 +436,35 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   padding: EdgeInsets.fromLTRB(16, 8, 8, 0),
                   decoration: BoxDecoration(
                     color: AppColors.bgCard,
-                    border: Border(top: BorderSide(color: AppColors.neonGreen.withValues(alpha: 0.3))),
+                    border: Border(
+                        top: BorderSide(
+                            color: AppColors.neonGreen.withValues(alpha: 0.3))),
                   ),
                   child: Row(
                     children: [
-                      Container(width: 3, height: 36, color: AppColors.neonGreen),
+                      Container(
+                          width: 3, height: 36, color: AppColors.neonGreen),
                       SizedBox(width: 8),
                       Expanded(
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
                             Text(AppLocalizations.of(context)!.chatReply,
-                                style: TextStyle(color: AppColors.neonGreen, fontSize: 11, fontWeight: FontWeight.w700)),
+                                style: TextStyle(
+                                    color: AppColors.neonGreen,
+                                    fontSize: 11,
+                                    fontWeight: FontWeight.w700)),
                             Text(reply.content,
-                                maxLines: 1, overflow: TextOverflow.ellipsis,
-                                style: TextStyle(color: AppColors.textMuted, fontSize: 12)),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: TextStyle(
+                                    color: AppColors.textMuted, fontSize: 12)),
                           ],
                         ),
                       ),
                       IconButton(
-                        icon: Icon(Icons.close, size: 18, color: AppColors.textMuted),
+                        icon: Icon(Icons.close,
+                            size: 18, color: AppColors.textMuted),
                         onPressed: () => provider.setReplyTo(null),
                       ),
                     ],
@@ -437,7 +483,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   PreferredSizeWidget _buildNormalAppBar() {
     return AppBar(
-      backgroundColor: AppColors.bgBlueNight,
+      backgroundColor: AppColors.bettingSurfaceElevated,
       title: Row(
         children: [
           UserAvatar(
@@ -462,10 +508,11 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                     // Badge combo (rebuild seulement quand le combo change)
                     Selector<MessagingProvider, int>(
                       selector: (_, p) {
-                        final conv = p.conversations.cast<Conversation?>().firstWhere(
-                              (c) => c?.id == widget.conversationId,
-                              orElse: () => null,
-                            );
+                        final conv =
+                            p.conversations.cast<Conversation?>().firstWhere(
+                                  (c) => c?.id == widget.conversationId,
+                                  orElse: () => null,
+                                );
                         return conv?.comboCount ?? 0;
                       },
                       builder: (_, combo, __) {
@@ -479,10 +526,13 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   ],
                 ),
                 if (widget.isOnline)
-                  Text(AppLocalizations.of(context)!.chatOnline, style: TextStyle(fontSize: 11, color: AppColors.neonGreen))
+                  Text(AppLocalizations.of(context)!.chatOnline,
+                      style:
+                          TextStyle(fontSize: 11, color: AppColors.neonGreen))
                 else if (widget.lastSeenAt != null)
                   Text(_formatLastSeen(widget.lastSeenAt),
-                      style: TextStyle(fontSize: 11, color: AppColors.textMuted)),
+                      style:
+                          TextStyle(fontSize: 11, color: AppColors.textMuted)),
               ],
             ),
           ),
@@ -499,7 +549,7 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
 
   PreferredSizeWidget _buildSearchAppBar() {
     return AppBar(
-      backgroundColor: AppColors.bgBlueNight,
+      backgroundColor: AppColors.bettingSurfaceElevated,
       leading: IconButton(
         icon: Icon(Icons.arrow_back),
         onPressed: () => setState(() {
@@ -537,7 +587,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
       padding: EdgeInsets.symmetric(horizontal: 8, vertical: 8),
       decoration: BoxDecoration(
         color: AppColors.bgCard,
-        border: Border(top: BorderSide(color: AppColors.divider.withValues(alpha: 0.5), width: 0.5)),
+        border: Border(
+            top: BorderSide(
+                color: AppColors.divider.withValues(alpha: 0.5), width: 0.5)),
       ),
       child: SafeArea(
         top: false,
@@ -548,7 +600,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
               onTap: _showAttachMenu,
               child: Padding(
                 padding: EdgeInsets.all(6),
-                child: Icon(Icons.attach_file, color: AppColors.textSecondary, size: 22),
+                child: Icon(Icons.attach_file,
+                    color: AppColors.textSecondary, size: 22),
               ),
             ),
             SizedBox(width: 4),
@@ -560,7 +613,9 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                 decoration: BoxDecoration(
                   color: AppColors.bgElevated,
                   borderRadius: BorderRadius.circular(22),
-                  border: Border.all(color: AppColors.divider.withValues(alpha: 0.5), width: 0.5),
+                  border: Border.all(
+                      color: AppColors.divider.withValues(alpha: 0.5),
+                      width: 0.5),
                 ),
                 child: TextField(
                   controller: _messageController,
@@ -568,7 +623,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   style: TextStyle(color: AppColors.textPrimary, fontSize: 14),
                   decoration: InputDecoration(
                     hintText: 'Votre message...',
-                    hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                    hintStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 14),
                     border: InputBorder.none,
                     contentPadding: EdgeInsets.symmetric(vertical: 10),
                   ),
@@ -590,7 +646,8 @@ class _ChatDetailScreenState extends State<ChatDetailScreen> {
                   color: AppColors.neonGreen,
                   shape: BoxShape.circle,
                 ),
-                child: Icon(Icons.send_rounded, color: AppColors.bgDark, size: 20),
+                child:
+                    Icon(Icons.send_rounded, color: AppColors.bgDark, size: 20),
               ),
             ),
           ],

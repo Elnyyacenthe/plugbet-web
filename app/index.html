@@ -6,12 +6,29 @@
   <meta charset="UTF-8">
   <meta content="IE=Edge" http-equiv="X-UA-Compatible">
   <meta name="description" content="Plugbet - Chat & Bet, scores en direct et jeux.">
+  <!-- Color theme pour la barre URL Chrome Android -->
+  <meta name="theme-color" content="#040810">
 
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
   <meta name="apple-mobile-web-app-title" content="Plugbet">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
+
+  <!-- ════════════════════════════════════════════════════════
+       PERF — Preconnect aux origins critiques (DNS + TLS warm-up)
+       Gain typique : -100..-300ms sur les 1er appels API.
+       ═══════════════════════════════════════════════════════ -->
+  <link rel="preconnect" href="https://dqzrociaaztlezwlgzwh.supabase.co" crossorigin>
+  <link rel="dns-prefetch" href="https://dqzrociaaztlezwlgzwh.supabase.co">
+  <!-- StatPal direct (via Edge Function proxy, donc meme origin Supabase) -->
+  <!-- Logos equipes (team_logo_proxy edge function) -->
+  <link rel="preconnect" href="https://dqzrociaaztlezwlgzwh.functions.supabase.co" crossorigin>
+
+  <!-- PERF — Preload des bundles Flutter (priorite haute, parallele au HTML) -->
+  <link rel="modulepreload" href="flutter_bootstrap.js" as="script">
+  <link rel="preload" href="manifest.json" as="fetch" crossorigin>
+  <link rel="preload" href="favicon.png" as="image">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
@@ -74,6 +91,53 @@
   </div>
 
   <script>
+    // ════════════════════════════════════════════════════════════
+    // PERF METRICS — Mesure tous les paliers de chargement
+    // ════════════════════════════════════════════════════════════
+    // Marks accessibles dans DevTools Performance + console + Sentry web.
+    // Permet d'identifier OU on perd le plus de temps : DNS, JS bundle,
+    // Flutter init, hydratation IndexedDB, premier paint.
+    window.__PLUGBET_PERF__ = { t0: performance.now() };
+    try { performance.mark('pb_html_parsed'); } catch (e) {}
+
+    function pbMark(name) {
+      try {
+        performance.mark('pb_' + name);
+        var t = Math.round(performance.now() - window.__PLUGBET_PERF__.t0);
+        console.log('[Plugbet PERF]', name, t + 'ms');
+        window.__PLUGBET_PERF__[name] = t;
+      } catch (e) {}
+    }
+    window.pbMark = pbMark;
+
+    // Reporting global sur 'load' (toutes ressources telechargees)
+    window.addEventListener('load', function () {
+      pbMark('window_load');
+      // Web Vitals approchant : LCP, FCP via PerformanceObserver
+      try {
+        if ('PerformanceObserver' in window) {
+          new PerformanceObserver(function (list) {
+            list.getEntries().forEach(function (e) {
+              if (e.name === 'first-contentful-paint') {
+                console.log('[Plugbet PERF] FCP', Math.round(e.startTime) + 'ms');
+                window.__PLUGBET_PERF__.fcp = Math.round(e.startTime);
+              }
+            });
+          }).observe({ type: 'paint', buffered: true });
+          new PerformanceObserver(function (list) {
+            var entries = list.getEntries();
+            var lcp = entries[entries.length - 1];
+            if (lcp) {
+              console.log('[Plugbet PERF] LCP', Math.round(lcp.startTime) + 'ms');
+              window.__PLUGBET_PERF__.lcp = Math.round(lcp.startTime);
+            }
+          }).observe({ type: 'largest-contentful-paint', buffered: true });
+        }
+      } catch (e) {}
+    });
+  </script>
+
+  <script>
     // ============================================================
     // KILL-SWITCH SERVICE WORKER — PERMANENT, SANS DEADLINE
     // ============================================================
@@ -123,12 +187,24 @@
   <script src="flutter_bootstrap.js" async></script>
 
   <script>
+    // Marker JS bundle telecharge + parse
+    window.pbMark && pbMark('bootstrap_loaded');
+
     // Supprime l'overlay une fois que Flutter a dessine sa premiere frame.
+    // ATTENTION : on garde l'overlay encore 100ms apres flutter-first-frame
+    // pour eviter le flash si le splash Flutter n'est pas encore monte.
+    // Sinon : overlay disparait -> ecran noir 1 frame -> splash Flutter
+    // apparait (pas terrible).
     window.addEventListener('flutter-first-frame', () => {
+      window.pbMark && pbMark('flutter_first_frame');
       const overlay = document.getElementById('loading-overlay');
       if (overlay) {
-        overlay.classList.add('done');
-        setTimeout(() => overlay.remove(), 500);
+        // Petit delai pour laisser Flutter prendre le relai visuellement
+        setTimeout(() => {
+          overlay.classList.add('done');
+          setTimeout(() => overlay.remove(), 500);
+          window.pbMark && pbMark('overlay_removed');
+        }, 80);
       }
     });
 

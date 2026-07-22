@@ -1,5 +1,6 @@
 // ============================================================
 // AVIATOR - Ecran de jeu principal (style casino multijoueur)
+// Premium redesign — logique de jeu strictement inchangée.
 // Layout :
 //   • Wide (>=900px) : panneau gauche (live bets) + centre (jeu) + panneau droit (gains)
 //   • Mobile : panneaux en sheets repliables, centre plein ecran
@@ -7,6 +8,7 @@
 // ============================================================
 
 import 'dart:math';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -21,6 +23,10 @@ import '../widgets/live_bets_panel.dart';
 import '../widgets/live_winnings_panel.dart';
 import '../widgets/aviator_background.dart';
 import '../../../widgets/network_lost_overlay.dart';
+import '../../../services/audio_service.dart';
+
+const _kAviatorRed = Color(0xFFEF4444);
+const _kAviatorOrange = Color(0xFFF97316);
 
 class AviatorGameScreen extends StatelessWidget {
   final bool demoMode;
@@ -55,6 +61,7 @@ class _AviatorBodyState extends State<_AviatorBody>
   @override
   void initState() {
     super.initState();
+    _initAudio();
     _pulseCtrl = AnimationController(
         vsync: this, duration: const Duration(milliseconds: 600))
       ..repeat(reverse: true);
@@ -69,20 +76,28 @@ class _AviatorBodyState extends State<_AviatorBody>
     );
   }
 
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('aviator');
+    AudioService.instance.startBackgroundMusic();
+  }
+
   @override
   void dispose() {
     _pulseCtrl.dispose();
     _shakeCtrl.dispose();
+    AudioService.instance.stopBackgroundMusic();
     super.dispose();
   }
 
   void _onPhaseCrashed() {
     HapticFeedback.heavyImpact();
+    AudioService.instance.playCrash();
     _shakeCtrl.forward(from: 0);
   }
 
   void _onCashOut(AviatorProvider prov, AviatorBet bet) {
     HapticFeedback.mediumImpact();
+    AudioService.instance.playClimb();
     prov.cashOut(bet);
   }
 
@@ -96,18 +111,32 @@ class _AviatorBodyState extends State<_AviatorBody>
       builder: (ctx, prov, _) {
         if (prov.phase == AviatorPhase.crashed &&
             _shakeCtrl.status == AnimationStatus.dismissed) {
-          WidgetsBinding.instance.addPostFrameCallback((_) => _onPhaseCrashed());
+          WidgetsBinding.instance
+              .addPostFrameCallback((_) => _onPhaseCrashed());
         }
 
         return Scaffold(
           backgroundColor: const Color(0xFF050508),
+          extendBodyBehindAppBar: false,
           appBar: _buildAppBar(prov, wallet),
-          body: LayoutBuilder(
-            builder: (ctx, constraints) {
-              final wide = constraints.maxWidth >= 900;
-              if (wide) return _buildWideLayout(prov);
-              return _buildMobileLayout(prov);
-            },
+          body: DecoratedBox(
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+                colors: [
+                  Color(0xFF0B0B14),
+                  Color(0xFF050508),
+                ],
+              ),
+            ),
+            child: LayoutBuilder(
+              builder: (ctx, constraints) {
+                final wide = constraints.maxWidth >= 900;
+                if (wide) return _buildWideLayout(prov);
+                return _buildMobileLayout(prov);
+              },
+            ),
           ),
         );
       },
@@ -159,9 +188,14 @@ class _AviatorBodyState extends State<_AviatorBody>
               child: Row(
                 children: [
                   const LiveBetsPanel(width: 240),
-                  Container(
-                    width: MediaQuery.of(context).size.width - 240,
-                    color: Colors.black.withValues(alpha: 0.55),
+                  ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                      child: Container(
+                        width: MediaQuery.of(context).size.width - 240,
+                        color: Colors.black.withValues(alpha: 0.55),
+                      ),
+                    ),
                   ),
                 ],
               ),
@@ -176,9 +210,14 @@ class _AviatorBodyState extends State<_AviatorBody>
               onTap: () => setState(() => _showWinningsSheet = false),
               child: Row(
                 children: [
-                  Container(
-                    width: MediaQuery.of(context).size.width - 200,
-                    color: Colors.black.withValues(alpha: 0.55),
+                  ClipRect(
+                    child: BackdropFilter(
+                      filter: ImageFilter.blur(sigmaX: 3, sigmaY: 3),
+                      child: Container(
+                        width: MediaQuery.of(context).size.width - 200,
+                        color: Colors.black.withValues(alpha: 0.55),
+                      ),
+                    ),
                   ),
                   const LiveWinningsPanel(width: 200),
                 ],
@@ -202,18 +241,22 @@ class _AviatorBodyState extends State<_AviatorBody>
             child: GestureDetector(
               onTap: () => setState(() => _showLiveBetsSheet = true),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F2015),
-                  borderRadius: BorderRadius.circular(8),
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF0F2015),
+                      AppColors.neonGreen.withValues(alpha: 0.06),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(
-                      color: Colors.white.withValues(alpha: 0.08)),
+                      color: AppColors.neonGreen.withValues(alpha: 0.18)),
                 ),
                 child: Row(
                   children: [
-                    const Icon(Icons.groups,
-                        color: Colors.white70, size: 14),
+                    Icon(Icons.groups, color: Colors.white70, size: 14),
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
@@ -236,18 +279,28 @@ class _AviatorBodyState extends State<_AviatorBody>
             child: GestureDetector(
               onTap: () => setState(() => _showWinningsSheet = true),
               child: Container(
-                padding: const EdgeInsets.symmetric(
-                    horizontal: 10, vertical: 6),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 10, vertical: 7),
                 decoration: BoxDecoration(
-                  color: const Color(0xFF0F2015),
-                  borderRadius: BorderRadius.circular(8),
+                  gradient: LinearGradient(
+                    colors: [
+                      const Color(0xFF0F2015),
+                      AppColors.neonGreen.withValues(alpha: 0.06),
+                    ],
+                  ),
+                  borderRadius: BorderRadius.circular(10),
                   border: Border.all(
                       color: AppColors.neonGreen.withValues(alpha: 0.25)),
+                  boxShadow: [
+                    BoxShadow(
+                      color: AppColors.neonGreen.withValues(alpha: 0.1),
+                      blurRadius: 8,
+                    ),
+                  ],
                 ),
                 child: Row(
                   children: [
-                    Icon(Icons.bolt,
-                        color: AppColors.neonGreen, size: 14),
+                    Icon(Icons.bolt, color: AppColors.neonGreen, size: 14),
                     const SizedBox(width: 6),
                     Text(
                       'Gains live',
@@ -274,33 +327,66 @@ class _AviatorBodyState extends State<_AviatorBody>
     return AppBar(
       backgroundColor: const Color(0xFF0A0A10),
       elevation: 0,
+      flexibleSpace: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              const Color(0xFF0A0A10),
+              Color.lerp(const Color(0xFF0A0A10), _kAviatorRed, 0.08)!,
+            ],
+          ),
+        ),
+      ),
       leading: IconButton(
         icon: Icon(Icons.arrow_back, color: AppColors.textPrimary),
         onPressed: () => Navigator.pop(context),
       ),
       title: Row(
         children: [
-          const Text('✈ ',
-              style: TextStyle(fontSize: 18, color: Color(0xFFEF4444))),
-          const Text(
-            'AVIATOR',
-            style: TextStyle(
-              color: Color(0xFFEF4444),
-              fontWeight: FontWeight.w900,
-              letterSpacing: 2,
-              fontSize: 16,
+          Text('✈ ',
+              style: TextStyle(
+                fontSize: 18,
+                color: _kAviatorRed,
+                shadows: [
+                  Shadow(color: _kAviatorRed.withValues(alpha: 0.6), blurRadius: 10),
+                ],
+              )),
+          ShaderMask(
+            shaderCallback: (bounds) => const LinearGradient(
+              colors: [_kAviatorRed, Color(0xFFFF8A8A)],
+            ).createShader(bounds),
+            child: const Text(
+              'AVIATOR',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 2,
+                fontSize: 16,
+              ),
             ),
           ),
           if (prov.isDemoMode) ...[
             const SizedBox(width: 8),
             Container(
-              padding:
-                  const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: AppColors.neonBlue.withValues(alpha: 0.2),
+                gradient: LinearGradient(
+                  colors: [
+                    AppColors.neonBlue.withValues(alpha: 0.28),
+                    AppColors.neonBlue.withValues(alpha: 0.1),
+                  ],
+                ),
                 borderRadius: BorderRadius.circular(6),
                 border: Border.all(
                     color: AppColors.neonBlue.withValues(alpha: 0.5)),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.neonBlue.withValues(alpha: 0.25),
+                    blurRadius: 6,
+                  ),
+                ],
               ),
               child: Text('DEMO',
                   style: TextStyle(
@@ -314,19 +400,33 @@ class _AviatorBodyState extends State<_AviatorBody>
       actions: [
         Padding(
           padding: const EdgeInsets.only(right: 8),
-          child: Row(
-            children: [
-              Icon(Icons.monetization_on,
-                  color: AppColors.neonYellow, size: 16),
-              const SizedBox(width: 4),
-              Text(
-                prov.isDemoMode ? '∞' : '${wallet.coins}',
-                style: TextStyle(
-                    color: AppColors.neonYellow,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 14),
+          child: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            decoration: BoxDecoration(
+              gradient: LinearGradient(
+                colors: [
+                  AppColors.neonYellow.withValues(alpha: 0.2),
+                  AppColors.neonYellow.withValues(alpha: 0.06),
+                ],
               ),
-            ],
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.4)),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.monetization_on,
+                    color: AppColors.neonYellow, size: 16),
+                const SizedBox(width: 4),
+                Text(
+                  prov.isDemoMode ? '∞' : '${wallet.coins}',
+                  style: TextStyle(
+                      color: AppColors.neonYellow,
+                      fontWeight: FontWeight.w800,
+                      fontSize: 14),
+                ),
+              ],
+            ),
           ),
         ),
         IconButton(
@@ -346,7 +446,7 @@ class _AviatorBodyState extends State<_AviatorBody>
   Widget _buildCrashHistory(AviatorProvider prov) {
     final history = prov.crashHistory;
     return Container(
-      height: 32,
+      height: 34,
       color: const Color(0xFF0A0A10),
       child: ListView.builder(
         scrollDirection: Axis.horizontal,
@@ -355,17 +455,25 @@ class _AviatorBodyState extends State<_AviatorBody>
         itemBuilder: (_, i) {
           final r = history[i];
           final color = r.isEarly
-              ? const Color(0xFFEF4444)
+              ? _kAviatorRed
               : r.isMid
-                  ? const Color(0xFFF97316)
+                  ? _kAviatorOrange
                   : AppColors.neonGreen;
           return Container(
             margin: const EdgeInsets.only(right: 4),
-            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+            padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 3),
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.14),
-              borderRadius: BorderRadius.circular(5),
-              border: Border.all(color: color.withValues(alpha: 0.4)),
+              gradient: LinearGradient(
+                colors: [
+                  color.withValues(alpha: 0.20),
+                  color.withValues(alpha: 0.08),
+                ],
+              ),
+              borderRadius: BorderRadius.circular(6),
+              border: Border.all(color: color.withValues(alpha: 0.45)),
+              boxShadow: [
+                BoxShadow(color: color.withValues(alpha: 0.15), blurRadius: 5),
+              ],
             ),
             child: Center(
               child: Text(
@@ -457,19 +565,31 @@ class _AviatorBodyState extends State<_AviatorBody>
                   fontSize: 11,
                   letterSpacing: 2,
                   fontWeight: FontWeight.w700)),
-          const SizedBox(height: 8),
-          Text(
-            '${prov.countdownSecs}s',
-            style: const TextStyle(
-                color: Colors.white,
-                fontSize: 60,
-                fontWeight: FontWeight.w900,
-                shadows: [
-                  Shadow(
-                      color: Color(0xFFEF4444),
-                      blurRadius: 20,
-                      offset: Offset(0, 0)),
-                ]),
+          const SizedBox(height: 10),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 8),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                colors: [
+                  _kAviatorRed.withValues(alpha: 0.12),
+                  Colors.transparent,
+                ],
+              ),
+            ),
+            child: Text(
+              '${prov.countdownSecs}s',
+              style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 60,
+                  fontWeight: FontWeight.w900,
+                  shadows: [
+                    Shadow(
+                        color: _kAviatorRed,
+                        blurRadius: 24,
+                        offset: Offset(0, 0)),
+                  ]),
+            ),
           ),
         ],
       );
@@ -479,23 +599,34 @@ class _AviatorBodyState extends State<_AviatorBody>
       return Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text('FLEW AWAY',
-              style: TextStyle(
-                  color: Color(0xFFEF4444),
-                  fontSize: 14,
-                  fontWeight: FontWeight.w900,
-                  letterSpacing: 3)),
-          const SizedBox(height: 4),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+            decoration: BoxDecoration(
+              color: _kAviatorRed.withValues(alpha: 0.12),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: _kAviatorRed.withValues(alpha: 0.4)),
+            ),
+            child: const Text('FLEW AWAY',
+                style: TextStyle(
+                    color: _kAviatorRed,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 3)),
+          ),
+          const SizedBox(height: 6),
           Text(
             '${prov.multiplier.toStringAsFixed(2)}x',
             style: TextStyle(
-                color: const Color(0xFFEF4444),
+                color: _kAviatorRed,
                 fontSize: 64,
                 fontWeight: FontWeight.w900,
                 shadows: [
                   Shadow(
-                      color: const Color(0xFFEF4444).withValues(alpha: 0.7),
+                      color: _kAviatorRed.withValues(alpha: 0.7),
                       blurRadius: 24),
+                  Shadow(
+                      color: _kAviatorRed.withValues(alpha: 0.35),
+                      blurRadius: 46),
                 ]),
           ),
         ],
@@ -517,18 +648,32 @@ class _AviatorBodyState extends State<_AviatorBody>
                 Shadow(
                   color: (prov.multiplier >= 10
                           ? AppColors.neonGreen
-                          : const Color(0xFFEF4444))
+                          : _kAviatorRed)
                       .withValues(alpha: 0.6),
                   blurRadius: 28,
+                ),
+                Shadow(
+                  color: (prov.multiplier >= 10
+                          ? AppColors.neonGreen
+                          : _kAviatorOrange)
+                      .withValues(alpha: 0.3),
+                  blurRadius: 50,
                 ),
               ],
             ),
           ),
           if (prov.bet1.autoCashOut != null || prov.bet2.autoCashOut != null)
-            Text(
-              'Auto: x${(prov.bet1.autoCashOut ?? prov.bet2.autoCashOut)!.toStringAsFixed(2)}',
-              style: const TextStyle(
-                  color: Colors.white54, fontSize: 11),
+            Container(
+              margin: const EdgeInsets.only(top: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.08),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                'Auto: x${(prov.bet1.autoCashOut ?? prov.bet2.autoCashOut)!.toStringAsFixed(2)}',
+                style: const TextStyle(color: Colors.white54, fontSize: 11),
+              ),
             ),
         ],
       ),
@@ -536,26 +681,32 @@ class _AviatorBodyState extends State<_AviatorBody>
   }
 
   Widget _buildProvablyFair(AviatorProvider prov) {
-    return Container(
-      padding: const EdgeInsets.all(8),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.6),
-        borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.1)),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text('🔒 Provably Fair',
-              style: TextStyle(
-                  color: Colors.white60,
-                  fontSize: 10,
-                  fontWeight: FontWeight.w700)),
-          const SizedBox(height: 4),
-          _seedRow('Server', prov.serverSeed),
-          _seedRow('Client', prov.clientSeed),
-          _seedRow('Hash', prov.roundHash),
-        ],
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(10),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Container(
+          padding: const EdgeInsets.all(9),
+          decoration: BoxDecoration(
+            color: Colors.black.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(color: Colors.white.withValues(alpha: 0.12)),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text('🔒 Provably Fair',
+                  style: TextStyle(
+                      color: Colors.white60,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w700)),
+              const SizedBox(height: 4),
+              _seedRow('Server', prov.serverSeed),
+              _seedRow('Client', prov.clientSeed),
+              _seedRow('Hash', prov.roundHash),
+            ],
+          ),
+        ),
       ),
     );
   }
@@ -570,9 +721,7 @@ class _AviatorBodyState extends State<_AviatorBody>
             value,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(
-                color: Colors.white70,
-                fontSize: 9,
-                fontFamily: 'monospace'),
+                color: Colors.white70, fontSize: 9, fontFamily: 'monospace'),
           ),
         ),
       ],
@@ -582,10 +731,19 @@ class _AviatorBodyState extends State<_AviatorBody>
   // ─── Panneau mises (bas) ─────────────────────────────────
   Widget _buildBetPanel(AviatorProvider prov) {
     return Container(
-      padding: const EdgeInsets.fromLTRB(8, 8, 8, 6),
-      decoration: const BoxDecoration(
-        color: Color(0xFF0A0A10),
-        border: Border(top: BorderSide(color: Color(0xFF1A1A22))),
+      padding: const EdgeInsets.fromLTRB(8, 10, 8, 8),
+      decoration: BoxDecoration(
+        color: const Color(0xFF0A0A10),
+        border: Border(
+          top: BorderSide(color: _kAviatorOrange.withValues(alpha: 0.15)),
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.4),
+            blurRadius: 12,
+            offset: const Offset(0, -4),
+          ),
+        ],
       ),
       child: Column(
         children: [
@@ -614,25 +772,33 @@ class _AviatorBodyState extends State<_AviatorBody>
               provider: prov,
               onCashOut: () => _onCashOut(prov, prov.bet1),
             ),
-          const SizedBox(height: 4),
+          const SizedBox(height: 8),
           GestureDetector(
             onTap: prov.toggleBet2,
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  prov.showBet2
-                      ? Icons.remove_circle_outline
-                      : Icons.add_circle_outline,
-                  color: Colors.white54,
-                  size: 14,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  prov.showBet2 ? 'Retirer 2eme mise' : '+ Ajouter 2eme mise',
-                  style: const TextStyle(color: Colors.white54, fontSize: 11),
-                ),
-              ],
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.04),
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.white.withValues(alpha: 0.08)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    prov.showBet2
+                        ? Icons.remove_circle_outline
+                        : Icons.add_circle_outline,
+                    color: Colors.white54,
+                    size: 14,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    prov.showBet2 ? 'Retirer 2eme mise' : '+ Ajouter 2eme mise',
+                    style: const TextStyle(color: Colors.white54, fontSize: 11),
+                  ),
+                ],
+              ),
             ),
           ),
         ],
@@ -655,10 +821,10 @@ class _AviatorLogoWatermark extends StatelessWidget {
           fontSize: 72,
           fontWeight: FontWeight.w900,
           letterSpacing: 8,
-          color: const Color(0xFFEF4444),
+          color: _kAviatorRed,
           shadows: [
             Shadow(
-              color: const Color(0xFFEF4444).withValues(alpha: 0.4),
+              color: _kAviatorRed.withValues(alpha: 0.4),
               blurRadius: 24,
             ),
           ],

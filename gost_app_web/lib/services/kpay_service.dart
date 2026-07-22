@@ -99,6 +99,46 @@ class KpayService {
     return 'PENDING';
   }
 
+  /// Table de correspondance operateur app -> code provider K-Pay.
+  /// Utilisee UNIQUEMENT en repli : la source d'autorite est l'endpoint
+  /// predict-provider (qui deduit le code exact a partir du numero).
+  String _providerForOperator(String op) {
+    switch (op) {
+      case 'MTN_MONEY':
+        return 'MTN_MOMO_CMR';
+      case 'ORANGE_MONEY':
+        return 'ORANGE_CMR';
+      default:
+        return op; // deja un code provider K-Pay
+    }
+  }
+
+  /// Demande a K-Pay le code `provider` exact pour un numero.
+  /// POST /api/v1/payments/predict-provider  { phoneNumber }
+  ///   -> { country, provider, phoneNumber }
+  /// Retourne null si indeterminable (l'appelant retombe sur le mapping local).
+  Future<String?> predictProvider(String phoneNumber) async {
+    if (!await loadConfig()) return null;
+    try {
+      final resp = await http
+          .post(
+            Uri.parse('$_baseUrl/api/v1/payments/predict-provider'),
+            headers: _authHeaders(),
+            body: jsonEncode({'phoneNumber': phoneNumber}),
+          )
+          .timeout(const Duration(seconds: 10));
+      if (resp.statusCode == 200 || resp.statusCode == 201) {
+        final data = jsonDecode(resp.body) as Map<String, dynamic>;
+        final p = (data['provider'] as String?)?.trim();
+        if (p != null && p.isNotEmpty) return p;
+      }
+      _log.warn('predictProvider non resolu (HTTP ${resp.statusCode})');
+    } catch (e) {
+      _log.warn('predictProvider failed: $e');
+    }
+    return null;
+  }
+
   // ============================================================
   // DEPOSIT – Dépôt d'argent (Mobile Money → Coins)
   // ============================================================
@@ -147,6 +187,11 @@ class KpayService {
     }
 
     final externalId = 'DEPOSIT_${_uuid.v4().substring(0, 8)}_$uid';
+    // Code operateur K-Pay exact (ex: MTN_MOMO_CMR). predict-provider fait
+    // autorite (deduit du numero) ; repli sur le mapping local si l'API
+    // utilitaire est injoignable.
+    final provider =
+        (await predictProvider(payer)) ?? _providerForOperator(paymentMethod);
 
     try {
       final response = await http
@@ -156,7 +201,7 @@ class KpayService {
             body: jsonEncode({
               'amount': amount,
               'phoneNumber': payer,
-              'paymentMethod': paymentMethod,
+              'provider': provider,
               'externalId': externalId,
               'description': 'Dépôt de $amount FCFA',
             }),
@@ -313,6 +358,9 @@ class KpayService {
     }
 
     try {
+      // Meme code operateur exact via predict-provider (repli mapping local).
+      final provider = (await predictProvider(receiver)) ??
+          _providerForOperator(paymentMethod);
       final response = await http
           .post(
             Uri.parse('$_baseUrl/api/v1/payments/withdraw'),
@@ -320,7 +368,8 @@ class KpayService {
             body: jsonEncode({
               'amount': amount,
               'phoneNumber': receiver,
-              'paymentMethod': paymentMethod,
+              'provider': provider,
+              'externalId': externalId,
               'description': 'Retrait de $amount FCFA',
             }),
           )

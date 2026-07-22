@@ -13,6 +13,8 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
   int _coins = 0;
   String _username = '';
   bool _loading = false;
+  int _bonusBalance = 0;
+  int _bonusWagerRemaining = 0;
 
   RealtimeChannel? _channel;
   RealtimeChannel? _kpayChannel;
@@ -20,6 +22,12 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
   int get coins => _coins;
   String get username => _username;
   bool get loading => _loading;
+
+  /// Solde BONUS (promotions PlugSafe / PlugShield / PlugBoost).
+  /// Non retirable tant que le rollover (bonusWagerRemaining) n'est pas
+  /// atteint : une fois a 0, le bonus bascule automatiquement en coins.
+  int get bonusBalance => _bonusBalance;
+  int get bonusWagerRemaining => _bonusWagerRemaining;
 
   WalletProvider() {
     _init();
@@ -78,6 +86,18 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
     final profile = await _service.getProfile();
     _coins = ledgerBalance ?? (profile?['coins'] as int? ?? 0);
     _username = profile?['username'] as String? ?? '';
+    // Solde bonus (promotions) — best-effort, ne bloque jamais le solde.
+    _bonusBalance = (profile?['bonus_balance'] as num?)?.toInt() ?? _bonusBalance;
+    _bonusWagerRemaining =
+        (profile?['bonus_wager_remaining'] as num?)?.toInt() ?? _bonusWagerRemaining;
+    try {
+      final b = await _client.rpc('get_my_bonus_wallet');
+      if (b is Map) {
+        _bonusBalance = (b['bonus_balance'] as num?)?.toInt() ?? _bonusBalance;
+        _bonusWagerRemaining =
+            (b['bonus_wager_remaining'] as num?)?.toInt() ?? _bonusWagerRemaining;
+      }
+    } catch (_) {/* RPC absente / offline : on garde la valeur profil */}
     _loading = false;
     _safeNotify();
   }
@@ -107,6 +127,9 @@ class WalletProvider extends ChangeNotifier with WidgetsBindingObserver {
             final rec = payload.newRecord;
             _coins = rec['coins'] as int? ?? _coins;
             _username = rec['username'] as String? ?? _username;
+            _bonusBalance = (rec['bonus_balance'] as num?)?.toInt() ?? _bonusBalance;
+            _bonusWagerRemaining =
+                (rec['bonus_wager_remaining'] as num?)?.toInt() ?? _bonusWagerRemaining;
             notifyListeners();
           },
         )

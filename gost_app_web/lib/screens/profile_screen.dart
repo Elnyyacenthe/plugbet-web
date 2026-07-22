@@ -8,6 +8,7 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../theme/app_surfaces.dart';
 import '../theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
 import '../providers/wallet_provider.dart';
@@ -16,16 +17,33 @@ import '../models/player_models.dart';
 import '../services/messaging_service.dart';
 import '../services/profile_service.dart';
 import '../services/supabase_service.dart';
+import '../services/hive_service.dart';
 import '../services/kpay_service.dart';
 import '../utils/logger.dart';
 import '../widgets/profile/transaction_tile.dart';
 import '../widgets/user_avatar.dart';
-import 'auth_screen.dart';
+import 'login_screen.dart';
+import 'signup_screen.dart';
 import 'user_search_screen.dart';
 import 'my_payments_screen.dart';
+import 'settings_screen.dart';
+import 'bonus_codes_screen.dart';
+import '../services/bonus_service.dart';
 
 class ProfileScreen extends StatefulWidget {
-  const ProfileScreen({super.key});
+  final HiveService hiveService;
+  final SupabaseService supabaseService;
+
+  /// Ouvre directement la fenetre de depot a l'arrivee (ex: depuis la
+  /// proposition de recharge affichee aux nouveaux comptes).
+  final bool openDeposit;
+
+  const ProfileScreen({
+    super.key,
+    required this.hiveService,
+    required this.supabaseService,
+    this.openDeposit = false,
+  });
 
   @override
   State<ProfileScreen> createState() => _ProfileScreenState();
@@ -37,6 +55,7 @@ class _ProfileScreenState extends State<ProfileScreen>
   final _profileService = ProfileService();
   final _messagingService = MessagingService();
   final _kpayService = KpayService();
+  final _bonusService = BonusService();
 
   late TabController _tabCtrl;
   List<Map<String, dynamic>> _transactions = [];
@@ -61,7 +80,10 @@ class _ProfileScreenState extends State<ProfileScreen>
     super.initState();
     _tabCtrl = TabController(length: 3, vsync: this);
     _tabCtrl.addListener(_onTabChanged);
-    WidgetsBinding.instance.addPostFrameCallback((_) => _loadData());
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _loadData();
+      if (widget.openDeposit && mounted) _showDepositDialog();
+    });
     // Poll only when the Friends tab (index 2) is active
     _friendsTimer = Timer.periodic(const Duration(seconds: 15), (_) {
       if (mounted && _isVisible && _tabCtrl.index == 2) _loadFriends();
@@ -216,6 +238,10 @@ class _ProfileScreenState extends State<ProfileScreen>
         String label;
         int displayAmount;
         String type;
+        // Motif affiche sous le libelle (ex: raison d'un echec K-Pay :
+        // "Solde insuffisant sur le compte Mobile Money du client.")
+        String? subtitle;
+        final message = (row['message'] as String?)?.trim();
 
         if (txType == 'DEPOSIT') {
           if (status == 'SUCCESS') {
@@ -226,6 +252,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             label = 'Depot echoue';
             displayAmount = 0;
             type = 'failed';
+            subtitle = message;
           } else {
             label = 'Depot en attente';
             displayAmount = 0;
@@ -240,6 +267,7 @@ class _ProfileScreenState extends State<ProfileScreen>
             label = 'Retrait echoue (rembourse)';
             displayAmount = 0;
             type = 'refund';
+            subtitle = message;
           } else {
             label = 'Retrait en cours';
             displayAmount = -amount;
@@ -254,6 +282,7 @@ class _ProfileScreenState extends State<ProfileScreen>
           'amount': displayAmount,
           'type': type,
           'date': date,
+          'subtitle': subtitle,
         });
       }
     } catch (e, s) {
@@ -288,42 +317,171 @@ class _ProfileScreenState extends State<ProfileScreen>
     final t = AppLocalizations.of(context)!;
 
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgBlueNight,
-        title: Text(t.tabProfile),
-        automaticallyImplyLeading: false,
-        bottom: TabBar(
-          controller: _tabCtrl,
-          indicatorColor: AppColors.neonGreen,
-          labelColor: AppColors.neonGreen,
-          unselectedLabelColor: AppColors.textMuted,
-          labelStyle: TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-          tabs: [
-            Tab(text: t.profileTabInfo.toUpperCase(), icon: const Icon(Icons.person, size: 16)),
-            Tab(text: t.profileTabHistory.toUpperCase(), icon: const Icon(Icons.history, size: 16)),
-            Tab(
-              icon: Badge(
-                isLabelVisible: _pendingReceived.isNotEmpty,
-                label: Text('${_pendingReceived.length}', style: TextStyle(fontSize: 8)),
-                backgroundColor: AppColors.neonRed,
-                child: const Icon(Icons.people, size: 16),
+      backgroundColor: AppColors.bettingBackground,
+      body: SafeArea(
+        child: Column(
+          children: [
+            _profileTopBar(t),
+            _profileTabs(t),
+            Expanded(
+              child: TabBarView(
+                controller: _tabCtrl,
+                children: [
+                  _buildProfileTab(wallet),
+                  _buildHistoryTab(),
+                  _buildFriendsTab(),
+                ],
               ),
-              text: t.profileTabFriends.toUpperCase(),
             ),
           ],
         ),
       ),
-      body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
-        child: TabBarView(
-          controller: _tabCtrl,
-          children: [
-            _buildProfileTab(wallet),
-            _buildHistoryTab(),
-            _buildFriendsTab(),
-          ],
+    );
+  }
+
+  Widget _profileTopBar(AppLocalizations t) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 10),
+      child: Row(
+        children: [
+          Container(
+            width: 44,
+            height: 44,
+            decoration: BoxDecoration(
+              color: AppColors.primary,
+              borderRadius: BorderRadius.circular(12),
+              boxShadow: [
+                BoxShadow(
+                  color: AppColors.primary.withValues(alpha: 0.22),
+                  blurRadius: 14,
+                  offset: const Offset(0, 5),
+                ),
+              ],
+            ),
+            child: Icon(
+              Icons.person_rounded,
+              color: AppSurfaces.inkOn(AppColors.primary),
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  t.tabProfile,
+                  style: TextStyle(
+                    color: AppColors.bettingTextPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 3),
+                Text(
+                  'COMPTE · WALLET · AMIS',
+                  style: TextStyle(
+                    color: AppColors.bettingTextSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1.2,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          InkWell(
+            onTap: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => SettingsScreen(
+                    hiveService: widget.hiveService,
+                    supabaseService: widget.supabaseService,
+                  ),
+                ),
+              );
+            },
+            borderRadius: BorderRadius.circular(16),
+            child: Container(
+              width: 42,
+              height: 42,
+              decoration: BoxDecoration(
+                color: AppColors.bettingSurfaceElevated,
+                borderRadius: BorderRadius.circular(16),
+                border: Border.all(color: AppColors.bettingBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.bettingSoftShadow,
+                    blurRadius: 10,
+                    offset: const Offset(0, 3),
+                  ),
+                ],
+              ),
+              child: Icon(
+                Icons.settings_rounded,
+                color: AppColors.bettingTextPrimary,
+                size: 20,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _profileTabs(AppLocalizations t) {
+    return Container(
+      height: 64,
+      margin: const EdgeInsets.fromLTRB(16, 0, 16, 10),
+      padding: const EdgeInsets.all(4),
+      decoration: BoxDecoration(
+        color: AppColors.bettingSurfaceElevated,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: AppColors.bettingBorder),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.bettingSoftShadow,
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: TabBar(
+        controller: _tabCtrl,
+        dividerColor: AppColors.transparent,
+        indicatorSize: TabBarIndicatorSize.tab,
+        indicator: BoxDecoration(
+          color: AppColors.primary.withValues(alpha: 0.16),
+          borderRadius: BorderRadius.circular(10),
+          border:
+              Border.all(color: AppColors.primaryInk.withValues(alpha: 0.5)),
         ),
+        labelColor: AppColors.primaryInk,
+        unselectedLabelColor: AppColors.bettingTextSecondary,
+        labelStyle: const TextStyle(fontSize: 10, fontWeight: FontWeight.w900),
+        unselectedLabelStyle:
+            const TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+        tabs: [
+          Tab(
+            text: t.profileTabInfo.toUpperCase(),
+            icon: const Icon(Icons.person, size: 15),
+          ),
+          Tab(
+            text: t.profileTabHistory.toUpperCase(),
+            icon: const Icon(Icons.history, size: 15),
+          ),
+          Tab(
+            icon: Badge(
+              isLabelVisible: _pendingReceived.isNotEmpty,
+              label: Text('${_pendingReceived.length}',
+                  style: TextStyle(fontSize: 8)),
+              backgroundColor: AppColors.neonRed,
+              child: const Icon(Icons.people, size: 15),
+            ),
+            text: t.profileTabFriends.toUpperCase(),
+          ),
+        ],
       ),
     );
   }
@@ -336,147 +494,34 @@ class _ProfileScreenState extends State<ProfileScreen>
     final email = user?.email ?? 'Anonyme';
     final username = wallet.username.isNotEmpty ? wallet.username : 'Joueur';
     final coins = wallet.coins;
-    final createdAt = user?.createdAt != null
-        ? DateTime.tryParse(user!.createdAt)
-        : null;
+    final createdAt =
+        user?.createdAt != null ? DateTime.tryParse(user!.createdAt) : null;
 
     return SingleChildScrollView(
-      padding: EdgeInsets.all(16),
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 110),
       child: Column(
         children: [
-          // Avatar + nom
-          Container(
-            padding: EdgeInsets.all(24),
-            decoration: BoxDecoration(
-              gradient: AppColors.cardGradient,
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
-            ),
-            child: Column(
-              children: [
-                // Avatar avec bouton camera pour changer la photo
-                GestureDetector(
-                  onTap: _uploadingAvatar ? null : _pickAvatar,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      UserAvatar(
-                        avatarUrl: _myAvatarUrl,
-                        username: username,
-                        size: 92,
-                        showOnlineDot: false,
-                      ),
-                      if (_uploadingAvatar)
-                        Positioned.fill(
-                          child: Container(
-                            decoration: const BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: Colors.black54,
-                            ),
-                            child: const Center(
-                              child: SizedBox(
-                                width: 28,
-                                height: 28,
-                                child: CircularProgressIndicator(
-                                  color: Colors.white,
-                                  strokeWidth: 3,
-                                ),
-                              ),
-                            ),
-                          ),
-                        )
-                      else
-                        Positioned(
-                          right: -2,
-                          bottom: -2,
-                          child: Container(
-                            width: 32,
-                            height: 32,
-                            decoration: BoxDecoration(
-                              shape: BoxShape.circle,
-                              color: AppColors.neonGreen,
-                              border: Border.all(
-                                  color: AppColors.bgCard, width: 3),
-                            ),
-                            child: const Icon(Icons.camera_alt,
-                                size: 16, color: Colors.black),
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
-                SizedBox(height: 12),
-                Text(username,
-                    style: TextStyle(
-                        color: AppColors.textPrimary,
-                        fontSize: 20,
-                        fontWeight: FontWeight.w800)),
-                SizedBox(height: 4),
-                Text(email,
-                    style: TextStyle(
-                        color: AppColors.textSecondary, fontSize: 12)),
-                if (createdAt != null) ...[
-                  SizedBox(height: 4),
-                  Text('Membre depuis ${_formatDate(createdAt)}',
-                      style: TextStyle(
-                          color: AppColors.textMuted, fontSize: 11)),
-                ],
-              ],
-            ),
+          _profileHeroCard(
+            username: username,
+            email: email,
+            createdAt: createdAt,
           ),
-
-          SizedBox(height: 16),
-
-          // Solde
-          Container(
-            padding: EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(colors: [
-                AppColors.neonYellow.withValues(alpha: 0.1),
-                AppColors.neonYellow.withValues(alpha: 0.03),
-              ]),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: AppColors.neonYellow.withValues(alpha: 0.3)),
-            ),
-            child: Row(
-              children: [
-                Icon(Icons.monetization_on,
-                    color: AppColors.neonYellow, size: 32),
-                SizedBox(width: 16),
-                Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text('SOLDE',
-                        style: TextStyle(
-                            color: AppColors.textMuted,
-                            fontSize: 10,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: 1.2)),
-                    Text('$coins FCFA',
-                        style: TextStyle(
-                            color: AppColors.neonYellow,
-                            fontSize: 24,
-                            fontWeight: FontWeight.w900)),
-                  ],
-                ),
-              ],
-            ),
-          ),
-
-          SizedBox(height: 16),
-
-          // Boutons Dépôt et Retrait
+          const SizedBox(height: 14),
+          _walletPanel(coins),
+          const SizedBox(height: 12),
+          _bonusShortcut(),
+          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(
                 child: _buildActionButton(
                   label: 'Dépôt',
                   icon: Icons.add_circle_outline,
-                  color: AppColors.neonGreen,
+                  color: AppColors.primary,
                   onTap: _showDepositDialog,
                 ),
               ),
-              SizedBox(width: 12),
+              const SizedBox(width: 10),
               Expanded(
                 child: _buildActionButton(
                   label: 'Retrait',
@@ -487,74 +532,344 @@ class _ProfileScreenState extends State<ProfileScreen>
               ),
             ],
           ),
-
-          SizedBox(height: 12),
-
-          // Lien vers l'historique complet Mobile Money
-          InkWell(
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MyPaymentsScreen()),
-              );
-            },
-            borderRadius: BorderRadius.circular(12),
-            child: Container(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              decoration: BoxDecoration(
-                color: AppColors.bgCard,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(
-                  color: AppColors.neonBlue.withValues(alpha: 0.3),
-                ),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.history, color: AppColors.neonBlue, size: 18),
-                  const SizedBox(width: 10),
-                  const Expanded(
-                    child: Text(
-                      'Mes paiements Mobile Money',
-                      style: TextStyle(
-                        color: Colors.white,
-                        fontSize: 13,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                  Icon(Icons.chevron_right,
-                       color: AppColors.textSecondary, size: 18),
-                ],
-              ),
-            ),
-          ),
-
-          SizedBox(height: 16),
-
-          // Stats rapides (sources : user_profiles)
+          const SizedBox(height: 12),
+          _paymentsShortcut(),
+          const SizedBox(height: 16),
           Builder(builder: (_) {
             final played = (_stats?['games_played'] as int?) ?? 0;
             final won = (_stats?['games_won'] as int?) ?? 0;
             final lost = (played - won).clamp(0, played);
             return Row(
               children: [
-                Expanded(child: _statCard('Parties jouées',
-                    '$played', AppColors.neonBlue)),
-                SizedBox(width: 8),
-                Expanded(child: _statCard('Victoires',
-                    '$won', AppColors.neonGreen)),
-                SizedBox(width: 8),
-                Expanded(child: _statCard('Défaites',
-                    '$lost', AppColors.neonRed)),
+                Expanded(
+                  child: _statCard('Parties', '$played', AppColors.neonBlue),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _statCard('Victoires', '$won', AppColors.primary),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: _statCard('Défaites', '$lost', AppColors.neonOrange),
+                ),
               ],
             );
           }),
-
-          SizedBox(height: 24),
-
-          // Actions compte
+          const SizedBox(height: 18),
           _buildAccountActions(),
         ],
+      ),
+    );
+  }
+
+  Widget _profileHeroCard({
+    required String username,
+    required String email,
+    required DateTime? createdAt,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.primary.withValues(alpha: 0.18),
+            AppColors.bettingSurfaceElevated,
+            AppColors.bettingViolet.withValues(alpha: 0.14),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.bettingBorder),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.bettingSoftShadow,
+            blurRadius: 16,
+            offset: const Offset(0, 6),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          GestureDetector(
+            onTap: _uploadingAvatar ? null : _pickAvatar,
+            child: Stack(
+              clipBehavior: Clip.none,
+              children: [
+                UserAvatar(
+                  avatarUrl: _myAvatarUrl,
+                  username: username,
+                  size: 78,
+                  showOnlineDot: false,
+                ),
+                if (_uploadingAvatar)
+                  Positioned.fill(
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.bettingImageScrim,
+                      ),
+                      child: Center(
+                        child: SizedBox(
+                          width: 26,
+                          height: 26,
+                          child: CircularProgressIndicator(
+                            color: AppColors.primary,
+                            strokeWidth: 3,
+                          ),
+                        ),
+                      ),
+                    ),
+                  )
+                else
+                  Positioned(
+                    right: -2,
+                    bottom: -2,
+                    child: Container(
+                      width: 30,
+                      height: 30,
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: AppColors.primary,
+                        border: Border.all(
+                          color: AppColors.bettingSurfaceElevated,
+                          width: 3,
+                        ),
+                      ),
+                      child: Icon(
+                        Icons.camera_alt,
+                        size: 15,
+                        color: AppSurfaces.inkOn(AppColors.primary),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          const SizedBox(width: 14),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  username,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.bettingTextPrimary,
+                    fontSize: 22,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  email,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.bettingTextSecondary,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
+                const SizedBox(height: 10),
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary.withValues(alpha: 0.12),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: AppColors.primaryInk.withValues(alpha: 0.45),
+                    ),
+                  ),
+                  child: Text(
+                    createdAt == null
+                        ? 'Membre PlugBet'
+                        : 'Membre depuis ${_formatDate(createdAt)}',
+                    style: TextStyle(
+                      color: AppColors.primaryInk,
+                      fontSize: 10,
+                      fontWeight: FontWeight.w900,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _walletPanel(int coins) {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: AppColors.bettingSurfaceElevated,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: AppColors.bettingBorder),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.bettingSoftShadow,
+            blurRadius: 14,
+            offset: const Offset(0, 5),
+          ),
+        ],
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 48,
+            height: 48,
+            decoration: BoxDecoration(
+              color: AppColors.neonYellow.withValues(alpha: 0.14),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: AppColors.neonYellow.withValues(alpha: 0.35),
+              ),
+            ),
+            child: Icon(
+              Icons.account_balance_wallet_rounded,
+              color: AppColors.neonYellow,
+              size: 25,
+            ),
+          ),
+          const SizedBox(width: 13),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  'SOLDE DISPONIBLE',
+                  style: TextStyle(
+                    color: AppColors.bettingTextSecondary,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.1,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  '$coins FCFA',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(
+                    color: AppColors.bettingTextPrimary,
+                    fontSize: 25,
+                    fontWeight: FontWeight.w900,
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Icon(Icons.chevron_right, color: AppColors.bettingInactive, size: 20),
+        ],
+      ),
+    );
+  }
+
+  /// Raccourci vers l'ecran "Mes bonus" (codes bonus PlugSafe / PlugShield /
+  /// PlugBoost). Affiche le nombre de bonus actifs quand il y en a.
+  Widget _bonusShortcut() {
+    const gold = Color(0xFFFFB020);
+    return InkWell(
+      onTap: () => Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const BonusCodesScreen()),
+      ),
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 14),
+        decoration: BoxDecoration(
+          color: gold.withValues(alpha: 0.10),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: gold.withValues(alpha: 0.35)),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.card_giftcard_rounded, color: gold, size: 20),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Mes bonus',
+                      style: TextStyle(
+                          color: AppColors.bettingTextPrimary,
+                          fontSize: 14,
+                          fontWeight: FontWeight.w900)),
+                  Text('Codes PlugSafe / PlugShield / PlugBoost',
+                      style: TextStyle(
+                          color: AppColors.bettingTextSecondary,
+                          fontSize: 11.5)),
+                ],
+              ),
+            ),
+            FutureBuilder<List<BonusCode>>(
+              future: _bonusService.getMyBonusCodes(),
+              builder: (ctx, snap) {
+                final n =
+                    (snap.data ?? const []).where((c) => c.isActive).length;
+                if (n <= 0) {
+                  return Icon(Icons.chevron_right,
+                      color: AppColors.bettingInactive, size: 20);
+                }
+                return Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: gold,
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Text('$n',
+                      style: const TextStyle(
+                          color: Colors.black,
+                          fontSize: 12,
+                          fontWeight: FontWeight.w900)),
+                );
+              },
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _paymentsShortcut() {
+    return InkWell(
+      onTap: () {
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MyPaymentsScreen()),
+        );
+      },
+      borderRadius: BorderRadius.circular(14),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+        decoration: BoxDecoration(
+          color: AppColors.bettingSurfaceElevated,
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: AppColors.bettingBorder),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.history, color: AppColors.neonBlue, size: 18),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Mes paiements Mobile Money',
+                style: TextStyle(
+                  color: AppColors.bettingTextPrimary,
+                  fontSize: 13,
+                  fontWeight: FontWeight.w800,
+                ),
+              ),
+            ),
+            Icon(Icons.chevron_right,
+                color: AppColors.bettingTextSecondary, size: 18),
+          ],
+        ),
       ),
     );
   }
@@ -566,42 +881,54 @@ class _ProfileScreenState extends State<ProfileScreen>
     final t = AppLocalizations.of(context)!;
 
     return Container(
-      padding: EdgeInsets.all(14),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: AppColors.cardGradient,
+        color: AppColors.bettingSurfaceElevated,
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
+        border: Border.all(color: AppColors.bettingBorder),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.bettingSoftShadow,
+            blurRadius: 12,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Row(
             children: [
-              Icon(Icons.manage_accounts, size: 16, color: AppColors.textSecondary),
-              SizedBox(width: 8),
+              Icon(Icons.manage_accounts,
+                  size: 16, color: AppColors.bettingTextSecondary),
+              const SizedBox(width: 8),
               Text('COMPTE',
                   style: TextStyle(
-                      color: AppColors.textMuted,
+                      color: AppColors.bettingTextSecondary,
                       fontSize: 10,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 1.2)),
             ],
           ),
           SizedBox(height: 12),
-
           if (isLoggedIn && !isAnonymous) ...[
             // Badge type de compte
             Builder(builder: (_) {
               final accountType = SupabaseService().accountType;
               final isOfficial = accountType == 'official';
-              final badgeText = isOfficial ? t.profileOfficialBadge : t.profileQuickBadge;
-              final badgeColor = isOfficial ? AppColors.neonGreen : AppColors.neonYellow;
+              final badgeText =
+                  isOfficial ? t.profileOfficialBadge : t.profileQuickBadge;
+              final badgeColor =
+                  isOfficial ? AppColors.neonGreen : AppColors.neonYellow;
               return Row(
                 children: [
-                  Icon(Icons.email_outlined, size: 16, color: AppColors.textSecondary),
+                  Icon(Icons.email_outlined,
+                      size: 16, color: AppColors.textSecondary),
                   SizedBox(width: 8),
-                  Expanded(child: Text(user.email ?? '',
-                      style: TextStyle(color: AppColors.textSecondary, fontSize: 13))),
+                  Expanded(
+                      child: Text(user.email ?? '',
+                          style: TextStyle(
+                              color: AppColors.textSecondary, fontSize: 13))),
                   Container(
                     padding: EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
@@ -609,7 +936,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(badgeText,
-                        style: TextStyle(color: badgeColor, fontSize: 9, fontWeight: FontWeight.w800)),
+                        style: TextStyle(
+                            color: badgeColor,
+                            fontSize: 9,
+                            fontWeight: FontWeight.w800)),
                   ),
                 ],
               );
@@ -617,20 +947,25 @@ class _ProfileScreenState extends State<ProfileScreen>
             SizedBox(height: 8),
             // Bouton upgrade si compte rapide/google/phone (pas officiel)
             if (SupabaseService().accountType != 'official')
-              _accountActionBtn(t.profileUpgradeTitle, Icons.verified_user, AppColors.neonGreen, () {
+              _accountActionBtn(t.profileUpgradeTitle, Icons.verified_user,
+                  AppColors.neonGreen, () {
                 _showUpgradeDialog(t);
               }),
             if (SupabaseService().accountType != 'official')
               SizedBox(height: 8),
-            _accountActionBtn('Modifier le pseudo', Icons.person_outline, AppColors.neonPurple, () {
+            _accountActionBtn('Modifier le pseudo', Icons.person_outline,
+                AppColors.neonPurple, () {
               _showChangeUsernameDialog();
             }),
             SizedBox(height: 8),
-            _accountActionBtn(t.profileChangePassword, Icons.lock_outline, AppColors.neonBlue, () {
+            _accountActionBtn(
+                t.profileChangePassword, Icons.lock_outline, AppColors.neonBlue,
+                () {
               _showChangePasswordDialog(t);
             }),
             SizedBox(height: 8),
-            _accountActionBtn(t.profileLogout, Icons.logout, AppColors.neonRed, () async {
+            _accountActionBtn(t.profileLogout, Icons.logout, AppColors.neonRed,
+                () async {
               await _profileService.signOut();
               if (mounted) {
                 context.read<WalletProvider>().refresh();
@@ -645,9 +980,12 @@ class _ProfileScreenState extends State<ProfileScreen>
             Row(
               children: [
                 Expanded(
-                  child: _accountActionBtn(t.authSignIn, Icons.login, AppColors.neonGreen, () async {
-                    final ok = await Navigator.push<bool>(context,
-                        MaterialPageRoute(builder: (_) => AuthScreen(startWithSignUp: false)));
+                  child: _accountActionBtn(
+                      t.authSignIn, Icons.login, AppColors.neonGreen, () async {
+                    final ok = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const LoginScreen()));
                     if (ok == true && mounted) {
                       context.read<WalletProvider>().refresh();
                       _loadData();
@@ -657,9 +995,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                 ),
                 SizedBox(width: 8),
                 Expanded(
-                  child: _accountActionBtn('Créer un compte', Icons.person_add, AppColors.neonBlue, () async {
-                    final ok = await Navigator.push<bool>(context,
-                        MaterialPageRoute(builder: (_) => AuthScreen(startWithSignUp: true)));
+                  child: _accountActionBtn(
+                      'Créer un compte', Icons.person_add, AppColors.neonBlue,
+                      () async {
+                    final ok = await Navigator.push<bool>(
+                        context,
+                        MaterialPageRoute(
+                            builder: (_) => const SignupScreen()));
                     if (ok == true && mounted) {
                       context.read<WalletProvider>().refresh();
                       _loadData();
@@ -687,9 +1029,13 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(t.profileUpgradeTitle,
-              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16)),
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16)),
           content: SingleChildScrollView(
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -704,7 +1050,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                       color: AppColors.neonRed.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(error!, style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                    child: Text(error!,
+                        style:
+                            TextStyle(color: AppColors.neonRed, fontSize: 12)),
                   ),
                   SizedBox(height: 12),
                 ],
@@ -713,11 +1061,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     labelText: t.profileFullName,
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                    prefixIcon: Icon(Icons.person, color: AppColors.textMuted, size: 20),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.person,
+                        color: AppColors.textMuted, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -731,11 +1082,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     labelText: t.authEmail,
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                    prefixIcon: Icon(Icons.email_outlined, color: AppColors.textMuted, size: 20),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon: Icon(Icons.email_outlined,
+                        color: AppColors.textMuted, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -749,11 +1103,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   style: TextStyle(color: AppColors.textPrimary),
                   decoration: InputDecoration(
                     labelText: t.profilePhoneNumber,
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
-                    prefixIcon: Icon(Icons.phone, color: AppColors.textMuted, size: 20),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    prefixIcon:
+                        Icon(Icons.phone, color: AppColors.textMuted, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -766,7 +1123,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text(t.commonCancel, style: TextStyle(color: AppColors.textMuted)),
+              child: Text(t.commonCancel,
+                  style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: loading
@@ -779,15 +1137,22 @@ class _ProfileScreenState extends State<ProfileScreen>
                         setS(() => error = t.profileUpgradeSubtitle);
                         return;
                       }
-                      setS(() { loading = true; error = null; });
-                      final err = await SupabaseService().upgradeToOfficialAccount(
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
+                      final err =
+                          await SupabaseService().upgradeToOfficialAccount(
                         fullName: name,
                         email: email.isNotEmpty ? email : null,
                         phone: phone.isNotEmpty ? phone : null,
                       );
                       if (!ctx.mounted) return;
                       if (err != null) {
-                        setS(() { loading = false; error = err; });
+                        setS(() {
+                          loading = false;
+                          error = err;
+                        });
                       } else {
                         Navigator.pop(ctx);
                         if (mounted) {
@@ -804,12 +1169,17 @@ class _ProfileScreenState extends State<ProfileScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonGreen,
                 foregroundColor: Colors.black,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               child: loading
-                  ? SizedBox(width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black))
-                  : Text(t.commonConfirm, style: TextStyle(fontWeight: FontWeight.w800)),
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.black))
+                  : Text(t.commonConfirm,
+                      style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ],
         ),
@@ -828,7 +1198,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
               Icon(Icons.person, color: AppColors.neonPurple, size: 20),
@@ -864,7 +1235,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                 style: TextStyle(color: AppColors.textPrimary),
                 decoration: InputDecoration(
                   hintText: 'Nouveau pseudo',
-                  hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 14),
+                  hintStyle:
+                      TextStyle(color: AppColors.textMuted, fontSize: 14),
                   prefixIcon: Icon(Icons.alternate_email,
                       color: AppColors.textMuted, size: 20),
                   filled: true,
@@ -887,7 +1259,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           actions: [
             TextButton(
               onPressed: loading ? null : () => Navigator.pop(ctx),
-              child: Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
+              child:
+                  Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: loading
@@ -902,12 +1275,18 @@ class _ProfileScreenState extends State<ProfileScreen>
                         setS(() => error = 'C\'est deja ton pseudo actuel');
                         return;
                       }
-                      setS(() { loading = true; error = null; });
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
                       try {
                         final supa = SupabaseService();
                         final uid = supa.currentUserId;
                         if (uid == null) {
-                          setS(() { loading = false; error = 'Non connecte'; });
+                          setS(() {
+                            loading = false;
+                            error = 'Non connecte';
+                          });
                           return;
                         }
                         // Unicite
@@ -918,16 +1297,31 @@ class _ProfileScreenState extends State<ProfileScreen>
                             .neq('id', uid)
                             .maybeSingle();
                         if (existing != null) {
-                          setS(() { loading = false; error = 'Ce pseudo est deja utilise. Choisis-en un autre.'; });
+                          setS(() {
+                            loading = false;
+                            error =
+                                'Ce pseudo est deja utilise. Choisis-en un autre.';
+                          });
                           return;
                         }
-                        await supa.client
-                            .from('user_profiles')
-                            .update({
-                              'username': newName,
-                              'updated_at': DateTime.now().toIso8601String(),
-                            })
-                            .eq('id', uid);
+                        // Compte rapide : la reconnexion derive l'email du
+                        // pseudo -> il faut synchroniser l'email d'auth,
+                        // sinon l'utilisateur ne pourrait plus se reconnecter.
+                        if (supa.accountType == 'quick') {
+                          final emailErr =
+                              await supa.updateQuickAccountEmail(newName);
+                          if (emailErr != null) {
+                            setS(() {
+                              loading = false;
+                              error = emailErr;
+                            });
+                            return;
+                          }
+                        }
+                        await supa.client.from('user_profiles').update({
+                          'username': newName,
+                          'updated_at': DateTime.now().toIso8601String(),
+                        }).eq('id', uid);
                         if (!ctx.mounted) return;
                         Navigator.pop(ctx);
                         if (!mounted) return;
@@ -942,7 +1336,15 @@ class _ProfileScreenState extends State<ProfileScreen>
                           ),
                         );
                       } catch (e) {
-                        setS(() { loading = false; error = 'Erreur: $e'; });
+                        final msg = e.toString().toLowerCase();
+                        setS(() {
+                          loading = false;
+                          error = (msg.contains('duplicate') ||
+                                  msg.contains('23505') ||
+                                  msg.contains('unique'))
+                              ? 'Ce pseudo est deja utilise. Choisis-en un autre.'
+                              : 'Erreur: $e';
+                        });
                       }
                     },
               style: ElevatedButton.styleFrom(
@@ -952,9 +1354,13 @@ class _ProfileScreenState extends State<ProfileScreen>
                     borderRadius: BorderRadius.circular(10)),
               ),
               child: loading
-                  ? SizedBox(width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text('Valider', style: TextStyle(fontWeight: FontWeight.w800)),
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text('Valider',
+                      style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ],
         ),
@@ -973,9 +1379,13 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Text(t.profileChangePassword,
-              style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800, fontSize: 16)),
+              style: TextStyle(
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 16)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -986,7 +1396,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                     color: AppColors.neonRed.withValues(alpha: 0.1),
                     borderRadius: BorderRadius.circular(8),
                   ),
-                  child: Text(error!, style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                  child: Text(error!,
+                      style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
                 ),
                 SizedBox(height: 12),
               ],
@@ -996,10 +1407,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                 style: TextStyle(color: AppColors.textPrimary),
                 decoration: InputDecoration(
                   labelText: t.profileNewPassword,
-                  labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  labelStyle:
+                      TextStyle(color: AppColors.textMuted, fontSize: 13),
                   filled: true,
                   fillColor: AppColors.bgElevated,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide(color: AppColors.divider),
@@ -1013,10 +1426,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                 style: TextStyle(color: AppColors.textPrimary),
                 decoration: InputDecoration(
                   labelText: t.profileConfirmPassword,
-                  labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                  labelStyle:
+                      TextStyle(color: AppColors.textMuted, fontSize: 13),
                   filled: true,
                   fillColor: AppColors.bgElevated,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(10)),
                   enabledBorder: OutlineInputBorder(
                     borderRadius: BorderRadius.circular(10),
                     borderSide: BorderSide(color: AppColors.divider),
@@ -1028,7 +1443,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text(t.commonCancel, style: TextStyle(color: AppColors.textMuted)),
+              child: Text(t.commonCancel,
+                  style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: loading
@@ -1044,11 +1460,17 @@ class _ProfileScreenState extends State<ProfileScreen>
                         setS(() => error = t.profilePasswordMismatch);
                         return;
                       }
-                      setS(() { loading = true; error = null; });
+                      setS(() {
+                        loading = true;
+                        error = null;
+                      });
                       final err = await SupabaseService().changePassword(pwd);
                       if (!ctx.mounted) return;
                       if (err != null) {
-                        setS(() { loading = false; error = err; });
+                        setS(() {
+                          loading = false;
+                          error = err;
+                        });
                       } else {
                         Navigator.pop(ctx);
                         if (mounted) {
@@ -1064,12 +1486,17 @@ class _ProfileScreenState extends State<ProfileScreen>
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonBlue,
                 foregroundColor: Colors.white,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10)),
               ),
               child: loading
-                  ? SizedBox(width: 18, height: 18,
-                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : Text(t.profileChange, style: TextStyle(fontWeight: FontWeight.w800)),
+                  ? SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                          strokeWidth: 2, color: Colors.white))
+                  : Text(t.profileChange,
+                      style: TextStyle(fontWeight: FontWeight.w800)),
             ),
           ],
         ),
@@ -1077,14 +1504,15 @@ class _ProfileScreenState extends State<ProfileScreen>
     );
   }
 
-  Widget _accountActionBtn(String label, IconData icon, Color color, VoidCallback onTap) {
+  Widget _accountActionBtn(
+      String label, IconData icon, Color color, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: color.withValues(alpha: 0.4)),
         ),
         child: Row(
@@ -1092,8 +1520,9 @@ class _ProfileScreenState extends State<ProfileScreen>
           children: [
             Icon(icon, size: 16, color: color),
             SizedBox(width: 6),
-            Text(label, style: TextStyle(
-                color: color, fontSize: 12, fontWeight: FontWeight.w700)),
+            Text(label,
+                style: TextStyle(
+                    color: color, fontSize: 12, fontWeight: FontWeight.w700)),
           ],
         ),
       ),
@@ -1102,22 +1531,29 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _statCard(String label, String value, Color color) {
     return Container(
-      padding: EdgeInsets.all(14),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        gradient: AppColors.cardGradient,
-        borderRadius: BorderRadius.circular(12),
+        color: AppColors.bettingSurfaceElevated,
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(color: color.withValues(alpha: 0.3)),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.bettingSoftShadow,
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
       ),
       child: Column(
         children: [
           Text(value,
               style: TextStyle(
                   color: color, fontSize: 22, fontWeight: FontWeight.w900)),
-          SizedBox(height: 4),
+          const SizedBox(height: 4),
           Text(label,
               textAlign: TextAlign.center,
               style: TextStyle(
-                  color: AppColors.textSecondary,
+                  color: AppColors.bettingTextSecondary,
                   fontSize: 10,
                   fontWeight: FontWeight.w600)),
         ],
@@ -1136,7 +1572,7 @@ class _ProfileScreenState extends State<ProfileScreen>
 
     return RefreshIndicator(
       color: AppColors.neonGreen,
-      backgroundColor: AppColors.bgCard,
+      backgroundColor: AppColors.bettingSurface,
       onRefresh: _loadTransactions,
       child: _transactions.isEmpty
           ? ListView(
@@ -1168,13 +1604,12 @@ class _ProfileScreenState extends State<ProfileScreen>
                   amount: tx['amount'] as int,
                   date: tx['date'] as DateTime,
                   type: tx['type'] as String,
+                  subtitle: tx['subtitle'] as String?,
                 );
               },
             ),
     );
   }
-
-
 
   String _formatDate(DateTime d) =>
       '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}/${d.year}';
@@ -1184,12 +1619,13 @@ class _ProfileScreenState extends State<ProfileScreen>
   // ═══════════════════════════════════════════════════════════
   Widget _buildFriendsTab() {
     if (_friendsLoading) {
-      return Center(child: CircularProgressIndicator(color: AppColors.neonGreen));
+      return Center(
+          child: CircularProgressIndicator(color: AppColors.neonGreen));
     }
 
     return RefreshIndicator(
       color: AppColors.neonGreen,
-      backgroundColor: AppColors.bgCard,
+      backgroundColor: AppColors.bettingSurface,
       onRefresh: _loadFriends,
       child: ListView(
         padding: EdgeInsets.all(16),
@@ -1206,7 +1642,8 @@ class _ProfileScreenState extends State<ProfileScreen>
               decoration: BoxDecoration(
                 color: AppColors.neonBlue.withValues(alpha: 0.12),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.neonBlue.withValues(alpha: 0.4)),
+                border: Border.all(
+                    color: AppColors.neonBlue.withValues(alpha: 0.4)),
               ),
               child: Row(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -1214,8 +1651,10 @@ class _ProfileScreenState extends State<ProfileScreen>
                   Icon(Icons.person_add, color: AppColors.neonBlue, size: 18),
                   SizedBox(width: 8),
                   Text('Rechercher et ajouter un ami',
-                      style: TextStyle(color: AppColors.neonBlue,
-                          fontSize: 13, fontWeight: FontWeight.w700)),
+                      style: TextStyle(
+                          color: AppColors.neonBlue,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700)),
                 ],
               ),
             ),
@@ -1224,23 +1663,31 @@ class _ProfileScreenState extends State<ProfileScreen>
           // Demandes reçues
           if (_pendingReceived.isNotEmpty) ...[
             SizedBox(height: 20),
-            _friendSectionHeader('DEMANDES REÇUES', _pendingReceived.length, AppColors.neonOrange),
+            _friendSectionHeader('DEMANDES REÇUES', _pendingReceived.length,
+                AppColors.neonOrange),
             SizedBox(height: 8),
             ..._pendingReceived.map((req) => _receivedRequestCard(req)),
           ],
 
           // Demandes envoyées en attente
-          if (_pendingSent.where((s) => s['status'] == 'pending').isNotEmpty) ...[
+          if (_pendingSent
+              .where((s) => s['status'] == 'pending')
+              .isNotEmpty) ...[
             SizedBox(height: 20),
-            _friendSectionHeader('DEMANDES ENVOYÉES',
-                _pendingSent.where((s) => s['status'] == 'pending').length, AppColors.neonBlue),
+            _friendSectionHeader(
+                'DEMANDES ENVOYÉES',
+                _pendingSent.where((s) => s['status'] == 'pending').length,
+                AppColors.neonBlue),
             SizedBox(height: 8),
-            ..._pendingSent.where((s) => s['status'] == 'pending').map((s) => _sentRequestCard(s)),
+            ..._pendingSent
+                .where((s) => s['status'] == 'pending')
+                .map((s) => _sentRequestCard(s)),
           ],
 
           // Mes amis
           SizedBox(height: 20),
-          _friendSectionHeader('MES AMIS', _friends.length, AppColors.neonGreen),
+          _friendSectionHeader(
+              'MES AMIS', _friends.length, AppColors.neonGreen),
           SizedBox(height: 8),
           if (_friends.isEmpty)
             Container(
@@ -1248,15 +1695,18 @@ class _ProfileScreenState extends State<ProfileScreen>
               decoration: BoxDecoration(
                 color: AppColors.bgCard,
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
+                border:
+                    Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
               ),
               child: Column(
                 children: [
-                  Icon(Icons.people_outline, size: 40,
+                  Icon(Icons.people_outline,
+                      size: 40,
                       color: AppColors.textMuted.withValues(alpha: 0.3)),
                   SizedBox(height: 8),
                   Text('Aucun ami pour le moment',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 13)),
+                      style:
+                          TextStyle(color: AppColors.textMuted, fontSize: 13)),
                 ],
               ),
             )
@@ -1286,7 +1736,8 @@ class _ProfileScreenState extends State<ProfileScreen>
             borderRadius: BorderRadius.circular(10),
           ),
           child: Text('$count',
-              style: TextStyle(color: color, fontSize: 11, fontWeight: FontWeight.w800)),
+              style: TextStyle(
+                  color: color, fontSize: 11, fontWeight: FontWeight.w800)),
         ),
       ],
     );
@@ -1306,7 +1757,8 @@ class _ProfileScreenState extends State<ProfileScreen>
         children: [
           // Avatar
           Container(
-            width: 44, height: 44,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: rank.color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
@@ -1314,8 +1766,13 @@ class _ProfileScreenState extends State<ProfileScreen>
             ),
             child: Center(
               child: Text(
-                req.fromUsername.isNotEmpty ? req.fromUsername[0].toUpperCase() : '?',
-                style: TextStyle(color: rank.color, fontSize: 18, fontWeight: FontWeight.w800),
+                req.fromUsername.isNotEmpty
+                    ? req.fromUsername[0].toUpperCase()
+                    : '?',
+                style: TextStyle(
+                    color: rank.color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -1326,14 +1783,17 @@ class _ProfileScreenState extends State<ProfileScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(req.fromUsername,
-                    style: TextStyle(color: AppColors.textPrimary,
-                        fontSize: 14, fontWeight: FontWeight.w700)),
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
                 SizedBox(height: 2),
                 Row(children: [
                   Icon(rank.icon, size: 12, color: rank.color),
                   SizedBox(width: 4),
                   Text('${rank.label} • ${req.fromXp} XP',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                      style:
+                          TextStyle(color: AppColors.textMuted, fontSize: 11)),
                 ]),
                 SizedBox(height: 2),
                 Text('Reçue le ${_formatDate(req.sentAt)}',
@@ -1348,13 +1808,15 @@ class _ProfileScreenState extends State<ProfileScreen>
               GestureDetector(
                 onTap: () async {
                   final provider = context.read<PlayerProvider>();
-                  final ok = await provider.acceptFriendRequest(req.id, req.fromId);
+                  final ok =
+                      await provider.acceptFriendRequest(req.id, req.fromId);
                   if (mounted) {
                     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
                       content: Text(ok
                           ? '${req.fromUsername} ajouté en ami !'
                           : 'Erreur'),
-                      backgroundColor: ok ? AppColors.neonGreen : AppColors.neonRed,
+                      backgroundColor:
+                          ok ? AppColors.neonGreen : AppColors.neonRed,
                     ));
                     _loadFriends();
                   }
@@ -1364,9 +1826,11 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: BoxDecoration(
                     color: AppColors.neonGreen.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.neonGreen.withValues(alpha: 0.4)),
+                    border: Border.all(
+                        color: AppColors.neonGreen.withValues(alpha: 0.4)),
                   ),
-                  child: Icon(Icons.check, color: AppColors.neonGreen, size: 18),
+                  child:
+                      Icon(Icons.check, color: AppColors.neonGreen, size: 18),
                 ),
               ),
               SizedBox(width: 6),
@@ -1381,7 +1845,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: BoxDecoration(
                     color: AppColors.neonRed.withValues(alpha: 0.15),
                     borderRadius: BorderRadius.circular(8),
-                    border: Border.all(color: AppColors.neonRed.withValues(alpha: 0.4)),
+                    border: Border.all(
+                        color: AppColors.neonRed.withValues(alpha: 0.4)),
                   ),
                   child: Icon(Icons.close, color: AppColors.neonRed, size: 18),
                 ),
@@ -1395,7 +1860,8 @@ class _ProfileScreenState extends State<ProfileScreen>
 
   Widget _sentRequestCard(Map<String, dynamic> req) {
     final username = req['to_username'] as String? ?? 'Joueur';
-    final date = DateTime.tryParse(req['created_at'] as String? ?? '') ?? DateTime.now();
+    final date =
+        DateTime.tryParse(req['created_at'] as String? ?? '') ?? DateTime.now();
     final status = req['status'] as String? ?? 'pending';
 
     return Container(
@@ -1409,7 +1875,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         children: [
           Container(
-            width: 40, height: 40,
+            width: 40,
+            height: 40,
             decoration: BoxDecoration(
               color: AppColors.neonBlue.withValues(alpha: 0.15),
               shape: BoxShape.circle,
@@ -1417,7 +1884,10 @@ class _ProfileScreenState extends State<ProfileScreen>
             child: Center(
               child: Text(
                 username.isNotEmpty ? username[0].toUpperCase() : '?',
-                style: TextStyle(color: AppColors.neonBlue, fontSize: 16, fontWeight: FontWeight.w800),
+                style: TextStyle(
+                    color: AppColors.neonBlue,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -1427,8 +1897,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(username,
-                    style: TextStyle(color: AppColors.textPrimary,
-                        fontSize: 13, fontWeight: FontWeight.w600)),
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w600)),
                 Text('Envoyée le ${_formatDate(date)}',
                     style: TextStyle(color: AppColors.textMuted, fontSize: 10)),
               ],
@@ -1441,8 +1913,10 @@ class _ProfileScreenState extends State<ProfileScreen>
               borderRadius: BorderRadius.circular(6),
             ),
             child: Text(status == 'pending' ? 'En attente' : status,
-                style: TextStyle(color: AppColors.neonYellow,
-                    fontSize: 10, fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    color: AppColors.neonYellow,
+                    fontSize: 10,
+                    fontWeight: FontWeight.w700)),
           ),
         ],
       ),
@@ -1461,16 +1935,23 @@ class _ProfileScreenState extends State<ProfileScreen>
       child: Row(
         children: [
           Container(
-            width: 44, height: 44,
+            width: 44,
+            height: 44,
             decoration: BoxDecoration(
               color: friend.rank.color.withValues(alpha: 0.15),
               shape: BoxShape.circle,
-              border: Border.all(color: friend.rank.color.withValues(alpha: 0.4)),
+              border:
+                  Border.all(color: friend.rank.color.withValues(alpha: 0.4)),
             ),
             child: Center(
               child: Text(
-                friend.username.isNotEmpty ? friend.username[0].toUpperCase() : '?',
-                style: TextStyle(color: friend.rank.color, fontSize: 18, fontWeight: FontWeight.w800),
+                friend.username.isNotEmpty
+                    ? friend.username[0].toUpperCase()
+                    : '?',
+                style: TextStyle(
+                    color: friend.rank.color,
+                    fontSize: 18,
+                    fontWeight: FontWeight.w800),
               ),
             ),
           ),
@@ -1480,13 +1961,16 @@ class _ProfileScreenState extends State<ProfileScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(friend.username,
-                    style: TextStyle(color: AppColors.textPrimary,
-                        fontSize: 14, fontWeight: FontWeight.w700)),
+                    style: TextStyle(
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700)),
                 Row(children: [
                   Icon(friend.rank.icon, size: 12, color: friend.rank.color),
                   SizedBox(width: 4),
                   Text('${friend.rank.label} • ${friend.xp} XP',
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                      style:
+                          TextStyle(color: AppColors.textMuted, fontSize: 11)),
                 ]),
               ],
             ),
@@ -1510,11 +1994,18 @@ class _ProfileScreenState extends State<ProfileScreen>
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: EdgeInsets.symmetric(vertical: 14),
+        padding: const EdgeInsets.symmetric(vertical: 14),
         decoration: BoxDecoration(
           color: color.withValues(alpha: 0.12),
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(14),
           border: Border.all(color: color.withValues(alpha: 0.4)),
+          boxShadow: [
+            BoxShadow(
+              color: AppColors.bettingSoftShadow,
+              blurRadius: 9,
+              offset: const Offset(0, 3),
+            ),
+          ],
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -1597,10 +2088,12 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
-              Icon(Icons.add_circle_outline, color: AppColors.neonGreen, size: 22),
+              Icon(Icons.add_circle_outline,
+                  color: AppColors.neonGreen, size: 22),
               SizedBox(width: 8),
               Text('Dépôt de FCFA',
                   style: TextStyle(
@@ -1625,7 +2118,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(error!,
-                        style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                        style:
+                            TextStyle(color: AppColors.neonRed, fontSize: 12)),
                   ),
                   SizedBox(height: 12),
                 ],
@@ -1636,12 +2130,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: InputDecoration(
                     labelText: 'Montant (FCFA)',
                     hintText: '100',
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
                     prefixIcon: Icon(Icons.monetization_on,
                         color: AppColors.neonYellow, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -1663,12 +2159,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: InputDecoration(
                     labelText: 'Numéro Mobile Money',
                     hintText: '237658895572',
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
                     prefixIcon:
                         Icon(Icons.phone, color: AppColors.neonGreen, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -1692,7 +2190,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: AppColors.neonBlue),
+                      Icon(Icons.info_outline,
+                          size: 16, color: AppColors.neonBlue),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text('1 FCFA = 1 coin',
@@ -1708,8 +2207,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('Annuler',
-                  style: TextStyle(color: AppColors.textMuted)),
+              child:
+                  Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: loading
@@ -1730,14 +2229,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                       }
 
                       if (!_kpayService.validatePhoneNumber(phone)) {
-                        setS(() => error =
-                            'Numéro invalide. Format: 237XXXXXXXXX');
+                        setS(() =>
+                            error = 'Numéro invalide. Format: 237XXXXXXXXX');
                         return;
                       }
 
                       if (selectedOperator == null) {
-                        setS(() => error =
-                            'Choisis ton opérateur (MTN ou Orange).');
+                        setS(() =>
+                            error = 'Choisis ton opérateur (MTN ou Orange).');
                         return;
                       }
 
@@ -1746,8 +2245,7 @@ class _ProfileScreenState extends State<ProfileScreen>
                         error = null;
                       });
 
-                      final cleanedPhone =
-                          _kpayService.cleanPhoneNumber(phone);
+                      final cleanedPhone = _kpayService.cleanPhoneNumber(phone);
                       final result = await _kpayService.initiateDeposit(
                         payer: cleanedPhone,
                         amount: amount,
@@ -1820,7 +2318,8 @@ class _ProfileScreenState extends State<ProfileScreen>
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setS) => AlertDialog(
           backgroundColor: AppColors.bgCard,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           title: Row(
             children: [
               Icon(Icons.remove_circle_outline,
@@ -1869,7 +2368,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       borderRadius: BorderRadius.circular(8),
                     ),
                     child: Text(error!,
-                        style: TextStyle(color: AppColors.neonRed, fontSize: 12)),
+                        style:
+                            TextStyle(color: AppColors.neonRed, fontSize: 12)),
                   ),
                   SizedBox(height: 12),
                 ],
@@ -1880,12 +2380,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: InputDecoration(
                     labelText: 'Montant (FCFA)',
                     hintText: 'Max: $currentCoins',
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
                     prefixIcon: Icon(Icons.monetization_on,
                         color: AppColors.neonYellow, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -1907,12 +2409,14 @@ class _ProfileScreenState extends State<ProfileScreen>
                   decoration: InputDecoration(
                     labelText: 'Numéro de réception',
                     hintText: '237658895572',
-                    labelStyle: TextStyle(color: AppColors.textMuted, fontSize: 13),
+                    labelStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 13),
                     prefixIcon: Icon(Icons.phone,
                         color: AppColors.neonOrange, size: 20),
                     filled: true,
                     fillColor: AppColors.bgElevated,
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     enabledBorder: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(10),
                       borderSide: BorderSide(color: AppColors.divider),
@@ -1936,7 +2440,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.info_outline, size: 16, color: AppColors.neonBlue),
+                      Icon(Icons.info_outline,
+                          size: 16, color: AppColors.neonBlue),
                       SizedBox(width: 8),
                       Expanded(
                         child: Text('1 coin = 1 FCFA',
@@ -1952,8 +2457,8 @@ class _ProfileScreenState extends State<ProfileScreen>
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx),
-              child: Text('Annuler',
-                  style: TextStyle(color: AppColors.textMuted)),
+              child:
+                  Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: loading
@@ -1986,7 +2491,9 @@ class _ProfileScreenState extends State<ProfileScreen>
                         }
                         // Sync provider tant qu'on a la valeur fraiche
                         if (mounted) {
-                          context.read<WalletProvider>().updateLocal(freshBalance);
+                          context
+                              .read<WalletProvider>()
+                              .updateLocal(freshBalance);
                         }
                       } catch (_) {
                         // En cas d'echec : on retombe sur currentCoins
@@ -2009,8 +2516,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       }
 
                       if (selectedOperator == null) {
-                        setS(() => error =
-                            'Choisis ton opérateur (MTN ou Orange).');
+                        setS(() =>
+                            error = 'Choisis ton opérateur (MTN ou Orange).');
                         return;
                       }
 
@@ -2024,10 +2531,8 @@ class _ProfileScreenState extends State<ProfileScreen>
                       //   2. L'appel K-Pay
                       //   3. Le refund auto si K-Pay echoue
                       // Plus de double-debit ici.
-                      final cleanedPhone =
-                          _kpayService.cleanPhoneNumber(phone);
-                      final result =
-                          await _kpayService.initiateWithdrawal(
+                      final cleanedPhone = _kpayService.cleanPhoneNumber(phone);
+                      final result = await _kpayService.initiateWithdrawal(
                         receiver: cleanedPhone,
                         amount: amount,
                         paymentMethod: selectedOperator!,

@@ -793,7 +793,7 @@ class _HistoryRow extends StatelessWidget {
       padding: EdgeInsets.only(bottom: 10),
       child: Row(
         children: [
-          Text(entry.gameEmoji, style: TextStyle(fontSize: 18)),
+          Icon(entry.gameIcon, size: 18, color: AppColors.textSecondary),
           SizedBox(width: 10),
           Expanded(
             child: Column(

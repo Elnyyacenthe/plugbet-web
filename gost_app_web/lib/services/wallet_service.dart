@@ -11,6 +11,7 @@
 // En fallback (si la RPC n'est pas encore deployee), l'ancienne methode
 // non-atomique est utilisee mais un warning est loggue.
 // ============================================================
+import 'package:flutter/foundation.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import '../utils/logger.dart';
 
@@ -41,7 +42,7 @@ class WalletService {
         await _client.from('user_profiles').insert({
           'id': uid,
           'username': 'Joueur${uid.substring(0, 4)}',
-          'coins': 1000,
+          'coins': kDebugMode ? 1000000 : 1000,
         });
         return getProfile();
       }

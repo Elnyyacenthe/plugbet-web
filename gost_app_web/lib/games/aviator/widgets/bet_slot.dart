@@ -1,6 +1,6 @@
 // ============================================================
 // BetSlot — Widget d'une mise Aviator (saisie + miser + cashout)
-// Extrait d'aviator_game_screen.dart
+// Extrait d'aviator_game_screen.dart — premium redesign
 // ============================================================
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,6 +9,8 @@ import '../../../theme/app_theme.dart';
 import '../models/aviator_models.dart';
 import '../providers/aviator_provider.dart';
 import 'auto_cash_out_picker.dart';
+
+const _kAviatorOrange = Color(0xFFF97316);
 
 class BetSlot extends StatefulWidget {
   final AviatorBet bet;
@@ -81,16 +83,34 @@ class _BetSlotState extends State<BetSlot> {
       }
     }
 
-    return Container(
-      padding: const EdgeInsets.all(10),
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 250),
+      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: const Color(0xFF12121E),
-        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            const Color(0xFF171727),
+            const Color(0xFF0D0D18),
+          ],
+        ),
+        borderRadius: BorderRadius.circular(16),
         border: Border.all(
           color: canCashOut
-              ? const Color(0xFFF97316).withValues(alpha: 0.6)
+              ? _kAviatorOrange.withValues(alpha: 0.7)
               : AppColors.divider.withValues(alpha: 0.3),
+          width: canCashOut ? 1.3 : 1,
         ),
+        boxShadow: canCashOut
+            ? [
+                BoxShadow(
+                  color: _kAviatorOrange.withValues(alpha: 0.28),
+                  blurRadius: 16,
+                  spreadRadius: 0.5,
+                ),
+              ]
+            : null,
       ),
       child: Column(
         children: [
@@ -106,12 +126,12 @@ class _BetSlotState extends State<BetSlot> {
                         color: AppColors.textMuted,
                         fontSize: 9,
                         fontWeight: FontWeight.w700,
-                        letterSpacing: 1,
+                        letterSpacing: 1.2,
                       ),
                     ),
                     const SizedBox(height: 6),
                     SizedBox(
-                      height: 36,
+                      height: 38,
                       child: TextField(
                         controller: _ctrl,
                         enabled: canBet,
@@ -125,7 +145,7 @@ class _BetSlotState extends State<BetSlot> {
                         decoration: InputDecoration(
                           isDense: true,
                           contentPadding: const EdgeInsets.symmetric(
-                              horizontal: 10, vertical: 9),
+                              horizontal: 12, vertical: 10),
                           hintText: 'coins',
                           hintStyle: const TextStyle(
                               color: Colors.white38, fontSize: 13),
@@ -136,25 +156,25 @@ class _BetSlotState extends State<BetSlot> {
                               fontWeight: FontWeight.w600),
                           filled: true,
                           fillColor: canBet
-                              ? const Color(0xFF1E1E2E)
+                              ? const Color(0xFF20202F)
                               : const Color(0xFF14141E),
                           border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
                             borderSide: BorderSide(
                                 color: AppColors.divider.withValues(alpha: 0.3)),
                           ),
                           enabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
                             borderSide: BorderSide(
                                 color: AppColors.divider.withValues(alpha: 0.4)),
                           ),
                           focusedBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
                             borderSide: const BorderSide(
-                                color: Color(0xFFF97316), width: 1.5),
+                                color: _kAviatorOrange, width: 1.5),
                           ),
                           disabledBorder: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(10),
                             borderSide: BorderSide(
                                 color: AppColors.divider.withValues(alpha: 0.2)),
                           ),
@@ -164,7 +184,7 @@ class _BetSlotState extends State<BetSlot> {
                           fontSize: 18,
                           fontWeight: FontWeight.w800,
                         ),
-                        cursorColor: const Color(0xFFF97316),
+                        cursorColor: _kAviatorOrange,
                       ),
                     ),
                   ],
@@ -178,7 +198,7 @@ class _BetSlotState extends State<BetSlot> {
                 ),
             ],
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: 10),
           _buildActionButton(resultText, resultColor, canBet, canCashOut,
               isWaiting, phase, provider, bet),
         ],
@@ -197,13 +217,26 @@ class _BetSlotState extends State<BetSlot> {
     AviatorBet bet,
   ) {
     if (resultText != null) {
-      return Container(
+      return AnimatedContainer(
+        duration: const Duration(milliseconds: 300),
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: resultColor!.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: resultColor.withValues(alpha: 0.4)),
+          gradient: LinearGradient(
+            colors: [
+              resultColor!.withValues(alpha: 0.18),
+              resultColor.withValues(alpha: 0.06),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(color: resultColor.withValues(alpha: 0.5)),
+          boxShadow: [
+            BoxShadow(
+              color: resultColor.withValues(alpha: 0.2),
+              blurRadius: 10,
+              spreadRadius: 0.5,
+            ),
+          ],
         ),
         child: Center(
           child: Text(
@@ -221,16 +254,30 @@ class _BetSlotState extends State<BetSlot> {
     if (canCashOut) {
       final delta =
           (bet.amount * provider.multiplier).floor() - bet.amount;
-      return GestureDetector(
+      return _PremiumTapButton(
         onTap: widget.onCashOut,
         child: Container(
           width: double.infinity,
-          padding: const EdgeInsets.symmetric(vertical: 12),
+          padding: const EdgeInsets.symmetric(vertical: 13),
           decoration: BoxDecoration(
-            color: AppColors.neonGreen.withValues(alpha: 0.15),
-            borderRadius: BorderRadius.circular(10),
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                AppColors.neonGreen.withValues(alpha: 0.28),
+                AppColors.neonGreen.withValues(alpha: 0.10),
+              ],
+            ),
+            borderRadius: BorderRadius.circular(12),
             border: Border.all(
-                color: AppColors.neonGreen.withValues(alpha: 0.7)),
+                color: AppColors.neonGreen.withValues(alpha: 0.8), width: 1.3),
+            boxShadow: [
+              BoxShadow(
+                color: AppColors.neonGreen.withValues(alpha: 0.35),
+                blurRadius: 14,
+                spreadRadius: 0.5,
+              ),
+            ],
           ),
           child: Center(
             child: Text(
@@ -252,10 +299,15 @@ class _BetSlotState extends State<BetSlot> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: AppColors.neonYellow.withValues(alpha: 0.1),
-          borderRadius: BorderRadius.circular(10),
+          gradient: LinearGradient(
+            colors: [
+              AppColors.neonYellow.withValues(alpha: 0.16),
+              AppColors.neonYellow.withValues(alpha: 0.04),
+            ],
+          ),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: AppColors.neonYellow.withValues(alpha: 0.4)),
+              color: AppColors.neonYellow.withValues(alpha: 0.45)),
         ),
         child: Center(
           child: Text(
@@ -275,16 +327,16 @@ class _BetSlotState extends State<BetSlot> {
         width: double.infinity,
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
-          color: const Color(0xFFF97316).withValues(alpha: 0.08),
-          borderRadius: BorderRadius.circular(10),
+          color: _kAviatorOrange.withValues(alpha: 0.08),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
-              color: const Color(0xFFF97316).withValues(alpha: 0.3)),
+              color: _kAviatorOrange.withValues(alpha: 0.3)),
         ),
         child: Center(
           child: Text(
             AppLocalizations.of(context)!.aviatorInFlight,
             style: const TextStyle(
-              color: Color(0xFFF97316),
+              color: _kAviatorOrange,
               fontWeight: FontWeight.w700,
               fontSize: 13,
             ),
@@ -299,7 +351,7 @@ class _BetSlotState extends State<BetSlot> {
         padding: const EdgeInsets.symmetric(vertical: 12),
         decoration: BoxDecoration(
           color: AppColors.bgCard,
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(color: AppColors.divider.withValues(alpha: 0.3)),
         ),
         child: Center(
@@ -316,7 +368,7 @@ class _BetSlotState extends State<BetSlot> {
     }
 
     // Bouton MISER
-    return GestureDetector(
+    return _PremiumTapButton(
       onTap: canBet
           ? () async {
               // [FIX MISE] Committer le montant saisi AVANT de miser.
@@ -332,6 +384,9 @@ class _BetSlotState extends State<BetSlot> {
                     content: Text(
                         AppLocalizations.of(context)!.aviatorInsufficientBalance),
                     backgroundColor: AppColors.neonRed,
+                    behavior: SnackBarBehavior.floating,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(10)),
                     duration: const Duration(seconds: 2),
                   ),
                 );
@@ -340,30 +395,77 @@ class _BetSlotState extends State<BetSlot> {
           : null,
       child: Container(
         width: double.infinity,
-        padding: const EdgeInsets.symmetric(vertical: 12),
+        padding: const EdgeInsets.symmetric(vertical: 13),
         decoration: BoxDecoration(
-          color: canBet
-              ? const Color(0xFFF97316).withValues(alpha: 0.15)
-              : AppColors.bgCard,
-          borderRadius: BorderRadius.circular(10),
+          gradient: canBet
+              ? LinearGradient(
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    _kAviatorOrange.withValues(alpha: 0.9),
+                    Color.lerp(_kAviatorOrange, Colors.black, 0.2)!,
+                  ],
+                )
+              : null,
+          color: canBet ? null : AppColors.bgCard,
+          borderRadius: BorderRadius.circular(12),
           border: Border.all(
             color: canBet
-                ? const Color(0xFFF97316).withValues(alpha: 0.7)
+                ? _kAviatorOrange.withValues(alpha: 0.9)
                 : AppColors.divider.withValues(alpha: 0.3),
           ),
+          boxShadow: canBet
+              ? [
+                  BoxShadow(
+                    color: _kAviatorOrange.withValues(alpha: 0.4),
+                    blurRadius: 14,
+                    spreadRadius: 0.5,
+                  ),
+                ]
+              : null,
         ),
         child: Center(
           child: Text(
             '${AppLocalizations.of(context)!.aviatorBetButton}  ${bet.amount} FCFA',
             style: TextStyle(
-              color: canBet
-                  ? const Color(0xFFF97316)
-                  : AppColors.textMuted,
+              color: canBet ? Colors.white : AppColors.textMuted,
               fontWeight: FontWeight.w800,
               fontSize: 13,
+              letterSpacing: 0.3,
             ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Petit wrapper qui ajoute un retour visuel (scale) au tap, sans changer
+/// la sémantique du callback fourni (même déclenchement, même conditions).
+class _PremiumTapButton extends StatefulWidget {
+  final VoidCallback? onTap;
+  final Widget child;
+  const _PremiumTapButton({required this.onTap, required this.child});
+
+  @override
+  State<_PremiumTapButton> createState() => _PremiumTapButtonState();
+}
+
+class _PremiumTapButtonState extends State<_PremiumTapButton> {
+  bool _pressed = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: widget.onTap,
+      onTapDown: widget.onTap != null ? (_) => setState(() => _pressed = true) : null,
+      onTapUp: widget.onTap != null ? (_) => setState(() => _pressed = false) : null,
+      onTapCancel: widget.onTap != null ? () => setState(() => _pressed = false) : null,
+      child: AnimatedScale(
+        scale: _pressed ? 0.97 : 1.0,
+        duration: const Duration(milliseconds: 120),
+        curve: Curves.easeOut,
+        child: widget.child,
       ),
     );
   }

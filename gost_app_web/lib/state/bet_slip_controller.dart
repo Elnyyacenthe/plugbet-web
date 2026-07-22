@@ -86,6 +86,12 @@ class BetSelection {
   final int? homeScore;       // score actuel (live uniquement)
   final int? awayScore;
   final int? minute;          // minute de jeu (live uniquement)
+  // ── 2Up (paiement anticipe) ──
+  final String? sport;        // sport canonique : 'football' | 'basketball' | ...
+  final String? leagueKey;    // sport_key fournisseur (ex 'soccer_epl') pour le detecteur
+  final bool twoUpEligible;   // eligible au paiement anticipe (indice UI ; serveur = source de verite)
+  // ── PlugLock (garantie de cote) ──
+  final bool locked;          // cote verrouillee : ignoree par le rafraichisseur
   // Tracking du changement de cote (pour fleche up/down dans le panier)
   final double? previousOdds; // null = cote inchangee, sinon = ancienne valeur
 
@@ -103,6 +109,10 @@ class BetSelection {
     this.homeScore,
     this.awayScore,
     this.minute,
+    this.sport,
+    this.leagueKey,
+    this.twoUpEligible = false,
+    this.locked = false,
     this.previousOdds,
   });
 
@@ -116,6 +126,10 @@ class BetSelection {
     int? homeScore,
     int? awayScore,
     int? minute,
+    String? sport,
+    String? leagueKey,
+    bool? twoUpEligible,
+    bool? locked,
     Object? previousOdds = _sentinel,  // pour explicitement passer null
   }) => BetSelection(
     matchId: matchId,
@@ -131,6 +145,10 @@ class BetSelection {
     homeScore: homeScore ?? this.homeScore,
     awayScore: awayScore ?? this.awayScore,
     minute: minute ?? this.minute,
+    sport: sport ?? this.sport,
+    leagueKey: leagueKey ?? this.leagueKey,
+    twoUpEligible: twoUpEligible ?? this.twoUpEligible,
+    locked: locked ?? this.locked,
     previousOdds: previousOdds == _sentinel
         ? this.previousOdds
         : previousOdds as double?,
@@ -186,13 +204,16 @@ class BetSlipController extends ChangeNotifier {
         (e) => e.matchId == matchId && e.marketCode == marketCode);
     if (idx < 0) return false;
     final current = _items[idx];
+    // PlugLock : si la cote est verrouillee, on la GARANTIT -> on ignore
+    // toute variation de cote et on ne met a jour que le score/la minute.
+    final effNewOdds = current.locked ? current.odds : newOdds;
     final scoreChanged = (homeScore != null && homeScore != current.homeScore) ||
         (awayScore != null && awayScore != current.awayScore) ||
         (minute != null && minute != current.minute);
-    final oddsChanged = (newOdds - current.odds).abs() > 0.001;
+    final oddsChanged = (effNewOdds - current.odds).abs() > 0.001;
     if (!oddsChanged && !scoreChanged) return false;
     _items[idx] = current.copyWith(
-      odds: newOdds,
+      odds: effNewOdds,
       marketLabel: newMarketLabel,
       homeScore: homeScore,
       awayScore: awayScore,
@@ -246,6 +267,19 @@ class BetSlipController extends ChangeNotifier {
       case OddsChangePolicy.askConfirm:
         return 'ask';
     }
+  }
+
+  /// PlugLock — verrouille / deverrouille la cote d'une selection.
+  /// Une cote verrouillee n'est plus modifiee par le rafraichisseur : elle
+  /// est garantie a la validation. Au verrouillage on acquitte tout
+  /// changement en cours (la cote affichee devient la cote figee/garantie).
+  void toggleLock(String matchId, String marketCode) {
+    final idx = _items.indexWhere(
+        (e) => e.matchId == matchId && e.marketCode == marketCode);
+    if (idx < 0) return;
+    final cur = _items[idx];
+    _items[idx] = cur.copyWith(locked: !cur.locked, previousOdds: null);
+    notifyListeners();
   }
 
   /// Y a-t-il deja une selection pour ce match ?
@@ -338,10 +372,16 @@ class BetSlipController extends ChangeNotifier {
   /// - combine : 1 ticket = N selections, debit stake une fois
   /// - simple  : 1 RPC call par selection (chacune debite stake)
   ///   -> retourne le PREMIER echec rencontre s'il y en a un.
-  Future<BetResult> submit() async {
+  /// [bonusCode] (optionnel) : code bonus a appliquer sur ce coupon. Il finance
+  /// la mise a hauteur de son montant et est consomme (usage unique). En mode
+  /// simple multi-selections, le code s'applique au PREMIER pari du coupon.
+  Future<BetResult> submit({String? bonusCode}) async {
     if (_items.isEmpty) {
       return const BetResult.fail(error: 'Panier vide', code: 'EMPTY');
     }
+    final code = (bonusCode != null && bonusCode.trim().isNotEmpty)
+        ? bonusCode.trim()
+        : null;
 
     if (_mode == BetMode.combine) {
       final res = await _placeBetRpc(
@@ -349,6 +389,7 @@ class BetSlipController extends ChangeNotifier {
         stake: _stake,
         selections: _items,
         requestId: 'combine:${DateTime.now().microsecondsSinceEpoch}',
+        bonusCode: code,
       );
       if (res.success) clear();
       return res;
@@ -365,6 +406,8 @@ class BetSlipController extends ChangeNotifier {
         stake: _stake,
         selections: [sel],
         requestId: 'simple:${DateTime.now().microsecondsSinceEpoch}:$i',
+        // Le code bonus ne s'applique qu'au premier ticket du coupon.
+        bonusCode: i == 0 ? code : null,
       );
       last = res;
       if (!res.success) return res;
@@ -389,6 +432,7 @@ class BetSlipController extends ChangeNotifier {
     required int stake,
     required List<BetSelection> selections,
     required String requestId,
+    String? bonusCode,
   }) async {
     try {
       final payload = selections.map((s) => {
@@ -399,27 +443,62 @@ class BetSlipController extends ChangeNotifier {
             'odds': s.odds,
             'is_live': s.isLive,
             'is_virtual': s.isVirtual,
+            // 2Up : sport canonique + sport_key pour l'eligibilite serveur
+            if (s.sport != null) 'sport': s.sport,
+            if (s.leagueKey != null) 'league_key': s.leagueKey,
           }).toList();
-      final res = await Supabase.instance.client.rpc(
-        'place_bet',
-        params: {
+      // Le pari passe par l'edge function `risk_place_bet` : elle valide
+      // d'abord aupres du Risk Engine (exposition / liability / limites),
+      // PUIS appelle la RPC place_bet (ou place_bet_with_bonus) qui reste
+      // la seule a debiter le wallet et inserer le ticket.
+      final fn = await Supabase.instance.client.functions.invoke(
+        'risk_place_bet',
+        body: {
           'p_bet_type': betType,
           'p_stake': stake,
           'p_selections': payload,
           'p_request_id': requestId,
+          if (bonusCode != null) 'p_bonus_code': bonusCode,
         },
       );
-      if (res is! Map) {
+      final data = fn.data;
+      if (data is! Map) {
         return const BetResult.fail(
             error: 'Réponse serveur inattendue', code: 'BAD_RESPONSE');
       }
-      final m = res.cast<String, dynamic>();
+      final m = data.cast<String, dynamic>();
+
+      // Refus (Risk Engine ou echec de la RPC) : aucun debit n'a eu lieu.
+      if (m['accepted'] != true) {
+        if (m['reduce'] == true) {
+          final maxStake = (m['max_stake'] as num?)?.toInt();
+          return BetResult.fail(
+            error: maxStake != null
+                ? 'Mise trop élevée sur ce match. Maximum accepté : $maxStake FCFA.'
+                : 'Mise refusée : limite d\'exposition atteinte.',
+            code: 'RISK_REDUCE',
+          );
+        }
+        final reason = m['reason']?.toString() ?? 'REFUSED';
+        return BetResult.fail(
+          error: _humanizeRisk(reason, m['db_error']?.toString()),
+          code: reason,
+        );
+      }
+
       return BetResult.ok(
         betId: m['bet_id']?.toString(),
         newBalance: (m['new_balance'] as num?)?.toInt(),
         potentialPayout: (m['potential_payout'] as num?)?.toInt(),
         totalOdds: (m['total_odds'] as num?)?.toDouble(),
       );
+    } on FunctionException catch (e) {
+      // Codes non-2xx renvoyes par l'edge function (503 risk down, 401, 400...)
+      final det = e.details;
+      final reason = (det is Map && det['reason'] != null)
+          ? det['reason'].toString()
+          : 'RISK_UNAVAILABLE';
+      return BetResult.fail(error: _humanizeRisk(reason, null), code: reason);
     } on PostgrestException catch (e) {
       return BetResult.fail(
         error: _humanizeError(e.message),
@@ -427,6 +506,35 @@ class BetSlipController extends ChangeNotifier {
       );
     } catch (e) {
       return BetResult.fail(error: '$e', code: 'UNKNOWN');
+    }
+  }
+
+  /// Messages utilisateur pour les refus du Risk Engine.
+  /// Si la RPC place_bet a echoue, on retombe sur les messages metier existants.
+  String _humanizeRisk(String reason, String? dbError) {
+    if (dbError != null && dbError.isNotEmpty) return _humanizeError(dbError);
+    switch (reason) {
+      case 'RISK_UNAVAILABLE':
+        return 'Service de paris momentanément indisponible. Réessaie dans un instant.';
+      case 'SUSPENDED':
+        return 'Les paris sont suspendus sur ce match.';
+      case 'USER_BANNED':
+        return 'Ton compte n\'est pas autorisé à parier.';
+      case 'USER_STAKE_BET':
+        return 'Mise supérieure au maximum autorisé par pari.';
+      case 'USER_STAKE_DAY':
+        return 'Tu as atteint ta limite de mise journalière.';
+      case 'USER_LOSS_DAY':
+        return 'Tu as atteint ta limite de perte journalière.';
+      case 'PAYOUT_MAX':
+        return 'Gain potentiel trop élevé pour ce pari.';
+      case 'EXPOSURE_LIMIT':
+      case 'RISK_LIMIT':
+        return 'Limite d\'exposition atteinte sur ce match.';
+      case 'NOT_AUTHENTICATED':
+        return 'Connecte-toi pour parier.';
+      default:
+        return 'Pari refusé ($reason).';
     }
   }
 
@@ -445,6 +553,13 @@ class BetSlipController extends ChangeNotifier {
     }
     if (raw.contains('PLACE_BET_INVALID_ODDS')) {
       return 'Cote invalide. Rafraîchis et réessaie.';
+    }
+    if (raw.contains('BONUS_CODE_INVALID')) {
+      return 'Code bonus invalide ou inconnu.';
+    }
+    if (raw.contains('BONUS_CODE_ALREADY_USED') ||
+        raw.contains('BONUS_CODE_INACTIVE')) {
+      return 'Ce code bonus a déjà été utilisé.';
     }
     return 'Erreur : $raw';
   }

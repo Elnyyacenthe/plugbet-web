@@ -4,6 +4,7 @@
 // ============================================================
 
 import 'package:flutter/material.dart';
+import '../theme/app_reliefs.dart';
 import '../theme/app_theme.dart';
 import '../models/football_models.dart';
 import 'team_crest.dart';
@@ -28,80 +29,64 @@ class MatchCard extends StatelessWidget {
     final isSmall = screenWidth < 360;
     final crestSize = isSmall ? 28.0 : 34.0;
 
-    return GestureDetector(
+    return ReliefCard(
+      accent: isLive ? AppColors.neonRed : AppColors.primaryInk,
+      elevation: isLive ? 1.2 : 0.9,
+      margin: const EdgeInsets.only(bottom: 12),
+      // L'horizontal doit dépasser la morsure de l'encoche
+      // (notchRadius - notchCenterInset = 12 px).
+      padding: EdgeInsets.symmetric(
+        horizontal: isSmall ? 16 : 18,
+        vertical: isSmall ? 10 : 12,
+      ),
+      surfaceGradient: isLive ? AppColors.liveGradient : null,
       onTap: onTap,
-      child: Container(
-        margin: EdgeInsets.only(bottom: 10),
-        padding: EdgeInsets.symmetric(
-          horizontal: isSmall ? 10 : 14,
-          vertical: isSmall ? 10 : 12,
-        ),
-        decoration: BoxDecoration(
-          gradient: isLive ? AppColors.liveGradient : AppColors.cardGradient,
-          borderRadius: BorderRadius.circular(14),
-          border: Border.all(
-            color: isLive
-                ? AppColors.neonRed.withValues(alpha: 0.35)
-                : AppColors.divider.withValues(alpha: 0.6),
-            width: isLive ? 0.8 : 0.5,
+      child: Row(
+        children: [
+          // Equipe domicile
+          Expanded(
+            flex: 3,
+            child: _teamColumn(match.homeTeam, crestSize, isSmall),
           ),
-          boxShadow: [
-            BoxShadow(
-              color: isLive
-                  ? AppColors.neonRed.withValues(alpha: 0.1)
-                  : Colors.black.withValues(alpha: 0.2),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: Row(
-          children: [
-            // Equipe domicile
-            Expanded(
-              flex: 3,
-              child: _teamColumn(match.homeTeam, crestSize, isSmall),
-            ),
 
-            // Score central + badge statut
-            Expanded(
-              flex: 2,
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  if (match.status.isUpcoming)
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: Text(
-                        '${match.dateTime.hour.toString().padLeft(2, '0')}:${match.dateTime.minute.toString().padLeft(2, '0')}',
-                        style: TextStyle(
-                          fontSize: isSmall ? 16 : 20,
-                          fontWeight: FontWeight.w700,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                    )
-                  else
-                    FittedBox(
-                      fit: BoxFit.scaleDown,
-                      child: ScoreDisplay(match: match),
-                    ),
-                  SizedBox(height: 3),
+          // Score central + badge statut
+          Expanded(
+            flex: 2,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (match.status.isUpcoming)
                   FittedBox(
                     fit: BoxFit.scaleDown,
-                    child: MatchStatusBadge(match: match),
+                    child: Text(
+                      '${match.dateTime.hour.toString().padLeft(2, '0')}:${match.dateTime.minute.toString().padLeft(2, '0')}',
+                      style: TextStyle(
+                        fontSize: isSmall ? 16 : 20,
+                        fontWeight: FontWeight.w700,
+                        color: AppColors.textPrimary,
+                      ),
+                    ),
+                  )
+                else
+                  FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: ScoreDisplay(match: match),
                   ),
-                ],
-              ),
+                SizedBox(height: 3),
+                FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: MatchStatusBadge(match: match),
+                ),
+              ],
             ),
+          ),
 
-            // Equipe exterieure
-            Expanded(
-              flex: 3,
-              child: _teamColumn(match.awayTeam, crestSize, isSmall),
-            ),
-          ],
-        ),
+          // Equipe exterieure
+          Expanded(
+            flex: 3,
+            child: _teamColumn(match.awayTeam, crestSize, isSmall),
+          ),
+        ],
       ),
     );
   }

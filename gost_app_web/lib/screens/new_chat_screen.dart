@@ -77,13 +77,13 @@ class _NewChatScreenState extends State<NewChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
+      backgroundColor: AppColors.bettingBackground,
       appBar: AppBar(
-        backgroundColor: AppColors.bgBlueNight,
+        backgroundColor: AppColors.bettingSurfaceElevated,
         title: Text(AppLocalizations.of(context)!.newChatTitle),
       ),
       body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
+        color: AppColors.bettingBackground,
         child: Column(
           children: [
             // Barre de recherche parmi les amis
@@ -101,8 +101,10 @@ class _NewChatScreenState extends State<NewChatScreen> {
                   style: TextStyle(color: AppColors.textPrimary, fontSize: 15),
                   decoration: InputDecoration(
                     hintText: 'Rechercher parmi vos amis...',
-                    hintStyle: TextStyle(color: AppColors.textMuted, fontSize: 15),
-                    prefixIcon: Icon(Icons.search_rounded, color: AppColors.textMuted),
+                    hintStyle:
+                        TextStyle(color: AppColors.textMuted, fontSize: 15),
+                    prefixIcon:
+                        Icon(Icons.search_rounded, color: AppColors.textMuted),
                     suffixIcon: _searchCtrl.text.isNotEmpty
                         ? IconButton(
                             icon: Icon(Icons.close, size: 18),
@@ -114,7 +116,8 @@ class _NewChatScreenState extends State<NewChatScreen> {
                           )
                         : null,
                     border: InputBorder.none,
-                    contentPadding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+                    contentPadding:
+                        EdgeInsets.symmetric(horizontal: 16, vertical: 14),
                   ),
                   onChanged: _filter,
                 ),
@@ -126,10 +129,12 @@ class _NewChatScreenState extends State<NewChatScreen> {
               padding: EdgeInsets.symmetric(horizontal: 16),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, size: 14, color: AppColors.textMuted),
+                  Icon(Icons.info_outline,
+                      size: 14, color: AppColors.textMuted),
                   SizedBox(width: 6),
                   Text(AppLocalizations.of(context)!.newChatOnlyFriends,
-                      style: TextStyle(color: AppColors.textMuted, fontSize: 11)),
+                      style:
+                          TextStyle(color: AppColors.textMuted, fontSize: 11)),
                 ],
               ),
             ),
@@ -138,7 +143,9 @@ class _NewChatScreenState extends State<NewChatScreen> {
             // Liste
             Expanded(
               child: _loading
-                  ? Center(child: CircularProgressIndicator(color: AppColors.neonGreen))
+                  ? Center(
+                      child:
+                          CircularProgressIndicator(color: AppColors.neonGreen))
                   : _filtered.isEmpty
                       ? _buildEmpty()
                       : ListView.builder(
@@ -165,8 +172,8 @@ class _NewChatScreenState extends State<NewChatScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.people_outline, size: 48,
-                color: AppColors.textMuted.withValues(alpha: 0.3)),
+            Icon(Icons.people_outline,
+                size: 48, color: AppColors.textMuted.withValues(alpha: 0.3)),
             SizedBox(height: 12),
             Text(AppLocalizations.of(context)!.profileNoFriends,
                 style: TextStyle(fontSize: 14, color: AppColors.textMuted)),
@@ -181,8 +188,8 @@ class _NewChatScreenState extends State<NewChatScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.search_off, size: 48,
-              color: AppColors.textMuted.withValues(alpha: 0.3)),
+          Icon(Icons.search_off,
+              size: 48, color: AppColors.textMuted.withValues(alpha: 0.3)),
           SizedBox(height: 12),
           Text(AppLocalizations.of(context)!.newChatNoFriendsFound,
               style: TextStyle(fontSize: 14, color: AppColors.textMuted)),
@@ -200,9 +207,8 @@ class _FriendChatTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final initials = friend.username.isNotEmpty
-        ? friend.username[0].toUpperCase()
-        : '?';
+    final initials =
+        friend.username.isNotEmpty ? friend.username[0].toUpperCase() : '?';
 
     return GestureDetector(
       onTap: onTap,
@@ -217,11 +223,13 @@ class _FriendChatTile extends StatelessWidget {
         child: Row(
           children: [
             Container(
-              width: 42, height: 42,
+              width: 42,
+              height: 42,
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: friend.rank.color.withValues(alpha: 0.15),
-                border: Border.all(color: friend.rank.color.withValues(alpha: 0.4)),
+                border:
+                    Border.all(color: friend.rank.color.withValues(alpha: 0.4)),
               ),
               child: Center(
                 child: Text(initials,
@@ -242,12 +250,13 @@ class _FriendChatTile extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                           color: AppColors.textPrimary)),
                   Text('${friend.rank.label} • ${friend.xp} XP',
-                      style: TextStyle(
-                          fontSize: 11, color: AppColors.textMuted)),
+                      style:
+                          TextStyle(fontSize: 11, color: AppColors.textMuted)),
                 ],
               ),
             ),
-            Icon(Icons.chat_bubble_outline, color: AppColors.neonGreen, size: 20),
+            Icon(Icons.chat_bubble_outline,
+                color: AppColors.neonGreen, size: 20),
           ],
         ),
       ),

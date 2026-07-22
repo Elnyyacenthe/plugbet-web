@@ -34,24 +34,51 @@ class MultiplierColumn extends StatelessWidget {
             duration: const Duration(milliseconds: 300),
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: isLostRow
-                  ? const Color(0xFFFF1744).withValues(alpha: 0.2)
+              borderRadius: BorderRadius.circular(10),
+              gradient: isLostRow
+                  ? LinearGradient(colors: [
+                      AppColors.neonRed.withValues(alpha: 0.28),
+                      AppColors.neonRed.withValues(alpha: 0.10),
+                    ])
                   : isActive
-                      ? const Color(0xFF00E676).withValues(alpha: 0.15)
+                      ? LinearGradient(colors: [
+                          AppColors.neonGreen.withValues(alpha: 0.24),
+                          AppColors.neonGreen.withValues(alpha: 0.08),
+                        ])
                       : isReached
-                          ? const Color(0xFF00E676).withValues(alpha: 0.08)
-                          : Colors.transparent,
+                          ? LinearGradient(colors: [
+                              AppColors.neonGreen.withValues(alpha: 0.12),
+                              AppColors.neonGreen.withValues(alpha: 0.04),
+                            ])
+                          : null,
+              color: (isLostRow || isActive || isReached)
+                  ? null
+                  : AppColors.bgCard.withValues(alpha: 0.4),
               border: Border.all(
                 color: isLostRow
-                    ? const Color(0xFFFF1744).withValues(alpha: 0.5)
+                    ? AppColors.neonRed.withValues(alpha: 0.55)
                     : isActive
-                        ? const Color(0xFF00E676).withValues(alpha: 0.5)
+                        ? AppColors.neonGreen.withValues(alpha: 0.55)
                         : isReached
-                            ? const Color(0xFF00E676).withValues(alpha: 0.2)
-                            : const Color(0xFF2A3F5F).withValues(alpha: 0.3),
+                            ? AppColors.neonGreen.withValues(alpha: 0.22)
+                            : AppColors.divider.withValues(alpha: 0.3),
                 width: isActive ? 1.5 : 1.0,
               ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: AppColors.neonGreen.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                      ),
+                    ]
+                  : isLostRow
+                      ? [
+                          BoxShadow(
+                            color: AppColors.neonRed.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                          ),
+                        ]
+                      : null,
             ),
             child: Text(
               'x${mult.toStringAsFixed(2)}',

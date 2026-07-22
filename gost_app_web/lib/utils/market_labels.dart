@@ -18,6 +18,34 @@ import '../services/statpal_service.dart' show Sport;
 class MarketLabels {
   MarketLabels._();
 
+  static bool _usesGoals(Sport sport) =>
+      sport == Sport.soccer ||
+      sport == Sport.iceHockey ||
+      sport == Sport.handball;
+
+  static String _totalUnit(Sport sport) {
+    switch (sport) {
+      case Sport.soccer:
+      case Sport.iceHockey:
+      case Sport.handball:
+        return 'buts';
+      case Sport.basketball:
+      case Sport.americanFootball:
+      case Sport.rugby:
+        return 'points';
+      case Sport.baseball:
+        return 'runs';
+      case Sport.tennis:
+        return 'jeux';
+    }
+  }
+
+  static String _totalTitle(Sport sport, double? line) {
+    final unit = _totalUnit(sport);
+    if (_usesGoals(sport)) return 'Total de buts +/- ${_fmt(line ?? 2.5)}';
+    return line != null ? 'Total de $unit (${_fmt(line)})' : 'Total de $unit';
+  }
+
   /// Decode "ah_home@-1.5" -> ("ah_home", -1.5). Renvoie (code, null) si pas d'arobase.
   /// Utilise pour Asian Handicap dont la ligne est encodee dans le code.
   static ({String base, double? line}) parseLine(String code) {
@@ -48,7 +76,10 @@ class MarketLabels {
           : 'Handicap asiatique';
     }
     // Mi-temps soccer
-    if (code.startsWith('ht_') && (code.endsWith('_home') || code == 'ht_draw' || code.endsWith('_away'))) {
+    if (code.startsWith('ht_') &&
+        (code.endsWith('_home') ||
+            code == 'ht_draw' ||
+            code.endsWith('_away'))) {
       return '1X2 mi-temps';
     }
     if (code == 'ht_over15' || code == 'ht_under15') {
@@ -56,18 +87,13 @@ class MarketLabels {
     }
     // 1X2 / Moneyline
     if (code == 'home' || code == 'draw' || code == 'away') {
-      return sport == Sport.basketball ? 'Moneyline' : '1X2';
+      return _usesGoals(sport) ? '1X2' : 'Moneyline';
     }
     // Double Chance (soccer only)
     if (code.startsWith('dc_')) return 'Double chance';
     // OU
     if (code == 'over25' || code == 'under25') {
-      if (sport == Sport.basketball) {
-        return line != null
-            ? 'Total de points (${_fmt(line)})'
-            : 'Total de points';
-      }
-      return 'Total de buts +/- ${_fmt(line ?? 2.5)}';
+      return _totalTitle(sport, line);
     }
     // Spread / Handicap (basket principalement)
     if (code == 'spread_home' || code == 'spread_away') {
@@ -91,22 +117,28 @@ class MarketLabels {
     if (code.startsWith('ah_')) {
       return 'Handicap virtuel appliqué au score final';
     }
-    if (code.startsWith('ht_') && (code.endsWith('_home') || code == 'ht_draw' || code.endsWith('_away'))) {
+    if (code.startsWith('ht_') &&
+        (code.endsWith('_home') ||
+            code == 'ht_draw' ||
+            code.endsWith('_away'))) {
       return 'Résultat à la fin de la 1ère mi-temps';
     }
     if (code == 'ht_over15' || code == 'ht_under15') {
       return 'Buts marqués pendant la 1ère mi-temps';
     }
     if (code == 'home' || code == 'draw' || code == 'away') {
-      return 'Résultat à la fin du temps réglementaire';
+      return _usesGoals(sport)
+          ? 'Résultat à la fin du temps réglementaire'
+          : 'Vainqueur du match';
     }
     if (code.startsWith('dc_')) {
       return '2 résultats couverts sur 3 (cote calculée)';
     }
     if (code == 'over25' || code == 'under25') {
-      return sport == Sport.basketball
-          ? 'Points cumulés dans le match (ligne main bookmaker)'
-          : 'Total de buts dans le match';
+      final unit = _totalUnit(sport);
+      return _usesGoals(sport)
+          ? 'Total de buts dans le match'
+          : 'Total de $unit dans le match (ligne main bookmaker)';
     }
     if (code == 'btts_yes' || code == 'btts_no') {
       return 'Score chacune au moins 1 but';
@@ -129,32 +161,50 @@ class MarketLabels {
       return shown != null ? '$side (${_fmtSigned(shown)})' : side;
     }
     switch (code) {
-      case 'home':       return '1';
-      case 'draw':       return 'X';
-      case 'away':       return '2';
-      case 'dc_1x':      return '1X';
-      case 'dc_12':      return '12';
-      case 'dc_x2':      return 'X2';
+      case 'home':
+        return '1';
+      case 'draw':
+        return 'X';
+      case 'away':
+        return '2';
+      case 'dc_1x':
+        return '1X';
+      case 'dc_12':
+        return '12';
+      case 'dc_x2':
+        return 'X2';
       case 'over25':
-        return sport == Sport.basketball
-            ? (line != null ? 'Plus ${_fmt(line)}' : 'Plus')
-            : '+2,5';
+        return _usesGoals(sport)
+            ? '+${_fmt(line ?? 2.5)}'
+            : (line != null ? 'Plus ${_fmt(line)}' : 'Plus');
       case 'under25':
-        return sport == Sport.basketball
-            ? (line != null ? 'Moins ${_fmt(line)}' : 'Moins')
-            : '-2,5';
+        return _usesGoals(sport)
+            ? '-${_fmt(line ?? 2.5)}'
+            : (line != null ? 'Moins ${_fmt(line)}' : 'Moins');
       case 'spread_home':
-        return line != null ? (line > 0 ? '+${_fmt(line)}' : _fmt(line)) : 'Home';
+        return line != null
+            ? (line > 0 ? '+${_fmt(line)}' : _fmt(line))
+            : 'Home';
       case 'spread_away':
-        return line != null ? (line > 0 ? '+${_fmt(line)}' : _fmt(line)) : 'Away';
-      case 'btts_yes':   return 'Oui';
-      case 'btts_no':    return 'Non';
-      case 'ht_home':    return '1 MT';
-      case 'ht_draw':    return 'X MT';
-      case 'ht_away':    return '2 MT';
-      case 'ht_over15':  return '+1.5 MT';
-      case 'ht_under15': return '-1.5 MT';
-      default:           return code;
+        return line != null
+            ? (line > 0 ? '+${_fmt(line)}' : _fmt(line))
+            : 'Away';
+      case 'btts_yes':
+        return 'Oui';
+      case 'btts_no':
+        return 'Non';
+      case 'ht_home':
+        return '1 MT';
+      case 'ht_draw':
+        return 'X MT';
+      case 'ht_away':
+        return '2 MT';
+      case 'ht_over15':
+        return '+1.5 MT';
+      case 'ht_under15':
+        return '-1.5 MT';
+      default:
+        return code;
     }
   }
 
@@ -173,20 +223,28 @@ class MarketLabels {
       return shown != null ? '$team (${_fmtSigned(shown)})' : team;
     }
     switch (code) {
-      case 'home':       return h;
-      case 'draw':       return 'Match nul';
-      case 'away':       return a;
-      case 'dc_1x':      return '$h ou nul';
-      case 'dc_12':      return 'Pas de nul';
-      case 'dc_x2':      return '$a ou nul';
+      case 'home':
+        return h;
+      case 'draw':
+        return 'Match nul';
+      case 'away':
+        return a;
+      case 'dc_1x':
+        return '$h ou nul';
+      case 'dc_12':
+        return 'Pas de nul';
+      case 'dc_x2':
+        return '$a ou nul';
       case 'over25':
-        return sport == Sport.basketball
-            ? (line != null ? 'Plus de ${_fmt(line)} points' : 'Plus de points')
-            : 'Plus de 2,5 buts';
+        final unitName = _totalUnit(sport);
+        return line != null
+            ? 'Plus de ${_fmt(line)} $unitName'
+            : 'Plus de $unitName';
       case 'under25':
-        return sport == Sport.basketball
-            ? (line != null ? 'Moins de ${_fmt(line)} points' : 'Moins de points')
-            : 'Moins de 2,5 buts';
+        final unitName = _totalUnit(sport);
+        return line != null
+            ? 'Moins de ${_fmt(line)} $unitName'
+            : 'Moins de $unitName';
       case 'spread_home':
         return line != null
             ? '$h ${line > 0 ? '+' : ''}${_fmt(line)}'
@@ -195,14 +253,22 @@ class MarketLabels {
         return line != null
             ? '$a ${line > 0 ? '+' : ''}${_fmt(line)}'
             : '$a handicap';
-      case 'btts_yes':   return 'Les deux marquent';
-      case 'btts_no':    return 'Au moins une n\'a pas marqué';
-      case 'ht_home':    return '$h (MT)';
-      case 'ht_draw':    return 'Match nul (MT)';
-      case 'ht_away':    return '$a (MT)';
-      case 'ht_over15':  return 'Plus de 1,5 buts MT';
-      case 'ht_under15': return 'Moins de 1,5 buts MT';
-      default:           return code;
+      case 'btts_yes':
+        return 'Les deux marquent';
+      case 'btts_no':
+        return 'Au moins une n\'a pas marqué';
+      case 'ht_home':
+        return '$h (MT)';
+      case 'ht_draw':
+        return 'Match nul (MT)';
+      case 'ht_away':
+        return '$a (MT)';
+      case 'ht_over15':
+        return 'Plus de 1,5 buts MT';
+      case 'ht_under15':
+        return 'Moins de 1,5 buts MT';
+      default:
+        return code;
     }
   }
 

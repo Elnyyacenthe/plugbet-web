@@ -41,28 +41,59 @@ class FplPlayerCard extends StatelessWidget {
         decoration: BoxDecoration(
           gradient: AppColors.cardGradient,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-            color: AppColors.divider.withValues(alpha: 0.4),
+          border: Border(
+            left: BorderSide(color: posColor, width: 3),
+            top: BorderSide(color: AppColors.divider.withValues(alpha: 0.4)),
+            right: BorderSide(color: AppColors.divider.withValues(alpha: 0.4)),
+            bottom: BorderSide(color: AppColors.divider.withValues(alpha: 0.4)),
           ),
+          boxShadow: [
+            BoxShadow(color: posColor.withValues(alpha: 0.10), blurRadius: 10),
+            BoxShadow(
+                color: Colors.black.withValues(alpha: 0.28),
+                blurRadius: 7,
+                offset: const Offset(0, 4)),
+          ],
         ),
         child: Row(
           children: [
-            // Badge position
+            // Médaillon position 3D (dôme + reflet + glow)
             Container(
-              width: 32,
-              height: 32,
+              width: 34,
+              height: 34,
               decoration: BoxDecoration(
-                color: posColor.withValues(alpha: 0.15),
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: posColor, width: 1),
+                shape: BoxShape.circle,
+                gradient: RadialGradient(
+                  center: const Alignment(-0.3, -0.4),
+                  colors: [
+                    Color.lerp(posColor, Colors.white, 0.45)!,
+                    posColor,
+                    Color.lerp(posColor, Colors.black, 0.35)!,
+                  ],
+                  stops: const [0, 0.55, 1],
+                ),
+                boxShadow: [
+                  const BoxShadow(
+                      color: Colors.black45,
+                      blurRadius: 3,
+                      offset: Offset(0, 2)),
+                  BoxShadow(
+                      color: posColor.withValues(alpha: 0.35), blurRadius: 7),
+                ],
               ),
               child: Center(
                 child: Text(
                   player.positionLabel,
-                  style: TextStyle(
-                    color: posColor,
+                  style: const TextStyle(
+                    color: Colors.white,
                     fontSize: 10,
-                    fontWeight: FontWeight.w800,
+                    fontWeight: FontWeight.w900,
+                    shadows: [
+                      Shadow(
+                          color: Colors.black87,
+                          blurRadius: 2,
+                          offset: Offset(0, 1))
+                    ],
                   ),
                 ),
               ),

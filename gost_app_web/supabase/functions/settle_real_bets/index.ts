@@ -32,6 +32,39 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STATPAL_API_KEY = Deno.env.get("STATPAL_API_KEY") ?? "";
 
+// Source PRINCIPALE des scores : The Odds API. Les paris reels sont poses sur
+// ses matchs (match_id = "oa_" + id d'evenement) ; StatPal utilise des
+// identifiants incompatibles et ne pouvait donc JAMAIS les retrouver.
+const THE_ODDS_API_KEY = Deno.env.get("THE_ODDS_API_KEY") ?? "";
+const ODDS_BASE = "https://api.the-odds-api.com";
+
+interface OddsScoreEvent {
+  id: string;
+  completed: boolean;
+  home_team: string;
+  away_team: string;
+  scores: Array<{ name: string; score: string }> | null;
+}
+
+function readOddsScore(
+  scores: Array<{ name: string; score: string }>,
+  team: string,
+): number | null {
+  for (const s of scores) {
+    if (s.name === team) {
+      const n = parseInt(s.score, 10);
+      return Number.isNaN(n) ? null : n;
+    }
+  }
+  return null;
+}
+
+// Risk Engine : a la cloture d'un pari il faut LIBERER l'exposition reservee
+// a son acceptation, sinon elle s'accumule indefiniment et le book finit par
+// refuser des paris sains. Alimente aussi le P&L joueur (detection sharp).
+const RISK_URL = (Deno.env.get("RISK_ENGINE_URL") ?? "").replace(/\/+$/, "");
+const RISK_SECRET = Deno.env.get("RISK_INTERNAL_SECRET") ?? "";
+
 const BASE_V1 = "https://statpal.io/api/v1";
 const BASE_V2 = "https://statpal.io/api/v2";
 
@@ -200,9 +233,15 @@ async function findMatchResult(matchId: string): Promise<any | null> {
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
 
-  if (!STATPAL_API_KEY || !SUPABASE_SERVICE_ROLE_KEY) {
+  if (!SUPABASE_SERVICE_ROLE_KEY) {
     return new Response(
-      JSON.stringify({ error: "missing env STATPAL_API_KEY or SUPABASE_SERVICE_ROLE_KEY" }),
+      JSON.stringify({ error: "missing env SUPABASE_SERVICE_ROLE_KEY" }),
+      { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
+  }
+  if (!THE_ODDS_API_KEY && !STATPAL_API_KEY) {
+    return new Response(
+      JSON.stringify({ error: "missing env THE_ODDS_API_KEY (et pas de STATPAL_API_KEY de repli)" }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }
@@ -211,19 +250,37 @@ serve(async (req) => {
   fetchCache.clear();
 
   try {
-    // 1. Liste matchs pending
-    const { data: matchInfos, error: listErr } = await sb.rpc("list_pending_real_match_ids");
+    // ── 1. Selections reelles encore pending ────────────────────────
+    // On lit bet_selections directement (et non list_pending_real_match_ids)
+    // car il nous faut league_key : c'est la cle de l'endpoint scores de
+    // The Odds API. sport sert au RPC de settlement.
+    const { data: pendingSel, error: listErr } = await sb
+      .from("bet_selections")
+      .select("match_id, league_key, sport")
+      .eq("selection_status", "pending")
+      .eq("is_virtual", false)
+      .limit(2000);
     if (listErr) throw listErr;
-    const ids: { match_id: string; is_live: boolean }[] = Array.isArray(matchInfos) ? matchInfos : [];
 
-    if (ids.length === 0) {
+    const pending = new Map<string, { league_key: string | null; sport: string | null }>();
+    for (const s of pendingSel ?? []) {
+      if (!pending.has(s.match_id)) {
+        pending.set(s.match_id, { league_key: s.league_key, sport: s.sport });
+      }
+    }
+
+    if (pending.size === 0) {
       return new Response(
         JSON.stringify({ ok: true, pending_matches: 0, settled: 0 }),
         { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
       );
     }
 
-    // 2. Fetch StatPal pour chaque match (de-dup)
+    // ── 2. Recuperation des scores ──────────────────────────────────
+    // Les paris sont poses sur des matchs The Odds API : match_id =
+    // "oa_" + <id d'evenement>. On interroge donc /v4/sports/{league}/scores
+    // et on matche par IDENTIFIANT (fiable), pas par nom d'equipe.
+    // StatPal reste en repli pour d'eventuels matchs d'une autre source.
     const results: Array<{
       match_id: string;
       sport: string;
@@ -233,21 +290,73 @@ serve(async (req) => {
       ht_away: number | null;
       is_finished: boolean;
     }> = [];
-    const seen = new Set<string>();
-    for (const info of ids) {
-      if (seen.has(info.match_id)) continue;
-      seen.add(info.match_id);
-      const r = await findMatchResult(info.match_id);
-      if (r) {
+
+    // Regroupement par ligue (1 appel API par ligue, pas par match)
+    const byLeague = new Map<string, string[]>();
+    const legacy: string[] = [];
+    for (const [matchId, info] of pending) {
+      if (matchId.startsWith("oa_") && info.league_key) {
+        const arr = byLeague.get(info.league_key) ?? [];
+        arr.push(matchId);
+        byLeague.set(info.league_key, arr);
+      } else {
+        legacy.push(matchId);
+      }
+    }
+
+    let api_calls = 0;
+    for (const [leagueKey, matchIds] of byLeague) {
+      if (!THE_ODDS_API_KEY) break;
+      const url =
+        `${ODDS_BASE}/v4/sports/${leagueKey}/scores/?apiKey=${THE_ODDS_API_KEY}&daysFrom=3`;
+      let resp: Response;
+      try {
+        resp = await fetch(url, { headers: { Accept: "application/json" } });
+        api_calls++;
+      } catch (_) {
+        continue; // reseau : on retentera au prochain tick (cron 10 min)
+      }
+      if (!resp.ok) continue; // 429 / 5xx -> retry au prochain tick
+
+      const events = (await resp.json().catch(() => [])) as OddsScoreEvent[];
+      const byId = new Map<string, OddsScoreEvent>();
+      for (const ev of events) byId.set(ev.id, ev);
+
+      for (const matchId of matchIds) {
+        const ev = byId.get(matchId.slice(3)); // retire le prefixe "oa_"
+        if (!ev || !ev.completed || !ev.scores) continue; // pas encore fini
+        const home = readOddsScore(ev.scores, ev.home_team);
+        const away = readOddsScore(ev.scores, ev.away_team);
+        if (home === null || away === null) continue;
         results.push({
-          match_id: info.match_id,
-          sport: r.sport,
-          home_score: r.home_score,
-          away_score: r.away_score,
-          ht_home: r.ht_home,
-          ht_away: r.ht_away,
-          is_finished: r.is_finished,
+          match_id: matchId,
+          sport: pending.get(matchId)?.sport ?? "football",
+          home_score: home,
+          away_score: away,
+          // The Odds API ne fournit PAS les scores de mi-temps : les marches
+          // mi-temps ne peuvent pas etre regles par cette voie (restent pending).
+          ht_home: null,
+          ht_away: null,
+          is_finished: true,
         });
+      }
+    }
+
+    // Repli StatPal pour les matchs qui ne viennent pas de The Odds API
+    if (STATPAL_API_KEY) {
+      for (const matchId of legacy) {
+        const r = await findMatchResult(matchId);
+        if (r) {
+          results.push({
+            match_id: matchId,
+            sport: r.sport,
+            home_score: r.home_score,
+            away_score: r.away_score,
+            ht_home: r.ht_home,
+            ht_away: r.ht_away,
+            is_finished: r.is_finished,
+          });
+        }
       }
     }
 
@@ -258,19 +367,86 @@ serve(async (req) => {
     );
     if (setErr) throw setErr;
 
+    // ── 4. Liberation de l'exposition cote Risk Engine ──────────────
+    // Le RPC ne renvoie qu'un compteur : on relit donc les paris reels
+    // clotures recemment. /risk/settle n'agit que sur une reservation
+    // encore RESERVED/CONFIRMED -> rappeler un pari deja traite est un
+    // no-op, la fenetre de 30 min (cron = 10 min) sert de filet de rattrapage.
+    let risk_released = 0;
+    let risk_errors = 0;
+    if (RISK_URL && RISK_SECRET) {
+      const since = new Date(Date.now() - 30 * 60 * 1000).toISOString();
+      const { data: closed } = await sb
+        .from("bets")
+        .select("id, status")
+        .eq("is_virtual", false)
+        .in("status", ["won", "lost", "void", "cashed_out"])
+        .gte("settled_at", since)
+        .limit(500);
+
+      for (const b of closed ?? []) {
+        // cashed_out : l'exposition doit etre liberee comme pour un void
+        const result = b.status === "won"
+          ? "WON"
+          : b.status === "lost"
+          ? "LOST"
+          : "VOID";
+        try {
+          const r = await fetch(`${RISK_URL}/risk/settle`, {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+              "X-Internal-Secret": RISK_SECRET,
+            },
+            body: JSON.stringify({ bet_id: b.id, result }),
+            signal: AbortSignal.timeout(6000),
+          });
+          if (r.ok) {
+            // 200 + {"settled":false} = aucune reservation a liberer
+            // (pari anterieur au Risk Engine, ou deja traite) -> pas un echec
+            const jr = await r.json().catch(() => ({}));
+            if (jr?.settled === true) risk_released++;
+          } else {
+            risk_errors++;
+          }
+        } catch (_) {
+          risk_errors++;   // best-effort : ne bloque jamais le settlement
+        }
+      }
+    }
+
     return new Response(
       JSON.stringify({
         ok: true,
-        pending_matches: ids.length,
+        pending_matches: pending.size,
+        odds_api_calls: api_calls,
+        legacy_statpal: legacy.length,
         fetched: results.length,
         finished: results.filter(r => r.is_finished).length,
         settled,
+        risk_released,
+        risk_errors,
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   } catch (e) {
+    // Les erreurs Supabase sont des OBJETS : String(e) donnait "[object Object]",
+    // ce qui rendait tout diagnostic impossible. On serialise proprement.
+    let detail: unknown;
+    if (e && typeof e === "object") {
+      const o = e as Record<string, unknown>;
+      detail = {
+        message: o.message ?? null,
+        code: o.code ?? null,
+        details: o.details ?? null,
+        hint: o.hint ?? null,
+        raw: JSON.stringify(e, Object.getOwnPropertyNames(e as object)),
+      };
+    } else {
+      detail = String(e);
+    }
     return new Response(
-      JSON.stringify({ error: "settle_error", detail: String(e) }),
+      JSON.stringify({ error: "settle_error", detail }),
       { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
     );
   }

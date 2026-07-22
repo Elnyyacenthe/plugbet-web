@@ -21,6 +21,7 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
 import '../state/bet_slip_controller.dart';
+import 'providers/sports_data.dart';
 import 'statpal_service.dart';
 
 class BetSlipOddsRefresher {
@@ -75,27 +76,18 @@ class BetSlipOddsRefresher {
     if (items.isEmpty) return;
     _running = true;
     try {
-      final svc = StatpalService.instance;
-
       // Group selections by sport pour limiter les calls
-      final hasSoccer = items.any((s) =>
-          !s.isVirtual && (s.sportName == null || s.sportName == 'soccer'));
-      final hasBasket = items.any(
-          (s) => !s.isVirtual && s.sportName == 'basketball');
+      final sports = <Sport>{
+        for (final s in items)
+          if (!s.isVirtual && _sportFromSelection(s) != null)
+            _sportFromSelection(s)!,
+      };
 
       // Live odds (le seul cas ou ca bouge)
       final liveByMatchId = <String, BettingMatch>{};
-      if (hasSoccer) {
+      for (final sport in sports) {
         try {
-          final list = await svc.getLiveMatches(sport: Sport.soccer);
-          for (final m in list) {
-            liveByMatchId[m.id] = m;
-          }
-        } catch (_) {/* ignore */}
-      }
-      if (hasBasket) {
-        try {
-          final list = await svc.getLiveMatches(sport: Sport.basketball);
+          final list = await SportsData.active.getLiveMatches(sport: sport);
           for (final m in list) {
             liveByMatchId[m.id] = m;
           }
@@ -104,7 +96,9 @@ class BetSlipOddsRefresher {
 
       // Process chaque selection
       for (final sel in items) {
-        if (sel.isVirtual) continue;  // pas de polling sur virtuels (cotes fixes)
+        if (sel.isVirtual) {
+          continue; // pas de polling sur virtuels (cotes fixes)
+        }
         final live = liveByMatchId[sel.matchId];
         if (live == null) continue;
         final newOdds = _extractOdds(live.odds, sel.marketCode);
@@ -127,6 +121,21 @@ class BetSlipOddsRefresher {
     }
   }
 
+  Sport? _sportFromSelection(BetSelection s) {
+    final name = s.sportName?.toLowerCase();
+    if (name == null || name == 'soccer') return Sport.soccer;
+    if (name == 'basketball') return Sport.basketball;
+    if (name == 'americanfootball' || name == 'american_football') {
+      return Sport.americanFootball;
+    }
+    if (name == 'baseball') return Sport.baseball;
+    if (name == 'tennis') return Sport.tennis;
+    if (name == 'icehockey') return Sport.iceHockey;
+    if (name == 'rugby') return Sport.rugby;
+    if (name == 'handball') return Sport.handball;
+    return null;
+  }
+
   /// Extrait la cote correspondant au marketCode depuis MatchOdds.
   /// Supporte les principaux codes : home/draw/away, over25/under25, btts,
   /// ht_*, spread, dc_*, ah_*@line, extra markets generiques.
@@ -134,23 +143,40 @@ class BetSlipOddsRefresher {
     if (o == null) return null;
     // Codes simples
     switch (code) {
-      case 'home':       return o.home;
-      case 'draw':       return o.draw;
-      case 'away':       return o.away;
-      case 'over25':     return o.over25;
-      case 'under25':    return o.under25;
-      case 'btts_yes':   return o.bttsYes;
-      case 'btts_no':    return o.bttsNo;
-      case 'ht_home':    return o.htHome;
-      case 'ht_draw':    return o.htDraw;
-      case 'ht_away':    return o.htAway;
-      case 'ht_over15':  return o.htOver15;
-      case 'ht_under15': return o.htUnder15;
-      case 'spread_home':return o.spreadHomeOdds;
-      case 'spread_away':return o.spreadAwayOdds;
-      case 'dc_1x':      return o.dc1X;
-      case 'dc_12':      return o.dc12;
-      case 'dc_x2':      return o.dcX2;
+      case 'home':
+        return o.home;
+      case 'draw':
+        return o.draw;
+      case 'away':
+        return o.away;
+      case 'over25':
+        return o.over25;
+      case 'under25':
+        return o.under25;
+      case 'btts_yes':
+        return o.bttsYes;
+      case 'btts_no':
+        return o.bttsNo;
+      case 'ht_home':
+        return o.htHome;
+      case 'ht_draw':
+        return o.htDraw;
+      case 'ht_away':
+        return o.htAway;
+      case 'ht_over15':
+        return o.htOver15;
+      case 'ht_under15':
+        return o.htUnder15;
+      case 'spread_home':
+        return o.spreadHomeOdds;
+      case 'spread_away':
+        return o.spreadAwayOdds;
+      case 'dc_1x':
+        return o.dc1X;
+      case 'dc_12':
+        return o.dc12;
+      case 'dc_x2':
+        return o.dcX2;
     }
     // Asian Handicap : "ah_home@-1.5" / "ah_away@+0.5"
     if (code.startsWith('ah_') && code.contains('@')) {

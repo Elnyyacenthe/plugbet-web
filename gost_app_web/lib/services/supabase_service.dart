@@ -256,6 +256,26 @@ class SupabaseService {
     return signInWithEmail(_quickEmail(username), password);
   }
 
+  /// Email synthetique derive d'un pseudo (expose pour la synchro login).
+  String quickEmailFor(String username) => _quickEmail(username);
+
+  /// Met a jour l'email d'auth d'un compte rapide quand le pseudo change.
+  /// Indispensable : la reconnexion (quickSignIn) derive l'email du pseudo,
+  /// donc sans cette synchro l'utilisateur ne pourrait plus se reconnecter.
+  /// Retourne null en cas de succes, ou le message d'erreur.
+  Future<String?> updateQuickAccountEmail(String newUsername) async {
+    try {
+      await _client.auth.updateUser(
+        UserAttributes(email: _quickEmail(newUsername)),
+      );
+      return null;
+    } on AuthException catch (e) {
+      return _translateAuthError(e.message);
+    } catch (e) {
+      return 'Erreur: $e';
+    }
+  }
+
   // ============================================================
   // AUTH – Google Sign-In (google_sign_in v7+)
   // ============================================================

@@ -2,6 +2,7 @@
 // Checkers – Lobby (attente adversaire)
 // ============================================================
 import 'dart:async';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -144,31 +145,50 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
       child: Scaffold(
       body: Container(
         decoration: BoxDecoration(gradient: AppColors.bgGradient),
-        child: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.all(16),
-            child: Column(
-              children: [
-                // Header
-                Row(
+        child: Stack(
+          children: [
+            // Halos neon ambiants — purement decoratifs
+            Positioned(
+              top: -60,
+              right: -40,
+              child: _ambientBlob(AppColors.neonPurple, 180),
+            ),
+            Positioned(
+              bottom: 40,
+              left: -50,
+              child: _ambientBlob(AppColors.neonOrange, 170),
+            ),
+            SafeArea(
+              child: Padding(
+                padding: EdgeInsets.all(16),
+                child: Column(
                   children: [
-                    IconButton(
-                      icon: Icon(Icons.arrow_back_ios_new,
-                          color: AppColors.textPrimary),
-                      onPressed: _handleBack,
+                    // Header
+                    Row(
+                      children: [
+                        IconButton(
+                          icon: Icon(Icons.arrow_back_ios_new,
+                              color: AppColors.textPrimary),
+                          onPressed: _handleBack,
+                        ),
+                        Expanded(
+                          child: ShaderMask(
+                            shaderCallback: (r) => LinearGradient(colors: [
+                              AppColors.textPrimary,
+                              AppColors.neonOrange.withValues(alpha: 0.85),
+                            ]).createShader(r),
+                            child: Text('Lobby – Dames',
+                                textAlign: TextAlign.center,
+                                style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.w800,
+                                    color: Colors.white)),
+                          ),
+                        ),
+                        SizedBox(width: 48),
+                      ],
                     ),
-                    Expanded(
-                      child: Text('Lobby – Dames',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w700,
-                              color: AppColors.textPrimary)),
-                    ),
-                    SizedBox(width: 48),
-                  ],
-                ),
-                SizedBox(height: 12),
+                    SizedBox(height: 12),
 
                 // Code privé
                 if (_room.isPrivate && _room.privateCode != null)
@@ -179,33 +199,52 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                       ScaffoldMessenger.of(context).showSnackBar(
                           SnackBar(content: Text(AppLocalizations.of(context)!.gameCodeCopied)));
                     },
-                    child: Container(
-                      padding: EdgeInsets.symmetric(
-                          horizontal: 20, vertical: 10),
-                      margin: EdgeInsets.only(bottom: 12),
-                      decoration: BoxDecoration(
-                        color: AppColors.neonPurple.withValues(alpha: 0.1),
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(
-                            color:
-                                AppColors.neonPurple.withValues(alpha: 0.4)),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          Icon(Icons.vpn_key,
-                              color: AppColors.neonPurple, size: 16),
-                          SizedBox(width: 8),
-                          Text('Code : ${_room.privateCode}',
-                              style: TextStyle(
-                                  color: AppColors.neonPurple,
-                                  fontWeight: FontWeight.w700,
-                                  fontSize: 16,
-                                  letterSpacing: 4)),
-                          SizedBox(width: 8),
-                          Icon(Icons.copy,
-                              color: AppColors.neonPurple, size: 14),
-                        ],
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: BackdropFilter(
+                        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+                        child: Container(
+                          padding: EdgeInsets.symmetric(
+                              horizontal: 20, vertical: 10),
+                          margin: EdgeInsets.only(bottom: 12),
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              colors: [
+                                AppColors.neonPurple.withValues(alpha: 0.22),
+                                AppColors.neonPurple.withValues(alpha: 0.06),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(14),
+                            border: Border.all(
+                                color: AppColors.neonPurple
+                                    .withValues(alpha: 0.5),
+                                width: 1),
+                            boxShadow: [
+                              BoxShadow(
+                                color:
+                                    AppColors.neonPurple.withValues(alpha: 0.3),
+                                blurRadius: 16,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.vpn_key,
+                                  color: AppColors.neonPurple, size: 16),
+                              SizedBox(width: 8),
+                              Text('Code : ${_room.privateCode}',
+                                  style: TextStyle(
+                                      color: AppColors.neonPurple,
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      letterSpacing: 4)),
+                              SizedBox(width: 8),
+                              Icon(Icons.copy,
+                                  color: AppColors.neonPurple, size: 14),
+                            ],
+                          ),
+                        ),
                       ),
                     ),
                   ),
@@ -241,11 +280,23 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                 // Pot
                 Container(
                   padding: EdgeInsets.symmetric(
-                      horizontal: 16, vertical: 10),
+                      horizontal: 16, vertical: 11),
                   decoration: BoxDecoration(
-                    color: AppColors.bgCard,
-                    borderRadius: BorderRadius.circular(12),
-                    border: Border.all(color: AppColors.divider),
+                    gradient: LinearGradient(
+                      colors: [
+                        AppColors.neonYellow.withValues(alpha: 0.20),
+                        AppColors.neonYellow.withValues(alpha: 0.06),
+                      ],
+                    ),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(
+                        color: AppColors.neonYellow.withValues(alpha: 0.45)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: AppColors.neonYellow.withValues(alpha: 0.22),
+                        blurRadius: 14,
+                      ),
+                    ],
                   ),
                   child: Row(
                     mainAxisAlignment: MainAxisAlignment.center,
@@ -256,7 +307,7 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
                       Text('Pot : ${_room.betAmount * 2} FCFA',
                           style: TextStyle(
                               color: AppColors.neonYellow,
-                              fontWeight: FontWeight.w700,
+                              fontWeight: FontWeight.w800,
                               fontSize: 15)),
                     ],
                   ),
@@ -395,7 +446,28 @@ class _CheckersLobbyScreenState extends State<CheckersLobbyScreen> {
             ),
           ),
         ),
+            ],
+          ),
       ),
+      ),
+    );
+  }
+
+  /// Tache de lumiere floue purement decorative (glassmorphism ambiant).
+  Widget _ambientBlob(Color color, double size) {
+    return IgnorePointer(
+      child: ClipOval(
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+          child: Container(
+            width: size,
+            height: size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              color: color.withValues(alpha: 0.16),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -414,21 +486,88 @@ class _PlayerCard extends StatelessWidget {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: AppColors.bgCard,
-        borderRadius: BorderRadius.circular(12),
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppColors.bgCardLight, AppColors.bgCard],
+        ),
+        borderRadius: BorderRadius.circular(14),
         border: Border.all(
-            color: isReady ? AppColors.neonGreen.withValues(alpha: 0.4) : AppColors.divider),
+            color: isReady
+                ? AppColors.neonGreen.withValues(alpha: 0.5)
+                : AppColors.divider),
+        boxShadow: isReady
+            ? [
+                BoxShadow(
+                    color: AppColors.neonGreen.withValues(alpha: 0.22),
+                    blurRadius: 12),
+              ]
+            : [
+                BoxShadow(
+                    color: Colors.black.withValues(alpha: 0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 4)),
+              ],
       ),
       child: Column(
         children: [
+          // Jeton de dames 3D (dôme + rainure + reflet spéculaire)
           Container(
-            width: 48, height: 48,
+            width: 52,
+            height: 52,
             decoration: BoxDecoration(
-              color: color.withValues(alpha: 0.2),
               shape: BoxShape.circle,
-              border: Border.all(color: color, width: 2),
+              gradient: RadialGradient(
+                center: const Alignment(-0.35, -0.4),
+                colors: [
+                  Color.lerp(color, Colors.white, 0.55)!,
+                  color,
+                  Color.lerp(color, Colors.black, 0.4)!,
+                ],
+                stops: const [0, 0.55, 1],
+              ),
+              border:
+                  Border.all(color: Colors.black.withValues(alpha: 0.25), width: 1.5),
+              boxShadow: [
+                const BoxShadow(
+                    color: Colors.black45, blurRadius: 4, offset: Offset(0, 2)),
+                if (isReady)
+                  BoxShadow(
+                      color: AppColors.neonGreen.withValues(alpha: 0.4),
+                      blurRadius: 10),
+              ],
             ),
-            child: Icon(Icons.circle, color: color, size: 22),
+            child: Stack(
+              children: [
+                // Rainure fraisée
+                Center(
+                  child: Container(
+                    width: 34,
+                    height: 34,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                          color: Colors.black.withValues(alpha: 0.28),
+                          width: 1.4),
+                    ),
+                  ),
+                ),
+                // Reflet spéculaire
+                Align(
+                  alignment: const Alignment(-0.4, -0.45),
+                  child: FractionallySizedBox(
+                    widthFactor: 0.26,
+                    heightFactor: 0.26,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
           SizedBox(height: 8),
           Text(

@@ -282,33 +282,60 @@ class _InAppToken extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                Container(
-                  width: compact ? 36 : 42,
-                  height: compact ? 36 : 42,
-                  decoration: BoxDecoration(
-                    color: isBench
-                        ? AppColors.bgCard
-                        : outOfPosition
-                            ? AppColors.neonOrange.withValues(alpha: 0.15)
-                            : posColor.withValues(alpha: 0.25),
-                    shape: BoxShape.circle,
-                    border: Border.all(color: borderColor, width: borderWidth),
-                  ),
-                  child: Center(
+                Builder(builder: (_) {
+                  // Jeton-maillot bombé : dôme dégradé + reflet + ombre
+                  final base = isBench
+                      ? AppColors.bgElevated
+                      : outOfPosition
+                          ? AppColors.neonOrange
+                          : posColor;
+                  final d = compact ? 36.0 : 42.0;
+                  return Container(
+                    width: d,
+                    height: d,
+                    decoration: BoxDecoration(
+                      shape: BoxShape.circle,
+                      gradient: RadialGradient(
+                        center: const Alignment(-0.35, -0.4),
+                        colors: [
+                          Color.lerp(base, Colors.white, 0.5)!,
+                          base,
+                          Color.lerp(base, Colors.black, 0.38)!,
+                        ],
+                        stops: const [0, 0.55, 1],
+                      ),
+                      border:
+                          Border.all(color: borderColor, width: borderWidth),
+                      boxShadow: [
+                        const BoxShadow(
+                            color: Colors.black54,
+                            blurRadius: 4,
+                            offset: Offset(0, 3)),
+                        if (!isBench)
+                          BoxShadow(
+                              color: base.withValues(alpha: 0.4),
+                              blurRadius: 8),
+                      ],
+                    ),
+                    alignment: Alignment.center,
                     child: Text(
                       el.positionLabel,
                       style: TextStyle(
-                        color: isBench
-                            ? AppColors.textMuted
-                            : outOfPosition
-                                ? AppColors.neonOrange
-                                : posColor,
+                        color: isBench ? AppColors.textMuted : Colors.white,
                         fontSize: compact ? 9 : 10,
-                        fontWeight: FontWeight.w800,
+                        fontWeight: FontWeight.w900,
+                        shadows: isBench
+                            ? null
+                            : const [
+                                Shadow(
+                                    color: Colors.black87,
+                                    blurRadius: 2,
+                                    offset: Offset(0, 1))
+                              ],
                       ),
                     ),
-                  ),
-                ),
+                  );
+                }),
                 // Badge C / VC
                 if (isCap || isVC)
                   Positioned(
@@ -426,26 +453,87 @@ class _InAppToken extends StatelessWidget {
 class _PitchPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()
-      ..color = Colors.white.withValues(alpha: 0.06)
-      ..strokeWidth = 1
+    final w = size.width, h = size.height;
+
+    // ── Bandes de tonte (mown stripes) ──
+    const bands = 7;
+    final bandH = h / bands;
+    for (int i = 0; i < bands; i++) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, i * bandH, w, bandH),
+        Paint()
+          ..color = (i.isEven ? Colors.white : Colors.black)
+              .withValues(alpha: 0.05),
+      );
+    }
+    // Vignette douce (assombrit les bords)
+    canvas.drawRect(
+      Offset.zero & size,
+      Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, 0),
+          radius: 0.9,
+          colors: [
+            Colors.transparent,
+            Colors.black.withValues(alpha: 0.22),
+          ],
+          stops: const [0.65, 1.0],
+        ).createShader(Offset.zero & size),
+    );
+
+    // ── Lignes du terrain ──
+    final line = Paint()
+      ..color = Colors.white.withValues(alpha: 0.5)
+      ..strokeWidth = 1.4
       ..style = PaintingStyle.stroke;
-    canvas.drawLine(Offset(size.width * .1, size.height / 2),
-        Offset(size.width * .9, size.height / 2), p);
+
+    const m = 5.0; // marge
+    // Boundary
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+          Rect.fromLTWH(m, m, w - 2 * m, h - 2 * m), const Radius.circular(4)),
+      line,
+    );
+    // Ligne médiane
+    canvas.drawLine(Offset(m, h / 2), Offset(w - m, h / 2), line);
+    // Rond central + point
+    canvas.drawCircle(Offset(w / 2, h / 2), w * 0.14, line);
     canvas.drawCircle(
-        Offset(size.width / 2, size.height / 2), size.width * .12, p);
-    canvas.drawRect(
+        Offset(w / 2, h / 2), 2, Paint()..color = Colors.white.withValues(alpha: 0.6));
+
+    // ── Surfaces (haut et bas) ──
+    void box(double cy, double dir) {
+      // Grande surface
+      canvas.drawRect(
         Rect.fromCenter(
-            center: Offset(size.width / 2, size.height * .08),
-            width: size.width * .4,
-            height: size.height * .1),
-        p);
-    canvas.drawRect(
+            center: Offset(w / 2, cy + dir * h * 0.075),
+            width: w * 0.46,
+            height: h * 0.15),
+        line,
+      );
+      // Petite surface (6 yards)
+      canvas.drawRect(
         Rect.fromCenter(
-            center: Offset(size.width / 2, size.height * .92),
-            width: size.width * .4,
-            height: size.height * .1),
-        p);
+            center: Offset(w / 2, cy + dir * h * 0.035),
+            width: w * 0.24,
+            height: h * 0.07),
+        line,
+      );
+      // But
+      canvas.drawRect(
+        Rect.fromCenter(
+            center: Offset(w / 2, cy - dir * 1.5),
+            width: w * 0.14,
+            height: 3),
+        line,
+      );
+      // Point de penalty
+      canvas.drawCircle(Offset(w / 2, cy + dir * h * 0.115), 1.8,
+          Paint()..color = Colors.white.withValues(alpha: 0.6));
+    }
+
+    box(m, 1); // haut
+    box(h - m, -1); // bas
   }
 
   @override

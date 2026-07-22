@@ -17,10 +17,13 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
 import '../theme/app_theme.dart';
 import '../services/statpal_service.dart' show Sport, BettingMatch;
 import '../state/bet_slip_controller.dart';
 import '../widgets/bet_team_crest.dart';
+import '../widgets/coupon_share.dart';
 import '../utils/bet_live_eval.dart';
 
 class BetTicketDetailScreen extends StatelessWidget {
@@ -121,36 +124,25 @@ class BetTicketDetailScreen extends StatelessWidget {
 
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgDark,
-        elevation: 0,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
-        title: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            border: Border.all(
-                color: AppColors.neonRed.withValues(alpha: 0.7), width: 1),
-            borderRadius: BorderRadius.circular(8),
-          ),
-          child: Text('Détails du pari',
-              style: TextStyle(
-                color: AppColors.neonRed,
-                fontSize: 14,
-                fontWeight: FontWeight.w900,
-                letterSpacing: 0.2,
-              )),
+      appBar: ReliefAppBar(
+        accent: AppColors.neonRed,
+        titleWidget: ReliefPill(
+          label: 'Détails du pari',
+          icon: AppIcons.receipt,
+          color: AppColors.neonRed,
+          fontSize: 13,
         ),
-        centerTitle: true,
         actions: [
           IconButton(
-            icon: Icon(Icons.notifications_outlined,
-                color: AppColors.textPrimary, size: 22),
-            onPressed: () {},
+            icon: Icon(AppIcons.share, color: AppColors.textPrimary, size: 22),
+            tooltip: 'Partager le coupon',
+            onPressed: () =>
+                shareCouponSelections(context, _rebuildSelections(selections)),
           ),
           IconButton(
-            icon: Icon(Icons.more_vert_rounded,
+            icon: Icon(AppIcons.more,
                 color: AppColors.textPrimary, size: 22),
-            onPressed: () => _showActions(context, betId),
+            onPressed: () => _showActions(context, betId, selections),
           ),
         ],
       ),
@@ -253,52 +245,77 @@ class BetTicketDetailScreen extends StatelessWidget {
     final (statusColor, statusLabel, statusIcon) = _statusVisuals(status);
     final showActual = status == 'won' || status == 'void' || status == 'refunded';
     final payoutColor = status == 'won'
-        ? AppColors.neonGreen
+        ? AppColors.primaryInk
         : (status == 'void' || status == 'refunded'
             ? AppColors.neonPurple
             : AppColors.textPrimary);
 
     return Container(
-      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
         color: AppColors.bgCard,
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Column(children: [
-        _recapRow('Nombre d\'événements :', '$selectionsCount',
-            extra: '$settledCount de $selectionsCount terminés'),
-        _divider(),
-        _recapRow('Cote :', totalOdds.toStringAsFixed(2),
-            valueColor: AppColors.textPrimary, valueBold: true),
-        _divider(),
-        _recapRow('Mise :', '$stake F',
-            valueColor: AppColors.textPrimary, valueBold: true),
-        _divider(),
-        _recapRow(
-          showActual ? 'Gain réel :' : 'Gains potentiels :',
-          showActual
-              ? '${actualPayout ?? payout} F'
-              : '$payout F',
-          valueColor: payoutColor, valueBold: true,
-        ),
-        _divider(),
-        Row(children: [
-          Text('Statut :',
-              style: TextStyle(
-                color: AppColors.textMuted,
-                fontSize: 13,
-                fontWeight: FontWeight.w700)),
-          const Spacer(),
-          Icon(statusIcon, size: 16, color: statusColor),
-          const SizedBox(width: 6),
-          Text(statusLabel,
-              style: TextStyle(
-                color: statusColor,
-                fontSize: 13,
-                fontWeight: FontWeight.w900,
-              )),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(12),
+        child: Stack(children: [
+          // Filigrane « Plugbet » diagonal, centré, derrière les données.
+          Positioned.fill(
+            child: IgnorePointer(
+              child: Center(
+                child: Transform.rotate(
+                  angle: -0.52, // ~ -30° (diagonale)
+                  child: Text('Plugbet',
+                      maxLines: 1,
+                      softWrap: false,
+                      overflow: TextOverflow.visible,
+                      style: TextStyle(
+                        color: AppColors.primaryInk.withValues(alpha: 0.10),
+                        fontSize: 52,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 2,
+                      )),
+                ),
+              ),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(children: [
+              _recapRow('Nombre d\'événements :', '$selectionsCount',
+                  extra: '$settledCount de $selectionsCount terminés'),
+              _divider(),
+              _recapRow('Cote :', totalOdds.toStringAsFixed(2),
+                  valueColor: AppColors.textPrimary, valueBold: true),
+              _divider(),
+              _recapRow('Mise :', '$stake F',
+                  valueColor: AppColors.textPrimary, valueBold: true),
+              _divider(),
+              _recapRow(
+                showActual ? 'Gain réel :' : 'Gains potentiels :',
+                showActual ? '${actualPayout ?? payout} F' : '$payout F',
+                valueColor: payoutColor, valueBold: true,
+              ),
+              _divider(),
+              Row(children: [
+                Text('Statut :',
+                    style: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w700)),
+                const Spacer(),
+                Icon(statusIcon, size: 16, color: statusColor),
+                const SizedBox(width: 6),
+                Text(statusLabel,
+                    style: TextStyle(
+                      color: statusColor,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                    )),
+              ]),
+            ]),
+          ),
         ]),
-      ]),
+      ),
     );
   }
 
@@ -375,8 +392,8 @@ class BetTicketDetailScreen extends StatelessWidget {
         Row(children: [
           Icon(
               isBasket
-                  ? Icons.sports_basketball
-                  : (isVirtual ? Icons.casino : Icons.sports_soccer),
+                  ? AppIcons.basketball
+                  : (isVirtual ? AppIcons.dice : AppIcons.football),
               size: 13,
               color: AppColors.textMuted),
           const SizedBox(width: 5),
@@ -557,6 +574,102 @@ class BetTicketDetailScreen extends StatelessWidget {
     );
   }
 
+  /// Message emouvant affiche en haut des actions du ticket, adapte au
+  /// resultat. On encourage le joueur par les sentiments : celebrer la
+  /// victoire, consoler et remotiver apres une defaite.
+  Widget _emotionalResultBanner(String status, int payout) {
+    if (status == 'won') {
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              AppColors.neonGreen.withValues(alpha: 0.22),
+              AppColors.neonGreen.withValues(alpha: 0.06),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border:
+              Border.all(color: AppColors.neonGreen.withValues(alpha: 0.45)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('🎉', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text('Félicitations, champion !',
+                  style: TextStyle(
+                      color: AppColors.neonGreen,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+            "Ta lecture du jeu a payé — tu empoches $payout F. Savoure cette "
+            "victoire, tu l'as méritée. On est fiers de toi, et la prochaine "
+            "t'attend déjà ! 💚",
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                height: 1.4,
+                fontWeight: FontWeight.w600),
+          ),
+        ]),
+      );
+    }
+    if (status == 'lost') {
+      const warm = Color(0xFFFFB020);
+      return Container(
+        width: double.infinity,
+        margin: const EdgeInsets.only(bottom: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              warm.withValues(alpha: 0.16),
+              warm.withValues(alpha: 0.05),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: warm.withValues(alpha: 0.4)),
+        ),
+        child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Row(children: [
+            const Text('💚', style: TextStyle(fontSize: 22)),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text("Ce n'est que partie remise",
+                  style: TextStyle(
+                      color: warm,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900)),
+            ),
+          ]),
+          const SizedBox(height: 8),
+          Text(
+            "Garde la tête haute — même les plus grands parieurs ont connu des "
+            "soirs comme celui-ci. Ce qui compte, c'est de revenir plus fort. "
+            "On croit en toi, la chance finit toujours par tourner. À toi de "
+            "jouer ! 🍀",
+            style: TextStyle(
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                height: 1.4,
+                fontWeight: FontWeight.w600),
+          ),
+        ]),
+      );
+    }
+    return const SizedBox.shrink();
+  }
+
   Widget _actionButtons(BuildContext context, String status, int payout, List selections,
       {required bool canCashout, required int stake, required double totalOdds}) {
     // ── CASHOUT (Vendre) ── style 1xBet
@@ -606,6 +719,9 @@ class BetTicketDetailScreen extends StatelessWidget {
     }
 
     return Column(children: [
+      // Message emouvant adapte au resultat (gagne = celebration,
+      // perdu = encouragement) pour garder le joueur motive et attache.
+      _emotionalResultBanner(status, payout),
       // Banniere d'etat informative pour les tickets perdus/decides
       if (status == 'lost') ...[
         Container(
@@ -617,7 +733,7 @@ class BetTicketDetailScreen extends StatelessWidget {
                 color: AppColors.neonRed.withValues(alpha: 0.4), width: 0.6),
           ),
           child: Row(children: [
-            Icon(Icons.cancel_rounded,
+            Icon(AppIcons.cancel,
                 size: 16, color: AppColors.neonRed),
             const SizedBox(width: 8),
             Expanded(
@@ -659,7 +775,7 @@ class BetTicketDetailScreen extends StatelessWidget {
         width: double.infinity,
         height: 50,
         child: OutlinedButton.icon(
-          icon: Icon(Icons.content_copy_rounded,
+          icon: Icon(AppIcons.copy,
               size: 16, color: AppColors.neonBlue),
           label: Text('DUPLIQUER LE COUPON DE PARI',
               style: TextStyle(
@@ -731,16 +847,45 @@ class BetTicketDetailScreen extends StatelessWidget {
         ? '$added ajoutée(s), $skipped ignorée(s) (déjà au panier)'
         : '$added sélection${added > 1 ? 's' : ''} ajoutée${added > 1 ? 's' : ''} au panier';
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      backgroundColor: AppColors.neonGreen,
+      backgroundColor: AppColors.primary,
       duration: const Duration(seconds: 2),
       content: Text(msg,
           style: const TextStyle(
-            color: Colors.black, fontWeight: FontWeight.w900)),
+            color: AppColors.onPrimary, fontWeight: FontWeight.w900)),
     ));
     Navigator.pop(context);
   }
 
-  void _showActions(BuildContext context, String betId) {
+  /// Reconstruit des BetSelection à partir des sélections d'un ticket placé.
+  /// Les sélections déjà réglées (match terminé) reçoivent un coup d'envoi
+  /// PASSÉ : elles seront écartées au chargement (matchs non pariables).
+  List<BetSelection> _rebuildSelections(List selections) {
+    final out = <BetSelection>[];
+    for (final raw in selections) {
+      final s = raw as Map;
+      final matchId = s['match_id']?.toString() ?? '';
+      if (matchId.isEmpty) continue;
+      final st = s['selection_status']?.toString() ?? 'pending';
+      final settled = st != 'pending' ||
+          s['final_home_score'] != null ||
+          s['final_away_score'] != null;
+      out.add(BetSelection(
+        matchId: matchId,
+        matchLabel: s['match_label']?.toString() ?? '',
+        marketCode: s['market_code']?.toString() ?? '',
+        marketLabel: s['market_label']?.toString() ?? '',
+        odds: (s['odds'] as num?)?.toDouble() ?? 1.01,
+        kickoff: settled
+            ? DateTime.fromMillisecondsSinceEpoch(0)
+            : DateTime.now().add(const Duration(hours: 1)),
+        isLive: (s['is_live'] as bool?) ?? false,
+        isVirtual: (s['is_virtual'] as bool?) ?? false,
+      ));
+    }
+    return out;
+  }
+
+  void _showActions(BuildContext context, String betId, List selections) {
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColors.bgCard,
@@ -756,7 +901,7 @@ class BetTicketDetailScreen extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ListTile(
-            leading: Icon(Icons.copy_all_rounded, color: AppColors.textPrimary),
+            leading: Icon(AppIcons.copy, color: AppColors.textPrimary),
             title: Text('Copier le numéro',
                 style: TextStyle(
                   color: AppColors.textPrimary,
@@ -767,12 +912,15 @@ class BetTicketDetailScreen extends StatelessWidget {
             },
           ),
           ListTile(
-            leading: Icon(Icons.share_rounded, color: AppColors.textPrimary),
-            title: Text('Partager',
+            leading: Icon(AppIcons.share, color: AppColors.textPrimary),
+            title: Text('Partager le coupon',
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontWeight: FontWeight.w800)),
-            onTap: () => Navigator.pop(ctx),
+            onTap: () {
+              Navigator.pop(ctx);
+              shareCouponSelections(context, _rebuildSelections(selections));
+            },
           ),
         ]),
       ),
@@ -786,17 +934,17 @@ class BetTicketDetailScreen extends StatelessWidget {
   (Color, String, IconData) _statusVisuals(String status) {
     switch (status) {
       case 'won':
-        return (AppColors.neonGreen, 'Gagné', Icons.check_circle_rounded);
+        return (AppColors.primaryInk, 'Gagné', AppIcons.checkCircleFilled);
       case 'lost':
-        return (AppColors.neonRed, 'Perdu', Icons.cancel_rounded);
+        return (AppColors.neonRed, 'Perdu', AppIcons.cancel);
       case 'void':
       case 'refunded':
-        return (AppColors.neonPurple, 'Remboursé', Icons.do_not_disturb_rounded);
+        return (AppColors.neonPurple, 'Remboursé', AppIcons.blocked);
       case 'cashed_out':
-        return (AppColors.neonBlue, 'Encaissé', Icons.payments_rounded);
+        return (AppColors.neonBlue, 'Encaissé', AppIcons.card);
       case 'pending':
       default:
-        return (AppColors.neonBlue, 'Accepté', Icons.check_circle_rounded);
+        return (AppColors.neonBlue, 'Accepté', AppIcons.checkCircleFilled);
     }
   }
 

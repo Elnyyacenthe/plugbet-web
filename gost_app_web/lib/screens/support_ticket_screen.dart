@@ -2,6 +2,7 @@
 // Plugbet – Service Client : conversation d'un ticket
 // ============================================================
 
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' show RealtimeChannel;
@@ -101,17 +102,7 @@ class _SupportTicketScreenState extends State<SupportTicketScreen> {
       setState(() => _sending = true);
       final caption = _msgCtrl.text.trim();
       _msgCtrl.clear();
-      // Web-compatible : lire bytes au lieu d'utiliser File(path)
-      final bytes = await xfile.readAsBytes();
-      final ext = xfile.name.contains('.')
-          ? xfile.name.split('.').last.toLowerCase()
-          : 'jpg';
-      await _service.sendImageBytes(
-        _ticketId,
-        bytes,
-        fileExt: ext,
-        caption: caption.isNotEmpty ? caption : null,
-      );
+      await _service.sendImage(_ticketId, File(xfile.path), caption: caption.isNotEmpty ? caption : null);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

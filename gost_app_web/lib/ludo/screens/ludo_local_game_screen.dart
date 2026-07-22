@@ -7,13 +7,13 @@
 import 'dart:async';
 import 'dart:math';
 import 'package:flutter/material.dart';
+import '../../services/audio_service.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
 import '../game/ludo_board_colors.dart';
 import '../providers/local_ludo_provider.dart';
 import '../widgets/ludo_flame_widget.dart';
 import '../widgets/ludo_dice_widget.dart';
-import '../services/audio_service.dart';
 import '../services/vibration_service.dart';
 
 class LudoLocalGameScreen extends StatefulWidget {
@@ -42,6 +42,12 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
   @override
   void initState() {
     super.initState();
+    AudioService.instance.configureGame('ludo');
+    _initAudio();
+  }
+
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('ludo');
     try {
       AudioService.instance.startBackgroundMusic();
     } catch (_) {}
@@ -61,7 +67,10 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
     if (!mounted) return;
     setState(() => _turnCountdown = _turnSeconds);
     _turnTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       setState(() => _turnCountdown--);
       if (_turnCountdown <= 0) {
         t.cancel();
@@ -230,8 +239,7 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
                 // Plateau Flame animé
                 Expanded(
                   child: Padding(
-                    padding: EdgeInsets.symmetric(
-                        horizontal: 8, vertical: 4),
+                    padding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                     child: LudoFlameWidget(
                       gameState: gameState,
                       playerIds: widget.playerCount == 2
@@ -307,9 +315,7 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
           SizedBox(width: 10),
           Text(text,
               style: TextStyle(
-                  color: color,
-                  fontWeight: FontWeight.w600,
-                  fontSize: 13)),
+                  color: color, fontWeight: FontWeight.w600, fontSize: 13)),
         ],
       ),
     );
@@ -496,7 +502,8 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
 
     final winnerColor = game.winner!;
     final colorValue = _getColor(winnerColor);
-    final winnerName = LocalLudoProvider.playerName(winnerColor, widget.playerCount);
+    final winnerName =
+        LocalLudoProvider.playerName(winnerColor, widget.playerCount);
 
     try {
       AudioService.instance.playWin();
@@ -578,10 +585,14 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
 
   Color _getColor(PlayerColor color) {
     switch (color) {
-      case PlayerColor.red:    return LudoBoardColors.red;
-      case PlayerColor.green:  return LudoBoardColors.green;
-      case PlayerColor.blue:   return LudoBoardColors.blue;
-      case PlayerColor.yellow: return LudoBoardColors.yellow;
+      case PlayerColor.red:
+        return LudoBoardColors.red;
+      case PlayerColor.green:
+        return LudoBoardColors.green;
+      case PlayerColor.blue:
+        return LudoBoardColors.blue;
+      case PlayerColor.yellow:
+        return LudoBoardColors.yellow;
     }
   }
 
@@ -593,14 +604,12 @@ class _LudoLocalGameScreenState extends State<LudoLocalGameScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text('Quitter la partie ?',
             style: TextStyle(color: AppColors.textPrimary)),
-        content: Text(
-            'La partie en cours sera perdue.',
+        content: Text('La partie en cours sera perdue.',
             style: TextStyle(color: AppColors.textSecondary)),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
-            child: Text('Rester',
-                style: TextStyle(color: AppColors.neonGreen)),
+            child: Text('Rester', style: TextStyle(color: AppColors.neonGreen)),
           ),
           ElevatedButton(
             onPressed: () {

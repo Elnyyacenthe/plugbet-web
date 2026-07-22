@@ -16,7 +16,7 @@ import 'chat_detail_screen.dart';
 import 'new_chat_screen.dart';
 import 'status_viewer_screen.dart';
 import 'user_search_screen.dart';
-import 'auth_screen.dart';
+import 'login_screen.dart';
 
 class ChatScreen extends StatefulWidget {
   const ChatScreen({super.key});
@@ -98,8 +98,9 @@ class _ChatScreenState extends State<ChatScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      backgroundColor: AppColors.bettingBackground,
       body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
+        color: AppColors.bettingBackground,
         child: SafeArea(
           child: Consumer<MessagingProvider>(
             builder: (context, provider, _) {
@@ -312,8 +313,7 @@ class _ChatScreenState extends State<ChatScreen> {
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonGreen,
                 foregroundColor: AppColors.bgDark,
-                padding:
-                    EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -351,15 +351,14 @@ class _ChatScreenState extends State<ChatScreen> {
             ElevatedButton.icon(
               onPressed: () => Navigator.push(
                 context,
-                MaterialPageRoute(builder: (_) => const AuthScreen()),
+                MaterialPageRoute(builder: (_) => const LoginScreen()),
               ),
               icon: Icon(Icons.login),
               label: Text('Se connecter'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonBlue,
                 foregroundColor: Colors.white,
-                padding:
-                    EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                padding: EdgeInsets.symmetric(horizontal: 24, vertical: 12),
                 shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12)),
               ),
@@ -440,9 +439,8 @@ class _ConversationTile extends StatelessWidget {
                           conversation.otherUsername,
                           style: TextStyle(
                             fontSize: 15,
-                            fontWeight: hasUnread
-                                ? FontWeight.w700
-                                : FontWeight.w500,
+                            fontWeight:
+                                hasUnread ? FontWeight.w700 : FontWeight.w500,
                             color: AppColors.textPrimary,
                           ),
                           maxLines: 1,
@@ -481,17 +479,15 @@ class _ConversationTile extends StatelessWidget {
                   _formatTime(conversation.updatedAt),
                   style: TextStyle(
                     fontSize: 11,
-                    color: hasUnread
-                        ? AppColors.neonGreen
-                        : AppColors.textMuted,
+                    color:
+                        hasUnread ? AppColors.neonGreen : AppColors.textMuted,
                     fontWeight: hasUnread ? FontWeight.w600 : FontWeight.normal,
                   ),
                 ),
                 if (hasUnread) ...[
                   SizedBox(height: 4),
                   Container(
-                    padding:
-                        EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+                    padding: EdgeInsets.symmetric(horizontal: 7, vertical: 3),
                     decoration: BoxDecoration(
                       color: AppColors.neonGreen,
                       borderRadius: BorderRadius.circular(10),
@@ -568,8 +564,7 @@ class _StatusBubble extends StatelessWidget {
                         decoration: BoxDecoration(
                           shape: BoxShape.circle,
                           color: AppColors.neonGreen,
-                          border: Border.all(
-                              color: AppColors.bgDark, width: 2),
+                          border: Border.all(color: AppColors.bgDark, width: 2),
                         ),
                         child: const Icon(Icons.add,
                             size: 14, color: Colors.black),
@@ -663,9 +658,7 @@ class _ComboBadge extends StatelessWidget {
               letterSpacing: 0.3,
               shadows: [
                 Shadow(
-                    color: Colors.black38,
-                    offset: Offset(0, 1),
-                    blurRadius: 2),
+                    color: Colors.black38, offset: Offset(0, 1), blurRadius: 2),
               ],
             ),
           ),

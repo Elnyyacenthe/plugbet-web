@@ -291,7 +291,10 @@ class _SolitaireMultiplayerGameScreenState
   // ──────────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) =>
-      NetworkLostOverlay(child: _buildInner(context));
+      NetworkLostOverlay(
+        onRetry: _refetchRoom,
+        child: _buildInner(context),
+      );
 
   Widget _buildInner(BuildContext context) {
     return Scaffold(
@@ -328,17 +331,29 @@ class _SolitaireMultiplayerGameScreenState
             children: [
               AnimatedContainer(
                 duration: const Duration(milliseconds: 300),
-                padding: EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                padding: EdgeInsets.symmetric(horizontal: 14, vertical: 5),
                 decoration: BoxDecoration(
-                  color: myTurn
-                      ? AppColors.neonGreen.withValues(alpha: 0.15)
-                      : AppColors.bgCard,
+                  gradient: myTurn
+                      ? LinearGradient(colors: [
+                          AppColors.neonGreen.withValues(alpha: 0.22),
+                          AppColors.neonGreen.withValues(alpha: 0.08),
+                        ])
+                      : null,
+                  color: myTurn ? null : AppColors.bgCard,
                   borderRadius: BorderRadius.circular(20),
                   border: Border.all(
                     color: myTurn
                         ? AppColors.neonGreen.withValues(alpha: 0.5)
                         : AppColors.divider,
                   ),
+                  boxShadow: myTurn
+                      ? [
+                          BoxShadow(
+                            color: AppColors.neonGreen.withValues(alpha: 0.3),
+                            blurRadius: 12,
+                          ),
+                        ]
+                      : null,
                 ),
                 child: Text(
                   myTurn ? '🎯 Ton tour !' : 'Tour de ${activePlayer?.username ?? '...'}',
@@ -402,6 +417,14 @@ class _SolitaireMultiplayerGameScreenState
                         : AppColors.divider,
                 width: isActive ? 1.5 : 0.5,
               ),
+              boxShadow: isActive
+                  ? [
+                      BoxShadow(
+                        color: AppColors.neonGreen.withValues(alpha: 0.3),
+                        blurRadius: 12,
+                      ),
+                    ]
+                  : null,
             ),
             child: Row(
               children: [
@@ -608,9 +631,13 @@ class _SolitaireMultiplayerGameScreenState
         child: Container(
           width: w, height: h,
           decoration: BoxDecoration(
-            color: const Color(0xFFF5F0E8),
-            borderRadius: BorderRadius.circular(6),
-            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 3, offset: Offset(1, 2))],
+            gradient: const LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [Color(0xFFFDFBF6), Color(0xFFEDE6D8)],
+            ),
+            borderRadius: BorderRadius.circular(8),
+            boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 4, offset: Offset(1, 2))],
           ),
           child: Stack(children: [
             Positioned(

@@ -11,6 +11,9 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
+import '../theme/app_surfaces.dart';
 import '../theme/app_theme.dart';
 import '../state/bet_slip_controller.dart';
 
@@ -37,38 +40,36 @@ class BetSlipPill extends StatelessWidget {
             color: Colors.transparent,
             child: InkWell(
               onTap: onTap,
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: AppRadius.brMd,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
                 decoration: BoxDecoration(
-                  gradient: LinearGradient(
-                    colors: [
-                      AppColors.neonGreen,
-                      AppColors.neonGreen.withValues(alpha: 0.85),
-                    ],
-                  ),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: AppColors.neonGreen.withValues(alpha: 0.45),
-                      blurRadius: 12, offset: const Offset(0, 4),
-                    ),
-                  ],
+                  borderRadius: AppRadius.brMd,
+                  gradient: AppSurfaces.raisedGradient(AppColors.primary),
+                  boxShadow: AppSurfaces.raised(
+                      glow: AppColors.primary, elevation: 1.1),
                 ),
                 child: Row(children: [
-                  Container(
-                    width: 32, height: 32,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(10),
+                  // Le compteur est gravé dans le pill : un puits, pas
+                  // une pastille posée dessus.
+                  InsetPanel(
+                    radius: AppRadius.xs,
+                    depth: 0.8,
+                    baseColor: AppSurfaces.darken(AppColors.primary, 0.35),
+                    padding: EdgeInsets.zero,
+                    child: SizedBox(
+                      width: 32,
+                      height: 32,
+                      child: Center(
+                        child: Text('$n',
+                            style: TextStyle(
+                              color: AppSurfaces.inkOn(AppColors.primary),
+                              fontSize: 16,
+                              fontWeight: FontWeight.w900,
+                            )),
+                      ),
                     ),
-                    alignment: Alignment.center,
-                    child: Text('$n',
-                        style: const TextStyle(
-                          color: Colors.black,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w900,
-                        )),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
@@ -76,9 +77,9 @@ class BetSlipPill extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Text('Panier de paris',
+                        Text('Panier de paris',
                             style: TextStyle(
-                              color: Colors.black,
+                              color: AppSurfaces.inkOn(AppColors.primary),
                               fontSize: 13,
                               fontWeight: FontWeight.w900,
                               letterSpacing: 0.2,
@@ -87,7 +88,8 @@ class BetSlipPill extends StatelessWidget {
                         Text(
                           'Cote totale : ×$cote',
                           style: TextStyle(
-                            color: Colors.black.withValues(alpha: 0.75),
+                            color: AppSurfaces.inkOn(AppColors.primary)
+                                .withValues(alpha: 0.75),
                             fontSize: 10,
                             fontWeight: FontWeight.w700,
                           ),
@@ -95,8 +97,8 @@ class BetSlipPill extends StatelessWidget {
                       ],
                     ),
                   ),
-                  const Icon(Icons.arrow_upward_rounded,
-                      color: Colors.black, size: 20),
+                  Icon(AppIcons.up,
+                      color: AppSurfaces.inkOn(AppColors.primary), size: 20),
                 ]),
               ),
             ),
@@ -143,6 +145,25 @@ Widget _badgeFor(BetSelection s) {
     child: Text(label,
         style: TextStyle(
           color: fg,
+          fontSize: 9,
+          fontWeight: FontWeight.w900,
+          letterSpacing: 0.4,
+        )),
+  );
+}
+
+// ── Indicateur 2Up (paiement anticipe) sur une selection eligible ──
+Widget _twoUpBadge(BetSelection s) {
+  if (!s.twoUpEligible) return const SizedBox.shrink();
+  return Container(
+    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+    decoration: BoxDecoration(
+      color: AppColors.primary,
+      borderRadius: BorderRadius.circular(4),
+    ),
+    child: const Text('2UP',
+        style: TextStyle(
+          color: Colors.black,
           fontSize: 9,
           fontWeight: FontWeight.w900,
           letterSpacing: 0.4,
@@ -202,7 +223,8 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
       padding: EdgeInsets.fromLTRB(16, 12, 16, 24 + bottomInset),
       child: Column(mainAxisSize: MainAxisSize.min, children: [
         Container(
-          width: 40, height: 4,
+          width: 40,
+          height: 4,
           margin: const EdgeInsets.only(bottom: 14),
           decoration: BoxDecoration(
             color: AppColors.divider,
@@ -210,8 +232,7 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
           ),
         ),
         Row(children: [
-          Icon(Icons.flash_on_rounded,
-              color: AppColors.neonYellow, size: 22),
+          Icon(AppIcons.bets, color: AppColors.neonYellow, size: 22),
           const SizedBox(width: 8),
           Text('Pari simple',
               style: TextStyle(
@@ -222,11 +243,11 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
               )),
           const Spacer(),
           TextButton.icon(
-            icon: Icon(Icons.add_box_rounded,
-                size: 16, color: AppColors.neonGreen),
+            icon:
+                Icon(AppIcons.addCircle, size: 16, color: AppColors.primaryInk),
             label: Text('Au combiné',
                 style: TextStyle(
-                  color: AppColors.neonGreen,
+                  color: AppColors.primaryInk,
                   fontSize: 11,
                   fontWeight: FontWeight.w800,
                 )),
@@ -250,9 +271,14 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
             border: Border.all(
                 color: AppColors.divider.withValues(alpha: 0.5), width: 0.5),
           ),
-          child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          child:
+              Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
             Row(children: [
               _badgeFor(s),
+              if (s.twoUpEligible) ...[
+                const SizedBox(width: 6),
+                _twoUpBadge(s),
+              ],
               const SizedBox(width: 8),
               Expanded(
                 child: Text(s.matchLabel,
@@ -266,8 +292,8 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
             ]),
             const SizedBox(height: 8),
             Row(children: [
-              Icon(Icons.check_circle_rounded,
-                  size: 13, color: AppColors.neonGreen),
+              Icon(AppIcons.checkCircleFilled,
+                  size: 13, color: AppColors.primaryInk),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(s.marketLabel,
@@ -278,18 +304,17 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
                     )),
               ),
               Container(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                 decoration: BoxDecoration(
-                  color: AppColors.neonGreen.withValues(alpha: 0.18),
+                  color: AppColors.primaryInk.withValues(alpha: 0.18),
                   borderRadius: BorderRadius.circular(6),
                   border: Border.all(
-                      color: AppColors.neonGreen.withValues(alpha: 0.6),
+                      color: AppColors.primaryInk.withValues(alpha: 0.6),
                       width: 0.6),
                 ),
                 child: Text('×${s.odds.toStringAsFixed(2)}',
                     style: TextStyle(
-                      color: AppColors.neonGreen,
+                      color: AppColors.primaryInk,
                       fontSize: 12,
                       fontWeight: FontWeight.w900,
                     )),
@@ -307,15 +332,14 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
           ),
           child: Row(children: [
             const SizedBox(width: 14),
-            Icon(Icons.savings_rounded,
-                size: 18, color: AppColors.neonYellow),
+            Icon(AppIcons.savings, size: 18, color: AppColors.neonYellow),
             const SizedBox(width: 10),
             Expanded(
               child: TextField(
                 controller: _stakeCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                cursorColor: AppColors.neonGreen,
+                cursorColor: AppColors.primaryInk,
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 16,
@@ -349,8 +373,8 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
                 },
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.bgElevated,
                     borderRadius: BorderRadius.circular(8),
@@ -376,7 +400,7 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
             color: AppColors.bgCard,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-                color: AppColors.neonGreen.withValues(alpha: 0.3), width: 0.6),
+                color: AppColors.primaryInk.withValues(alpha: 0.3), width: 0.6),
           ),
           child: Row(children: [
             Column(
@@ -412,7 +436,7 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
                 const SizedBox(height: 2),
                 Text('$win FCFA',
                     style: TextStyle(
-                      color: AppColors.neonGreen,
+                      color: AppColors.primaryInk,
                       fontSize: 15,
                       fontWeight: FontWeight.w900,
                     )),
@@ -427,22 +451,23 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
           child: _submitting
               ? Center(
                   child: SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2.5, color: AppColors.neonGreen),
+                        strokeWidth: 2.5, color: AppColors.primaryInk),
                   ),
                 )
               : ElevatedButton.icon(
                   onPressed: () => _doSubmit(context),
-                  icon: const Icon(Icons.bolt_rounded, size: 18),
+                  icon: const Icon(AppIcons.bets, size: 18),
                   label: Text(
                     'Parier · $_stake FCFA',
                     style: const TextStyle(
                         fontWeight: FontWeight.w900, letterSpacing: 0.3),
                   ),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: AppColors.neonGreen,
-                    foregroundColor: Colors.black,
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
                     shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(14)),
                     elevation: 0,
@@ -455,24 +480,25 @@ class _SingleBetSheetState extends State<_SingleBetSheet> {
 
   Future<void> _doSubmit(BuildContext context) async {
     setState(() => _submitting = true);
-    final res = await BetSlipController.instance
-        .submitSingle(widget.selection, _stake);
+    final res =
+        await BetSlipController.instance.submitSingle(widget.selection, _stake);
     if (!context.mounted) return;
     setState(() => _submitting = false);
     if (res.success) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: AppColors.neonGreen,
+          backgroundColor: AppColors.primary,
           duration: const Duration(seconds: 2),
           content: Row(children: [
-            const Icon(Icons.check_circle_rounded, color: Colors.black, size: 18),
+            const Icon(AppIcons.checkCircleFilled,
+                color: AppColors.onPrimary, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Pari validé · gain potentiel ${res.potentialPayout} FCFA',
                 style: const TextStyle(
-                  color: Colors.black,
+                  color: AppColors.onPrimary,
                   fontWeight: FontWeight.w900,
                 ),
               ),
@@ -517,8 +543,10 @@ class _BetSlipSheet extends StatefulWidget {
 
 class _BetSlipSheetState extends State<_BetSlipSheet> {
   late final TextEditingController _stakeCtrl;
+  final _bonusCodeCtrl = TextEditingController();
   final _ctrl = BetSlipController.instance;
   bool _submitting = false;
+
   /// Wallet balance affichee dans la section paiement.
   /// null = en cours de fetch. Chargee depuis profiles.coins une fois.
   int? _walletBalance;
@@ -551,6 +579,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
   @override
   void dispose() {
     _stakeCtrl.dispose();
+    _bonusCodeCtrl.dispose();
     super.dispose();
   }
 
@@ -574,7 +603,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
           return Column(children: [
             // Handle
             Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               margin: const EdgeInsets.only(top: 10, bottom: 14),
               decoration: BoxDecoration(
                 color: AppColors.divider,
@@ -607,8 +637,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
       child: Row(children: [
-        Icon(Icons.receipt_long_rounded,
-            color: AppColors.neonGreen, size: 22),
+        Icon(AppIcons.receipt, color: AppColors.primaryInk, size: 22),
         const SizedBox(width: 8),
         Text('Mon panier',
             style: TextStyle(
@@ -621,12 +650,12 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
           decoration: BoxDecoration(
-            color: AppColors.neonGreen.withValues(alpha: 0.18),
+            color: AppColors.primaryInk.withValues(alpha: 0.18),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text('$n',
               style: TextStyle(
-                color: AppColors.neonGreen,
+                color: AppColors.primaryInk,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
               )),
@@ -635,7 +664,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         if (n > 0)
           TextButton.icon(
             onPressed: () => _ctrl.clear(),
-            icon: Icon(Icons.delete_outline, size: 16, color: AppColors.neonRed),
+            icon: Icon(AppIcons.delete, size: 16, color: AppColors.neonRed),
             label: Text('Vider',
                 style: TextStyle(
                   color: AppColors.neonRed,
@@ -656,14 +685,11 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
     final mode = _ctrl.mode;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Container(
+      // Même commutateur que le sélecteur de sport : sillon + touche.
+      child: InsetPanel(
+        radius: AppRadius.xs,
         padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: AppColors.bgElevated,
-          borderRadius: BorderRadius.circular(10),
-          border: Border.all(
-              color: AppColors.divider.withValues(alpha: 0.4), width: 0.5),
-        ),
+        baseColor: AppColors.bgDark,
         child: Row(children: [
           _modeChip(BetMode.combine, 'Combiné',
               'Une mise, toutes les cotes multipliées', mode),
@@ -679,17 +705,25 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
     return Expanded(
       child: InkWell(
         onTap: () => _ctrl.setMode(m),
-        borderRadius: BorderRadius.circular(8),
-        child: Container(
+        borderRadius: AppRadius.brXs,
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 170),
+          curve: Curves.easeOut,
           padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 10),
           decoration: BoxDecoration(
-            color: active ? AppColors.neonGreen : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: AppRadius.brXs,
+            gradient:
+                active ? AppSurfaces.raisedGradient(AppColors.primary) : null,
+            boxShadow: active
+                ? AppSurfaces.raised(glow: AppColors.primary, elevation: 0.5)
+                : null,
           ),
           alignment: Alignment.center,
           child: Text(label,
               style: TextStyle(
-                color: active ? Colors.black : AppColors.textMuted,
+                color: active
+                    ? AppSurfaces.inkOn(AppColors.primary)
+                    : AppColors.textMuted,
                 fontSize: 12,
                 fontWeight: FontWeight.w900,
                 letterSpacing: 0.3,
@@ -707,8 +741,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
   Widget _selectionTile1xBet(BetSelection s) {
     final teams = _parseTeams(s.matchLabel);
     final sportIcon = _sportIcon(s);
-    final hasLiveScore = s.isLive &&
-        s.homeScore != null && s.awayScore != null;
+    final hasLiveScore = s.isLive && s.homeScore != null && s.awayScore != null;
     final previous = s.previousOdds;
     final oddsChanged = previous != null && (s.odds - previous).abs() > 0.001;
     final wentUp = oddsChanged && s.odds > previous;
@@ -720,7 +753,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
             color: oddsChanged
-                ? (wentUp ? AppColors.neonGreen : AppColors.neonRed)
+                ? (wentUp ? AppColors.primaryInk : AppColors.neonRed)
                     .withValues(alpha: 0.4)
                 : AppColors.divider.withValues(alpha: 0.5),
             width: oddsChanged ? 0.9 : 0.5),
@@ -729,7 +762,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         // ── Ligne 1 : sport icon + competition + X ──
         Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
           Container(
-            width: 22, height: 22,
+            width: 22,
+            height: 22,
             alignment: Alignment.center,
             margin: const EdgeInsets.only(top: 1),
             decoration: BoxDecoration(
@@ -752,13 +786,16 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
               ),
             ),
           ),
+          if (s.twoUpEligible) ...[
+            _twoUpBadge(s),
+            const SizedBox(width: 6),
+          ],
           InkWell(
             onTap: () => _ctrl.remove(s.matchId),
             borderRadius: BorderRadius.circular(16),
             child: Padding(
               padding: const EdgeInsets.all(4),
-              child: Icon(Icons.close_rounded,
-                  size: 18, color: AppColors.textMuted),
+              child: Icon(AppIcons.close, size: 18, color: AppColors.textMuted),
             ),
           ),
         ]),
@@ -798,7 +835,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             child: Row(children: [
               if (s.isLive) ...[
                 Container(
-                  width: 8, height: 8,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     color: AppColors.neonRed,
                     shape: BoxShape.circle,
@@ -807,7 +845,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                 const SizedBox(width: 5),
               ] else if (s.isVirtual) ...[
                 Container(
-                  width: 8, height: 8,
+                  width: 8,
+                  height: 8,
                   decoration: BoxDecoration(
                     color: AppColors.neonPurple,
                     shape: BoxShape.circle,
@@ -864,6 +903,11 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
               ),
             ),
             const SizedBox(width: 8),
+            // PlugLock : verrou de cote (uniquement en live, la ou ca bouge)
+            if (s.isLive) ...[
+              _lockButton(s),
+              const SizedBox(width: 8),
+            ],
             // Bloc cote (avec previous odds barree si change)
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
@@ -872,13 +916,9 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                 if (oddsChanged)
                   Row(mainAxisSize: MainAxisSize.min, children: [
                     Icon(
-                      wentUp
-                          ? Icons.arrow_drop_up_rounded
-                          : Icons.arrow_drop_down_rounded,
+                      wentUp ? AppIcons.chevronUp : AppIcons.chevronDown,
                       size: 18,
-                      color: wentUp
-                          ? AppColors.neonGreen
-                          : AppColors.neonRed,
+                      color: wentUp ? AppColors.primaryInk : AppColors.neonRed,
                     ),
                     Text(previous.toStringAsFixed(2),
                         style: TextStyle(
@@ -892,9 +932,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                 Text(s.odds.toStringAsFixed(2),
                     style: TextStyle(
                       color: oddsChanged
-                          ? (wentUp
-                              ? AppColors.neonGreen
-                              : AppColors.neonRed)
+                          ? (wentUp ? AppColors.primaryInk : AppColors.neonRed)
                           : AppColors.textPrimary,
                       fontSize: 16,
                       fontWeight: FontWeight.w900,
@@ -905,6 +943,45 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
           ]),
         ),
       ]),
+    );
+  }
+
+  /// PlugLock — bouton de verrouillage de la cote (garantie de cote).
+  /// Quand il est actif, le rafraichisseur ne modifie plus la cote : elle
+  /// est garantie a la validation, meme si le marche bouge.
+  Widget _lockButton(BetSelection s) {
+    final locked = s.locked;
+    return InkWell(
+      onTap: () => _ctrl.toggleLock(s.matchId, s.marketCode),
+      borderRadius: BorderRadius.circular(8),
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 5),
+        decoration: BoxDecoration(
+          color: locked
+              ? AppColors.primary.withValues(alpha: 0.18)
+              : AppColors.bgCard,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(
+            color: locked
+                ? AppColors.primary.withValues(alpha: 0.6)
+                : AppColors.divider.withValues(alpha: 0.5),
+            width: 0.8,
+          ),
+        ),
+        child: Row(mainAxisSize: MainAxisSize.min, children: [
+          Icon(locked ? Icons.lock_rounded : Icons.lock_open_rounded,
+              size: 13,
+              color: locked ? AppColors.primary : AppColors.textMuted),
+          const SizedBox(width: 3),
+          Text('LOCK',
+              style: TextStyle(
+                color: locked ? AppColors.primary : AppColors.textMuted,
+                fontSize: 9,
+                fontWeight: FontWeight.w900,
+                letterSpacing: 0.3,
+              )),
+        ]),
+      ),
     );
   }
 
@@ -942,10 +1019,15 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
   }
 
   IconData _sportIcon(BetSelection s) {
-    if (s.sportName == 'basketball') return Icons.sports_basketball;
-    if (s.sportName == 'tennis') return Icons.sports_tennis;
+    final sport = s.sportName?.toLowerCase();
+    if (sport == 'basketball') return AppIcons.basketball;
+    if (sport == 'americanfootball' || sport == 'american_football') {
+      return Icons.sports_football_rounded;
+    }
+    if (sport == 'baseball') return Icons.sports_baseball_rounded;
+    if (sport == 'tennis') return AppIcons.tennis;
     // Defaut soccer
-    return Icons.sports_soccer;
+    return AppIcons.football;
   }
 
   String _statusLine(BetSelection s, {required bool hasLiveScore}) {
@@ -961,8 +1043,18 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
   String _formatKickoff(DateTime dt) {
     final l = dt.toLocal();
     const months = [
-      'janv', 'févr', 'mars', 'avr', 'mai', 'juin',
-      'juil', 'août', 'sept', 'oct', 'nov', 'déc',
+      'janv',
+      'févr',
+      'mars',
+      'avr',
+      'mai',
+      'juin',
+      'juil',
+      'août',
+      'sept',
+      'oct',
+      'nov',
+      'déc',
     ];
     final dd = l.day.toString().padLeft(2, '0');
     final mo = months[(l.month - 1).clamp(0, 11)];
@@ -976,8 +1068,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.receipt_long_rounded,
-              size: 56, color: AppColors.textMuted),
+          Icon(AppIcons.receipt, size: 56, color: AppColors.textMuted),
           const SizedBox(height: 12),
           Text('Panier vide',
               style: TextStyle(
@@ -1008,8 +1099,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
     // Pour la fleche globale: si TOTAL cote a augmente, fleche verte
     double? prevCombined;
     if (isCombine && hasChanges) {
-      prevCombined = _items.fold<double>(1, (acc, s) =>
-          acc * (s.previousOdds ?? s.odds));
+      prevCombined =
+          _items.fold<double>(1, (acc, s) => acc * (s.previousOdds ?? s.odds));
       if ((prevCombined - coteTotale).abs() < 0.001) prevCombined = null;
     }
     final coteWentUp = prevCombined != null && coteTotale > prevCombined;
@@ -1034,22 +1125,24 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
           child: Row(children: [
             Expanded(
               child: Row(children: [
-                Icon(Icons.layers_rounded,
-                    size: 16, color: AppColors.textMuted),
+                Icon(AppIcons.layers, size: 16, color: AppColors.textMuted),
                 const SizedBox(width: 6),
                 Text('Événements',
                     style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12, fontWeight: FontWeight.w700)),
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700)),
                 const Spacer(),
                 Text('$n',
                     style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 14, fontWeight: FontWeight.w900)),
+                        color: AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900)),
               ]),
             ),
             Container(
-              width: 0.6, height: 22,
+              width: 0.6,
+              height: 22,
               margin: const EdgeInsets.symmetric(horizontal: 12),
               color: AppColors.divider.withValues(alpha: 0.5),
             ),
@@ -1057,27 +1150,28 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
               child: Row(children: [
                 Text(isCombine ? 'Cote' : 'Total',
                     style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 12, fontWeight: FontWeight.w700)),
+                        color: AppColors.textMuted,
+                        fontSize: 12,
+                        fontWeight: FontWeight.w700)),
                 const Spacer(),
                 if (prevCombined != null)
                   Icon(
-                    coteWentUp
-                        ? Icons.arrow_upward_rounded
-                        : Icons.arrow_downward_rounded,
+                    coteWentUp ? AppIcons.up : AppIcons.down,
                     size: 14,
-                    color: coteWentUp ? AppColors.neonGreen : AppColors.neonRed,
+                    color:
+                        coteWentUp ? AppColors.primaryInk : AppColors.neonRed,
                   ),
                 const SizedBox(width: 2),
                 Text(coteTotale.toStringAsFixed(3),
                     style: TextStyle(
-                      color: prevCombined != null
-                          ? (coteWentUp
-                              ? AppColors.neonGreen
-                              : AppColors.neonRed)
-                          : AppColors.textPrimary,
-                      fontSize: 14, fontWeight: FontWeight.w900,
-                      letterSpacing: -0.2)),
+                        color: prevCombined != null
+                            ? (coteWentUp
+                                ? AppColors.primaryInk
+                                : AppColors.neonRed)
+                            : AppColors.textPrimary,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: -0.2)),
               ]),
             ),
           ]),
@@ -1088,15 +1182,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         const SizedBox(height: 12),
         // ── Solde + Recharger ──
         Row(children: [
-          Container(
-            width: 36, height: 36,
-            decoration: BoxDecoration(
-              color: AppColors.neonGreen,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Icon(Icons.add_rounded,
-                color: Colors.black, size: 20),
-          ),
+          DomeIcon(icon: AppIcons.add, color: AppColors.primary, size: 36),
           const SizedBox(width: 10),
           Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -1104,27 +1190,65 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             children: [
               Text('Solde',
                   style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11, fontWeight: FontWeight.w700)),
-              Text(
-                  _walletBalance == null
-                      ? '—'
-                      : '${_walletBalance!} F',
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w700)),
+              Text(_walletBalance == null ? '—' : '${_walletBalance!} F',
                   style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16, fontWeight: FontWeight.w900,
-                    letterSpacing: -0.3)),
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.3)),
             ],
           ),
           const Spacer(),
           Text('Recharger le compte',
               style: TextStyle(
-                color: AppColors.neonGreen,
-                fontSize: 12, fontWeight: FontWeight.w800)),
+                  color: AppColors.primaryInk,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w800)),
           const SizedBox(width: 2),
-          Icon(Icons.chevron_right_rounded,
-              size: 18, color: AppColors.neonGreen),
+          Icon(AppIcons.chevronRight, size: 18, color: AppColors.primaryInk),
         ]),
+        const SizedBox(height: 10),
+        // ── Code bonus (optionnel) ──
+        Container(
+          height: 46,
+          padding: const EdgeInsets.symmetric(horizontal: 14),
+          decoration: BoxDecoration(
+            color: AppColors.bgElevated,
+            borderRadius: BorderRadius.circular(10),
+            border: Border.all(
+                color: const Color(0xFFFFB020).withValues(alpha: 0.35),
+                width: 0.8),
+          ),
+          child: Row(children: [
+            const Icon(Icons.card_giftcard_rounded,
+                size: 18, color: Color(0xFFFFB020)),
+            const SizedBox(width: 10),
+            Expanded(
+              child: TextField(
+                controller: _bonusCodeCtrl,
+                textCapitalization: TextCapitalization.characters,
+                style: TextStyle(
+                    color: AppColors.textPrimary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 1),
+                decoration: InputDecoration(
+                  border: InputBorder.none,
+                  isDense: true,
+                  hintText: 'Code bonus (optionnel)',
+                  hintStyle: TextStyle(
+                      color: AppColors.textMuted,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w600,
+                      letterSpacing: 0),
+                ),
+              ),
+            ),
+          ]),
+        ),
         const SizedBox(height: 10),
         // ── Stake input + -/+ + Pari ──
         Row(children: [
@@ -1145,10 +1269,11 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                     controller: _stakeCtrl,
                     keyboardType: TextInputType.number,
                     inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                    cursorColor: AppColors.neonGreen,
+                    cursorColor: AppColors.primaryInk,
                     style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 18, fontWeight: FontWeight.w900),
+                        color: AppColors.textPrimary,
+                        fontSize: 18,
+                        fontWeight: FontWeight.w900),
                     decoration: const InputDecoration(
                       border: InputBorder.none,
                       isDense: true,
@@ -1159,13 +1284,14 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                   onTap: () => _bumpStake(-100),
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     margin: const EdgeInsets.only(left: 6),
                     decoration: BoxDecoration(
                       color: AppColors.bgCard,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.remove_rounded,
+                    child: Icon(AppIcons.remove,
                         size: 18, color: AppColors.textPrimary),
                   ),
                 ),
@@ -1174,12 +1300,13 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                   onTap: () => _bumpStake(100),
                   borderRadius: BorderRadius.circular(8),
                   child: Container(
-                    width: 36, height: 36,
+                    width: 36,
+                    height: 36,
                     decoration: BoxDecoration(
                       color: AppColors.bgCard,
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Icon(Icons.add_rounded,
+                    child: Icon(AppIcons.add,
                         size: 18, color: AppColors.textPrimary),
                   ),
                 ),
@@ -1193,16 +1320,17 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             child: _submitting
                 ? Center(
                     child: SizedBox(
-                      width: 22, height: 22,
+                      width: 22,
+                      height: 22,
                       child: CircularProgressIndicator(
-                          strokeWidth: 2.5, color: AppColors.neonGreen),
+                          strokeWidth: 2.5, color: AppColors.primaryInk),
                     ),
                   )
                 : ElevatedButton(
                     onPressed: () => _submitWithConfirm(context),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: AppColors.neonGreen,
-                      foregroundColor: Colors.black,
+                      backgroundColor: AppColors.primary,
+                      foregroundColor: AppColors.onPrimary,
                       shape: RoundedRectangleBorder(
                           borderRadius: BorderRadius.circular(12)),
                       elevation: 0,
@@ -1220,44 +1348,47 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         const SizedBox(height: 4),
         Text('25 F – 2 150 000 F',
             style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11, fontWeight: FontWeight.w600)),
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 10),
         // ── Gains potentiels (en vert) ──
         Row(children: [
           Text('Gains potentiels :',
               style: TextStyle(
-                color: AppColors.textPrimary,
-                fontSize: 14, fontWeight: FontWeight.w800)),
+                  color: AppColors.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w800)),
           const SizedBox(width: 6),
-          Text(
-              isCombine
-                  ? '$win F'
-                  : '$win F (Σ)',
+          Text(isCombine ? '$win F' : '$win F (Σ)',
               style: TextStyle(
-                color: AppColors.neonGreen,
-                fontSize: 15, fontWeight: FontWeight.w900,
-                letterSpacing: -0.2)),
+                  color: AppColors.primaryInk,
+                  fontSize: 15,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: -0.2)),
           if (!isCombine && n > 1) ...[
             const Spacer(),
             Text('Total débité : $totalStake F',
                 style: TextStyle(
-                  color: AppColors.textMuted,
-                  fontSize: 11, fontWeight: FontWeight.w700)),
+                    color: AppColors.textMuted,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700)),
           ],
         ]),
         const SizedBox(height: 14),
         // ── Paris rapides ──
         Text('Paris rapides',
             style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 13, fontWeight: FontWeight.w900,
-              letterSpacing: -0.2)),
+                color: AppColors.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w900,
+                letterSpacing: -0.2)),
         const SizedBox(height: 2),
         Text('Choisissez un montant de mise pour placer un pari',
             style: TextStyle(
-              color: AppColors.textMuted,
-              fontSize: 11, fontWeight: FontWeight.w600)),
+                color: AppColors.textMuted,
+                fontSize: 11,
+                fontWeight: FontWeight.w600)),
         const SizedBox(height: 8),
         Row(children: [
           for (final v in [500, 1000, 2500])
@@ -1280,10 +1411,10 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                     ),
                     child: Text('$v F',
                         style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 15,
-                          fontWeight: FontWeight.w900,
-                          letterSpacing: 0.3)),
+                            color: Colors.white,
+                            fontSize: 15,
+                            fontWeight: FontWeight.w900,
+                            letterSpacing: 0.3)),
                   ),
                 ),
               ),
@@ -1300,10 +1431,10 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
   Widget _oddsPolicyTile() {
     final policy = _ctrl.oddsPolicy;
     final label = switch (policy) {
-      OddsChangePolicy.askConfirm  => 'Me demander de confirmer',
-      OddsChangePolicy.acceptAll   => 'Tout accepter automatiquement',
-      OddsChangePolicy.acceptUp    => 'Accepter si la cote monte',
-      OddsChangePolicy.refuseDown  => 'Refuser si la cote baisse',
+      OddsChangePolicy.askConfirm => 'Me demander de confirmer',
+      OddsChangePolicy.acceptAll => 'Tout accepter automatiquement',
+      OddsChangePolicy.acceptUp => 'Accepter si la cote monte',
+      OddsChangePolicy.refuseDown => 'Refuser si la cote baisse',
     };
     return InkWell(
       onTap: _showOddsPolicyDialog,
@@ -1316,22 +1447,24 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             children: [
               Text('Quand les cotes changent',
                   style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 13, fontWeight: FontWeight.w900,
-                    letterSpacing: -0.2)),
+                      color: AppColors.textPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: -0.2)),
               Text(label,
                   style: TextStyle(
-                    color: AppColors.textMuted,
-                    fontSize: 11, fontWeight: FontWeight.w600)),
+                      color: AppColors.textMuted,
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600)),
             ],
           ),
         ),
         Text('Paramètres',
             style: TextStyle(
-              color: AppColors.neonGreen,
-              fontSize: 12, fontWeight: FontWeight.w800)),
-        Icon(Icons.chevron_right_rounded,
-            size: 18, color: AppColors.neonGreen),
+                color: AppColors.primaryInk,
+                fontSize: 12,
+                fontWeight: FontWeight.w800)),
+        Icon(AppIcons.chevronRight, size: 18, color: AppColors.primaryInk),
       ]),
     );
   }
@@ -1346,7 +1479,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             padding: const EdgeInsets.symmetric(vertical: 12),
             child: Column(mainAxisSize: MainAxisSize.min, children: [
               Container(
-                width: 40, height: 4,
+                width: 40,
+                height: 4,
                 decoration: BoxDecoration(
                   color: AppColors.divider,
                   borderRadius: BorderRadius.circular(2),
@@ -1355,11 +1489,11 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
               const SizedBox(height: 14),
               Text('Quand les cotes changent',
                   style: TextStyle(
-                    color: AppColors.textPrimary,
-                    fontSize: 16, fontWeight: FontWeight.w900)),
+                      color: AppColors.textPrimary,
+                      fontSize: 16,
+                      fontWeight: FontWeight.w900)),
               const SizedBox(height: 8),
-              for (final p in OddsChangePolicy.values)
-                _policyOption(ctx, p),
+              for (final p in OddsChangePolicy.values) _policyOption(ctx, p),
             ]),
           ),
         );
@@ -1373,28 +1507,29 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
     final (title, hint) = switch (p) {
       OddsChangePolicy.askConfirm => (
           'Me demander de confirmer',
-          'Tu valides chaque changement avant de parier'),
+          'Tu valides chaque changement avant de parier'
+        ),
       OddsChangePolicy.acceptAll => (
           'Tout accepter automatiquement',
-          'Les nouvelles cotes sont appliquees sans demande'),
+          'Les nouvelles cotes sont appliquees sans demande'
+        ),
       OddsChangePolicy.acceptUp => (
           'Accepter si la cote monte',
-          'Demande uniquement quand la cote baisse'),
+          'Demande uniquement quand la cote baisse'
+        ),
       OddsChangePolicy.refuseDown => (
           'Refuser si la cote baisse',
-          'Le pari est refuse en cas de baisse de cote'),
+          'Le pari est refuse en cas de baisse de cote'
+        ),
     };
     return InkWell(
       onTap: () => Navigator.pop(ctx, p),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
         child: Row(children: [
-          Icon(
-            selected
-                ? Icons.radio_button_checked_rounded
-                : Icons.radio_button_off_rounded,
-            color: selected ? AppColors.neonGreen : AppColors.textMuted,
-            size: 18),
+          Icon(selected ? AppIcons.radioOn : AppIcons.radioOff,
+              color: selected ? AppColors.primaryInk : AppColors.textMuted,
+              size: 18),
           const SizedBox(width: 12),
           Expanded(
             child: Column(
@@ -1402,12 +1537,14 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
               children: [
                 Text(title,
                     style: TextStyle(
-                      color: AppColors.textPrimary,
-                      fontSize: 13, fontWeight: FontWeight.w800)),
+                        color: AppColors.textPrimary,
+                        fontSize: 13,
+                        fontWeight: FontWeight.w800)),
                 Text(hint,
                     style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11, fontWeight: FontWeight.w600)),
+                        color: AppColors.textMuted,
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600)),
               ],
             ),
           ),
@@ -1424,8 +1561,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
         backgroundColor: AppColors.neonRed,
         duration: const Duration(seconds: 2),
         content: const Text(
-          'Pari refusé : la cote a baissé. Modifie ta policy pour accepter.',
-          style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
+            'Pari refusé : la cote a baissé. Modifie ta policy pour accepter.',
+            style: TextStyle(color: Colors.white, fontWeight: FontWeight.w800)),
       ));
       return;
     }
@@ -1436,25 +1573,24 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
           backgroundColor: AppColors.bgCard,
           title: Text('Les cotes ont changé',
               style: TextStyle(
-                color: AppColors.textPrimary,
-                fontWeight: FontWeight.w900,
-                fontSize: 15)),
+                  color: AppColors.textPrimary,
+                  fontWeight: FontWeight.w900,
+                  fontSize: 15)),
           content: Text(
               'La cote totale de ton combiné est maintenant ×${_ctrl.combinedOdds.toStringAsFixed(3)}.\n\n'
               'Confirmer le pari avec les nouvelles cotes ?',
-              style: TextStyle(
-                color: AppColors.textPrimary, fontSize: 13)),
+              style: TextStyle(color: AppColors.textPrimary, fontSize: 13)),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
-              child: Text('Annuler',
-                  style: TextStyle(color: AppColors.textMuted)),
+              child:
+                  Text('Annuler', style: TextStyle(color: AppColors.textMuted)),
             ),
             ElevatedButton(
               onPressed: () => Navigator.pop(ctx, true),
               style: ElevatedButton.styleFrom(
-                backgroundColor: AppColors.neonGreen,
-                foregroundColor: Colors.black,
+                backgroundColor: AppColors.primary,
+                foregroundColor: AppColors.onPrimary,
               ),
               child: const Text('Accepter',
                   style: TextStyle(fontWeight: FontWeight.w900)),
@@ -1518,15 +1654,14 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
           ),
           child: Row(children: [
             const SizedBox(width: 14),
-            Icon(Icons.savings_rounded,
-                size: 18, color: AppColors.neonYellow),
+            Icon(AppIcons.savings, size: 18, color: AppColors.neonYellow),
             const SizedBox(width: 10),
             Expanded(
               child: TextField(
                 controller: _stakeCtrl,
                 keyboardType: TextInputType.number,
                 inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                cursorColor: AppColors.neonGreen,
+                cursorColor: AppColors.primaryInk,
                 style: TextStyle(
                   color: AppColors.textPrimary,
                   fontSize: 16,
@@ -1561,8 +1696,8 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
                 },
                 borderRadius: BorderRadius.circular(8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(
-                      horizontal: 10, vertical: 5),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: AppColors.bgElevated,
                     borderRadius: BorderRadius.circular(8),
@@ -1589,7 +1724,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             color: AppColors.bgCard,
             borderRadius: BorderRadius.circular(12),
             border: Border.all(
-                color: AppColors.neonGreen.withValues(alpha: 0.3), width: 0.6),
+                color: AppColors.primaryInk.withValues(alpha: 0.3), width: 0.6),
           ),
           child: Row(children: [
             if (isCombine) ...[
@@ -1602,7 +1737,7 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
             _summaryCol(
               'Gain potentiel',
               '$win FCFA',
-              AppColors.neonGreen,
+              AppColors.primaryInk,
               right: true,
             ),
           ]),
@@ -1615,27 +1750,28 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
           child: _submitting
               ? Center(
                   child: SizedBox(
-                    width: 22, height: 22,
+                    width: 22,
+                    height: 22,
                     child: CircularProgressIndicator(
-                        strokeWidth: 2.5, color: AppColors.neonGreen),
+                        strokeWidth: 2.5, color: AppColors.primaryInk),
                   ),
                 )
               : ElevatedButton.icon(
-            onPressed: () => _submit(context),
-            icon: const Icon(Icons.bolt_rounded, size: 18),
-            label: Text(
-              'Valider le pari · $totalStake FCFA',
-              style: const TextStyle(
-                  fontWeight: FontWeight.w900, letterSpacing: 0.3),
-            ),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonGreen,
-              foregroundColor: Colors.black,
-              shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(14)),
-              elevation: 0,
-            ),
-          ),
+                  onPressed: () => _submit(context),
+                  icon: const Icon(AppIcons.bets, size: 18),
+                  label: Text(
+                    'Valider le pari · $totalStake FCFA',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.w900, letterSpacing: 0.3),
+                  ),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: AppColors.onPrimary,
+                    shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14)),
+                    elevation: 0,
+                  ),
+                ),
         ),
       ]),
     );
@@ -1668,24 +1804,24 @@ class _BetSlipSheetState extends State<_BetSlipSheet> {
 
   Future<void> _submit(BuildContext context) async {
     setState(() => _submitting = true);
-    final res = await _ctrl.submit();
+    final res = await _ctrl.submit(bonusCode: _bonusCodeCtrl.text);
     if (!context.mounted) return;
     setState(() => _submitting = false);
     if (res.success) {
       Navigator.pop(context);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          backgroundColor: AppColors.neonGreen,
+          backgroundColor: AppColors.primary,
           duration: const Duration(seconds: 2),
           content: Row(children: [
-            const Icon(Icons.check_circle_rounded,
-                color: Colors.black, size: 18),
+            const Icon(AppIcons.checkCircleFilled,
+                color: AppColors.onPrimary, size: 18),
             const SizedBox(width: 8),
             Expanded(
               child: Text(
                 'Pari validé · gain potentiel ${res.potentialPayout} FCFA',
                 style: const TextStyle(
-                  color: Colors.black,
+                  color: AppColors.onPrimary,
                   fontWeight: FontWeight.w900,
                 ),
               ),

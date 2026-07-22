@@ -23,24 +23,62 @@ import 'statpal_disk_cache.dart';
 
 // ── Modeles ───────────────────────────────────────────────
 
-/// Sports supportes par l'abonnement StatPal ("Soccer and NBA - Data API").
-enum Sport { soccer, basketball }
+/// Sports affichables dans l'onglet Paris.
+/// StatPal historique ne couvre que soccer + basketball ; The Odds API
+/// alimente aussi NFL, MLB et tennis via le provider actif.
+// NB : les valeurs sont ajoutees A LA FIN (iceHockey/rugby/handball) pour ne
+// pas casser les index serialises (BettingMatch stocke sport.index en cache).
+enum Sport {
+  soccer,
+  basketball,
+  americanFootball,
+  baseball,
+  tennis,
+  iceHockey,
+  rugby,
+  handball,
+}
+
+const List<Sport> kStatpalSupportedSports = [Sport.soccer, Sport.basketball];
 
 String _sportPath(Sport s) {
   switch (s) {
-    case Sport.soccer:     return 'soccer';
+    case Sport.soccer:
+      return 'soccer';
     // StatPal expose le basket via /nba/* (V1), pas /basketball/* (n'existe pas).
-    case Sport.basketball: return 'nba';
+    case Sport.basketball:
+      return 'nba';
+    case Sport.americanFootball:
+      return 'nfl';
+    case Sport.baseball:
+      return 'mlb';
+    case Sport.tennis:
+      return 'tennis';
+    // Sports servis uniquement par The Odds API (pas StatPal) : ces chemins
+    // ne sont jamais reellement appeles cote StatPal.
+    case Sport.iceHockey:
+      return 'icehockey';
+    case Sport.rugby:
+      return 'rugby';
+    case Sport.handball:
+      return 'handball';
   }
+}
+
+Sport _sportFromIndex(int? index) {
+  if (index == null || index < 0 || index >= Sport.values.length) {
+    return Sport.soccer;
+  }
+  return Sport.values[index];
 }
 
 class BettingMatch {
   final String id;
   final Sport sport;
-  final String? leagueId;     // requis pour /{sport}/leagues/{id}/odds/prematch
+  final String? leagueId; // requis pour /{sport}/leagues/{id}/odds/prematch
   final String homeName;
   final String awayName;
-  final String? homeTeamId;   // StatPal team id (pour fiche equipe)
+  final String? homeTeamId; // StatPal team id (pour fiche equipe)
   final String? awayTeamId;
   final String? homeLogo;
   final String? awayLogo;
@@ -74,56 +112,68 @@ class BettingMatch {
   /// Serialisation JSON pour cache disque (StatpalDiskCache).
   /// Format compact - cles a 1-2 lettres pour reduire la taille SharedPreferences.
   Map<String, dynamic> toJson() => {
-    'i': id,
-    's': sport.index,
-    'l': leagueId,
-    'hn': homeName,
-    'an': awayName,
-    'ht': homeTeamId,
-    'at': awayTeamId,
-    'hl': homeLogo,
-    'al': awayLogo,
-    'lg': league,
-    't': startTime.toUtc().millisecondsSinceEpoch,
-    'iv': isLive,
-    'mn': minute,
-    'hs': homeScore,
-    'as': awayScore,
-    if (odds != null) 'o': odds!.toJson(),
-  };
+        'i': id,
+        's': sport.index,
+        'l': leagueId,
+        'hn': homeName,
+        'an': awayName,
+        'ht': homeTeamId,
+        'at': awayTeamId,
+        'hl': homeLogo,
+        'al': awayLogo,
+        'lg': league,
+        't': startTime.toUtc().millisecondsSinceEpoch,
+        'iv': isLive,
+        'mn': minute,
+        'hs': homeScore,
+        'as': awayScore,
+        if (odds != null) 'o': odds!.toJson(),
+      };
 
   factory BettingMatch.fromJson(Map<String, dynamic> j) => BettingMatch(
-    id: j['i'] as String,
-    sport: Sport.values[(j['s'] as int?) ?? 0],
-    leagueId: j['l'] as String?,
-    homeName: j['hn'] as String? ?? '',
-    awayName: j['an'] as String? ?? '',
-    homeTeamId: j['ht'] as String?,
-    awayTeamId: j['at'] as String?,
-    homeLogo: j['hl'] as String?,
-    awayLogo: j['al'] as String?,
-    league: j['lg'] as String? ?? '',
-    startTime: DateTime.fromMillisecondsSinceEpoch(
-        (j['t'] as int?) ?? 0, isUtc: true),
-    isLive: j['iv'] as bool? ?? false,
-    minute: j['mn'] as int?,
-    homeScore: j['hs'] as int?,
-    awayScore: j['as'] as int?,
-    odds: j['o'] is Map<String, dynamic>
-        ? MatchOdds.fromJson(j['o'] as Map<String, dynamic>)
-        : null,
-  );
+        id: j['i'] as String,
+        sport: _sportFromIndex(j['s'] as int?),
+        leagueId: j['l'] as String?,
+        homeName: j['hn'] as String? ?? '',
+        awayName: j['an'] as String? ?? '',
+        homeTeamId: j['ht'] as String?,
+        awayTeamId: j['at'] as String?,
+        homeLogo: j['hl'] as String?,
+        awayLogo: j['al'] as String?,
+        league: j['lg'] as String? ?? '',
+        startTime: DateTime.fromMillisecondsSinceEpoch((j['t'] as int?) ?? 0,
+            isUtc: true),
+        isLive: j['iv'] as bool? ?? false,
+        minute: j['mn'] as int?,
+        homeScore: j['hs'] as int?,
+        awayScore: j['as'] as int?,
+        odds: j['o'] is Map<String, dynamic>
+            ? MatchOdds.fromJson(j['o'] as Map<String, dynamic>)
+            : null,
+      );
 
   /// true = basket (pas de "match nul" possible -> UI 2 boutons au lieu de 3).
   bool get hasDrawMarket => sport == Sport.soccer;
 
-  BettingMatch copyWith({MatchOdds? odds, int? minute, int? homeScore, int? awayScore}) =>
+  BettingMatch copyWith(
+          {MatchOdds? odds,
+          int? minute,
+          int? homeScore,
+          int? awayScore,
+          bool? isLive}) =>
       BettingMatch(
-        id: id, sport: sport, leagueId: leagueId,
-        homeName: homeName, awayName: awayName,
-        homeTeamId: homeTeamId, awayTeamId: awayTeamId,
-        homeLogo: homeLogo, awayLogo: awayLogo, league: league,
-        startTime: startTime, isLive: isLive,
+        id: id,
+        sport: sport,
+        leagueId: leagueId,
+        homeName: homeName,
+        awayName: awayName,
+        homeTeamId: homeTeamId,
+        awayTeamId: awayTeamId,
+        homeLogo: homeLogo,
+        awayLogo: awayLogo,
+        league: league,
+        startTime: startTime,
+        isLive: isLive ?? this.isLive,
         minute: minute ?? this.minute,
         homeScore: homeScore ?? this.homeScore,
         awayScore: awayScore ?? this.awayScore,
@@ -135,10 +185,10 @@ class BettingMatch {
 /// Soccer + NBA. Quart-handicaps (-0.25, -0.75) exclus pour rester
 /// compatible avec le settlement entier/demi.
 class AsianHandicapLine {
-  final double line;        // -1.5, -0.5, 0, +0.5, +1.5, etc.
+  final double line; // -1.5, -0.5, 0, +0.5, +1.5, etc.
   final double homeOdds;
   final double awayOdds;
-  final bool isMain;        // ligne principale recommandee par le bookmaker
+  final bool isMain; // ligne principale recommandee par le bookmaker
 
   const AsianHandicapLine({
     required this.line,
@@ -147,21 +197,23 @@ class AsianHandicapLine {
     this.isMain = false,
   });
 
-  Map<String, dynamic> toJson() => {'l': line, 'h': homeOdds, 'a': awayOdds, 'm': isMain};
-  factory AsianHandicapLine.fromJson(Map<String, dynamic> j) => AsianHandicapLine(
-    line: (j['l'] as num).toDouble(),
-    homeOdds: (j['h'] as num).toDouble(),
-    awayOdds: (j['a'] as num).toDouble(),
-    isMain: j['m'] as bool? ?? false,
-  );
+  Map<String, dynamic> toJson() =>
+      {'l': line, 'h': homeOdds, 'a': awayOdds, 'm': isMain};
+  factory AsianHandicapLine.fromJson(Map<String, dynamic> j) =>
+      AsianHandicapLine(
+        line: (j['l'] as num).toDouble(),
+        homeOdds: (j['h'] as num).toDouble(),
+        awayOdds: (j['a'] as num).toDouble(),
+        isMain: j['m'] as bool? ?? false,
+      );
 }
 
 /// Une selection d'un marche generique (ex: "1:0" cote 7.50 d'un Correct Score).
 class ExtraOdd {
-  final String name;        // "1:0", "Home/Away", "Over 1.5", etc.
-  final String code;        // code stable pour BetSlip (ex: "cs_1_0")
-  final double value;       // la cote decimale
-  final double? line;       // pour OU / handicap variants (1.5, -3.5, etc.)
+  final String name; // "1:0", "Home/Away", "Over 1.5", etc.
+  final String code; // code stable pour BetSlip (ex: "cs_1_0")
+  final double value; // la cote decimale
+  final double? line; // pour OU / handicap variants (1.5, -3.5, etc.)
   const ExtraOdd({
     required this.name,
     required this.code,
@@ -170,15 +222,17 @@ class ExtraOdd {
   });
 
   Map<String, dynamic> toJson() => {
-    'n': name, 'c': code, 'v': value,
-    if (line != null) 'l': line,
-  };
+        'n': name,
+        'c': code,
+        'v': value,
+        if (line != null) 'l': line,
+      };
   factory ExtraOdd.fromJson(Map<String, dynamic> j) => ExtraOdd(
-    name: j['n'] as String,
-    code: j['c'] as String,
-    value: (j['v'] as num).toDouble(),
-    line: (j['l'] as num?)?.toDouble(),
-  );
+        name: j['n'] as String,
+        code: j['c'] as String,
+        value: (j['v'] as num).toDouble(),
+        line: (j['l'] as num?)?.toDouble(),
+      );
 }
 
 /// Un marche generique (non-core). Permet d'absorber les ~70 marches StatPal
@@ -186,11 +240,11 @@ class ExtraOdd {
 /// Le widget UI itere sur cette liste pour generer dynamiquement les
 /// sections de la fiche match.
 class ExtraMarket {
-  final String name;          // "Correct Score" (label StatPal brut)
-  final String code;          // 'correct_score', 'htft_double', etc. (stable)
-  final String displayName;   // "Score exact" (FR humain)
-  final String? subtitle;     // sous-titre court
-  final List<ExtraOdd> odds;  // 2-25 cotes selon le marche
+  final String name; // "Correct Score" (label StatPal brut)
+  final String code; // 'correct_score', 'htft_double', etc. (stable)
+  final String displayName; // "Score exact" (FR humain)
+  final String? subtitle; // sous-titre court
+  final List<ExtraOdd> odds; // 2-25 cotes selon le marche
   final String? bookmaker;
   final ExtraMarketLayout layout; // hint UI (grid / row2 / row3 / chips...)
 
@@ -205,24 +259,27 @@ class ExtraMarket {
   });
 
   Map<String, dynamic> toJson() => {
-    'n': name, 'c': code, 'dn': displayName,
-    if (subtitle != null) 'st': subtitle,
-    if (bookmaker != null) 'bk': bookmaker,
-    'l': layout.index,
-    'o': odds.map((e) => e.toJson()).toList(),
-  };
+        'n': name,
+        'c': code,
+        'dn': displayName,
+        if (subtitle != null) 'st': subtitle,
+        if (bookmaker != null) 'bk': bookmaker,
+        'l': layout.index,
+        'o': odds.map((e) => e.toJson()).toList(),
+      };
   factory ExtraMarket.fromJson(Map<String, dynamic> j) => ExtraMarket(
-    name: j['n'] as String? ?? '',
-    code: j['c'] as String? ?? '',
-    displayName: j['dn'] as String? ?? '',
-    subtitle: j['st'] as String?,
-    bookmaker: j['bk'] as String?,
-    layout: ExtraMarketLayout.values[(j['l'] as int?) ?? 0],
-    odds: (j['o'] as List?)
-        ?.cast<Map<String, dynamic>>()
-        .map(ExtraOdd.fromJson)
-        .toList() ?? const [],
-  );
+        name: j['n'] as String? ?? '',
+        code: j['c'] as String? ?? '',
+        displayName: j['dn'] as String? ?? '',
+        subtitle: j['st'] as String?,
+        bookmaker: j['bk'] as String?,
+        layout: ExtraMarketLayout.values[(j['l'] as int?) ?? 0],
+        odds: (j['o'] as List?)
+                ?.cast<Map<String, dynamic>>()
+                .map(ExtraOdd.fromJson)
+                .toList() ??
+            const [],
+      );
 }
 
 /// Hint d'affichage UI pour un ExtraMarket.
@@ -251,10 +308,10 @@ class TeamStanding {
   final int wins;
   final int draws;
   final int losses;
-  final int goalsFor;      // soccer : buts pour | NBA : points pour
-  final int goalsAgainst;  // soccer : buts contre | NBA : points contre
-  final int points;        // soccer : pts | NBA : games behind ou win% (cf raw)
-  final String? form;      // ex: "WWDLL" (derniers matchs)
+  final int goalsFor; // soccer : buts pour | NBA : points pour
+  final int goalsAgainst; // soccer : buts contre | NBA : points contre
+  final int points; // soccer : pts | NBA : games behind ou win% (cf raw)
+  final String? form; // ex: "WWDLL" (derniers matchs)
   const TeamStanding({
     required this.position,
     required this.teamId,
@@ -339,13 +396,13 @@ class MatchOdds {
   // Soccer : ligne fixe 2.5 buts. Basket : variable (~95-115 points).
   final double? over25;
   final double? under25;
-  final double? mainOuLine;   // ex: 2.5 (soccer) ou 107.5 (NBA)
+  final double? mainOuLine; // ex: 2.5 (soccer) ou 107.5 (NBA)
   // Spread / Handicap (NBA principalement)
   // Ex: Spurs -3.5 cote 1.85 / Knicks +3.5 cote 1.95
   final double? spreadHomeOdds;
   final double? spreadAwayOdds;
-  final double? spreadHomeLine;   // ex: -3.5 (Spurs favori)
-  final double? spreadAwayLine;   // ex: +3.5 (Knicks underdog)
+  final double? spreadHomeLine; // ex: -3.5 (Spurs favori)
+  final double? spreadAwayLine; // ex: +3.5 (Knicks underdog)
   // Both Teams To Score (soccer only)
   final double? bttsYes;
   final double? bttsNo;
@@ -363,24 +420,36 @@ class MatchOdds {
   // Affichage dynamique via _ExtraMarketSection. Ordre = ordre d'affichage UI.
   final List<ExtraMarket> extraMarkets;
   // Source par section (transparence - peut differer entre marches)
-  final String? bookmaker;          // moneyline source (legacy)
-  final String? mlBookmaker;        // moneyline
-  final String? ouBookmaker;        // total OU
-  final String? spreadBookmaker;    // handicap
-  final String? ahBookmaker;        // asian handicap
+  final String? bookmaker; // moneyline source (legacy)
+  final String? mlBookmaker; // moneyline
+  final String? ouBookmaker; // total OU
+  final String? spreadBookmaker; // handicap
+  final String? ahBookmaker; // asian handicap
 
   const MatchOdds({
-    this.home, this.draw, this.away,
-    this.over25, this.under25, this.mainOuLine,
-    this.spreadHomeOdds, this.spreadAwayOdds,
-    this.spreadHomeLine, this.spreadAwayLine,
-    this.bttsYes, this.bttsNo,
-    this.htHome, this.htDraw, this.htAway,
-    this.htOver15, this.htUnder15,
+    this.home,
+    this.draw,
+    this.away,
+    this.over25,
+    this.under25,
+    this.mainOuLine,
+    this.spreadHomeOdds,
+    this.spreadAwayOdds,
+    this.spreadHomeLine,
+    this.spreadAwayLine,
+    this.bttsYes,
+    this.bttsNo,
+    this.htHome,
+    this.htDraw,
+    this.htAway,
+    this.htOver15,
+    this.htUnder15,
     this.asianHandicap = const [],
     this.extraMarkets = const [],
     this.bookmaker,
-    this.mlBookmaker, this.ouBookmaker, this.spreadBookmaker,
+    this.mlBookmaker,
+    this.ouBookmaker,
+    this.spreadBookmaker,
     this.ahBookmaker,
   });
 
@@ -396,66 +465,68 @@ class MatchOdds {
 
   /// Serialisation JSON pour le cache disque.
   Map<String, dynamic> toJson() => {
-    if (home != null) 'h': home,
-    if (draw != null) 'd': draw,
-    if (away != null) 'a': away,
-    if (over25 != null) 'ov': over25,
-    if (under25 != null) 'un': under25,
-    if (mainOuLine != null) 'mol': mainOuLine,
-    if (spreadHomeOdds != null) 'sho': spreadHomeOdds,
-    if (spreadAwayOdds != null) 'sao': spreadAwayOdds,
-    if (spreadHomeLine != null) 'shl': spreadHomeLine,
-    if (spreadAwayLine != null) 'sal': spreadAwayLine,
-    if (bttsYes != null) 'by': bttsYes,
-    if (bttsNo != null) 'bn': bttsNo,
-    if (htHome != null) 'hh': htHome,
-    if (htDraw != null) 'hd': htDraw,
-    if (htAway != null) 'ha': htAway,
-    if (htOver15 != null) 'ho': htOver15,
-    if (htUnder15 != null) 'hu': htUnder15,
-    if (asianHandicap.isNotEmpty)
-      'ah': asianHandicap.map((l) => l.toJson()).toList(),
-    if (extraMarkets.isNotEmpty)
-      'em': extraMarkets.map((m) => m.toJson()).toList(),
-    if (bookmaker != null) 'bk': bookmaker,
-    if (mlBookmaker != null) 'mb': mlBookmaker,
-    if (ouBookmaker != null) 'ob': ouBookmaker,
-    if (spreadBookmaker != null) 'sb': spreadBookmaker,
-    if (ahBookmaker != null) 'ab': ahBookmaker,
-  };
+        if (home != null) 'h': home,
+        if (draw != null) 'd': draw,
+        if (away != null) 'a': away,
+        if (over25 != null) 'ov': over25,
+        if (under25 != null) 'un': under25,
+        if (mainOuLine != null) 'mol': mainOuLine,
+        if (spreadHomeOdds != null) 'sho': spreadHomeOdds,
+        if (spreadAwayOdds != null) 'sao': spreadAwayOdds,
+        if (spreadHomeLine != null) 'shl': spreadHomeLine,
+        if (spreadAwayLine != null) 'sal': spreadAwayLine,
+        if (bttsYes != null) 'by': bttsYes,
+        if (bttsNo != null) 'bn': bttsNo,
+        if (htHome != null) 'hh': htHome,
+        if (htDraw != null) 'hd': htDraw,
+        if (htAway != null) 'ha': htAway,
+        if (htOver15 != null) 'ho': htOver15,
+        if (htUnder15 != null) 'hu': htUnder15,
+        if (asianHandicap.isNotEmpty)
+          'ah': asianHandicap.map((l) => l.toJson()).toList(),
+        if (extraMarkets.isNotEmpty)
+          'em': extraMarkets.map((m) => m.toJson()).toList(),
+        if (bookmaker != null) 'bk': bookmaker,
+        if (mlBookmaker != null) 'mb': mlBookmaker,
+        if (ouBookmaker != null) 'ob': ouBookmaker,
+        if (spreadBookmaker != null) 'sb': spreadBookmaker,
+        if (ahBookmaker != null) 'ab': ahBookmaker,
+      };
 
   factory MatchOdds.fromJson(Map<String, dynamic> j) => MatchOdds(
-    home: (j['h'] as num?)?.toDouble(),
-    draw: (j['d'] as num?)?.toDouble(),
-    away: (j['a'] as num?)?.toDouble(),
-    over25: (j['ov'] as num?)?.toDouble(),
-    under25: (j['un'] as num?)?.toDouble(),
-    mainOuLine: (j['mol'] as num?)?.toDouble(),
-    spreadHomeOdds: (j['sho'] as num?)?.toDouble(),
-    spreadAwayOdds: (j['sao'] as num?)?.toDouble(),
-    spreadHomeLine: (j['shl'] as num?)?.toDouble(),
-    spreadAwayLine: (j['sal'] as num?)?.toDouble(),
-    bttsYes: (j['by'] as num?)?.toDouble(),
-    bttsNo: (j['bn'] as num?)?.toDouble(),
-    htHome: (j['hh'] as num?)?.toDouble(),
-    htDraw: (j['hd'] as num?)?.toDouble(),
-    htAway: (j['ha'] as num?)?.toDouble(),
-    htOver15: (j['ho'] as num?)?.toDouble(),
-    htUnder15: (j['hu'] as num?)?.toDouble(),
-    asianHandicap: (j['ah'] as List?)
-        ?.cast<Map<String, dynamic>>()
-        .map(AsianHandicapLine.fromJson)
-        .toList() ?? const [],
-    extraMarkets: (j['em'] as List?)
-        ?.cast<Map<String, dynamic>>()
-        .map(ExtraMarket.fromJson)
-        .toList() ?? const [],
-    bookmaker: j['bk'] as String?,
-    mlBookmaker: j['mb'] as String?,
-    ouBookmaker: j['ob'] as String?,
-    spreadBookmaker: j['sb'] as String?,
-    ahBookmaker: j['ab'] as String?,
-  );
+        home: (j['h'] as num?)?.toDouble(),
+        draw: (j['d'] as num?)?.toDouble(),
+        away: (j['a'] as num?)?.toDouble(),
+        over25: (j['ov'] as num?)?.toDouble(),
+        under25: (j['un'] as num?)?.toDouble(),
+        mainOuLine: (j['mol'] as num?)?.toDouble(),
+        spreadHomeOdds: (j['sho'] as num?)?.toDouble(),
+        spreadAwayOdds: (j['sao'] as num?)?.toDouble(),
+        spreadHomeLine: (j['shl'] as num?)?.toDouble(),
+        spreadAwayLine: (j['sal'] as num?)?.toDouble(),
+        bttsYes: (j['by'] as num?)?.toDouble(),
+        bttsNo: (j['bn'] as num?)?.toDouble(),
+        htHome: (j['hh'] as num?)?.toDouble(),
+        htDraw: (j['hd'] as num?)?.toDouble(),
+        htAway: (j['ha'] as num?)?.toDouble(),
+        htOver15: (j['ho'] as num?)?.toDouble(),
+        htUnder15: (j['hu'] as num?)?.toDouble(),
+        asianHandicap: (j['ah'] as List?)
+                ?.cast<Map<String, dynamic>>()
+                .map(AsianHandicapLine.fromJson)
+                .toList() ??
+            const [],
+        extraMarkets: (j['em'] as List?)
+                ?.cast<Map<String, dynamic>>()
+                .map(ExtraMarket.fromJson)
+                .toList() ??
+            const [],
+        bookmaker: j['bk'] as String?,
+        mlBookmaker: j['mb'] as String?,
+        ouBookmaker: j['ob'] as String?,
+        spreadBookmaker: j['sb'] as String?,
+        ahBookmaker: j['ab'] as String?,
+      );
 
   // Cotes Double Chance calculees depuis le 1X2 (approximation sans marge).
   // 1X = 1 / (1/home + 1/draw)
@@ -473,11 +544,18 @@ class MatchOdds {
   }
 
   bool get hasAny =>
-      home != null || draw != null || away != null ||
-      over25 != null || under25 != null ||
-      spreadHomeOdds != null || spreadAwayOdds != null ||
-      bttsYes != null || bttsNo != null ||
-      htHome != null || htDraw != null || htAway != null ||
+      home != null ||
+      draw != null ||
+      away != null ||
+      over25 != null ||
+      under25 != null ||
+      spreadHomeOdds != null ||
+      spreadAwayOdds != null ||
+      bttsYes != null ||
+      bttsNo != null ||
+      htHome != null ||
+      htDraw != null ||
+      htAway != null ||
       asianHandicap.isNotEmpty ||
       extraMarkets.isNotEmpty;
 }
@@ -504,43 +582,43 @@ class StatpalService {
   /// par exemple a 72 matchs dans /leagues/2889/matches mais 0 dans le
   /// daily endpoint. Pour ne pas bloquer le splash on se limite a 6 ligues.
   static const _kQuickModePriorityLeagues = <String>[
-    '2889',   // World Cup 2026 (le + important sur la periode actuelle)
-    '2974',   // Brazil Serie A (en cours, pas en intersaison)
-    '3037',   // Premier League (au cas ou)
-    '3201',   // Saudi Pro League (en cours ete)
-    '2988',   // Cameroun Elite One (audience Plugbet)
-    '20900',  // FIFA Club World Cup Play-In (recent)
+    '2889', // World Cup 2026 (le + important sur la periode actuelle)
+    '2974', // Brazil Serie A (en cours, pas en intersaison)
+    '3037', // Premier League (au cas ou)
+    '3201', // Saudi Pro League (en cours ete)
+    '2988', // Cameroun Elite One (audience Plugbet)
+    '20900', // FIFA Club World Cup Play-In (recent)
   ];
 
   static const _featuredSoccerLeagueIds = <String>[
     // ── International majeur ──
-    '2889',   // World Cup 2026 (11.06 - 28.06.2026)
-    '2838',   // UEFA Champions League 2025/2026
-    '2840',   // UEFA Europa League 2025/2026
-    '20686',  // UEFA Europa Conference League 2025/2026
-    '3346',   // CAF Champions League 2025/2026
-    '2855',   // AFC Champions League 2025/2026
+    '2889', // World Cup 2026 (11.06 - 28.06.2026)
+    '2838', // UEFA Champions League 2025/2026
+    '2840', // UEFA Europa League 2025/2026
+    '20686', // UEFA Europa Conference League 2025/2026
+    '3346', // CAF Champions League 2025/2026
+    '2855', // AFC Champions League 2025/2026
     // ── Top 5 europeen ──
-    '3037',   // Premier League (England) 2025/2026
-    '3232',   // Primera / La Liga (Spain) 2025/2026
-    '3102',   // Serie A (Italy) 2025/2026
-    '3054',   // Ligue 1 (France) 2025/2026
-    '3062',   // Bundesliga (Germany) 2025/2026
+    '3037', // Premier League (England) 2025/2026
+    '3232', // Primera / La Liga (Spain) 2025/2026
+    '3102', // Serie A (Italy) 2025/2026
+    '3054', // Ligue 1 (France) 2025/2026
+    '3062', // Bundesliga (Germany) 2025/2026
     // ── Autres ligues populaires globalement ──
-    '2974',   // Brazil Serie A 2026 (EN COURS Jan-Dec)
-    '3141',   // Liga MX (Mexico) 2025/2026
-    '3201',   // Saudi Professional League 2025/2026
+    '2974', // Brazil Serie A 2026 (EN COURS Jan-Dec)
+    '3141', // Liga MX (Mexico) 2025/2026
+    '3201', // Saudi Professional League 2025/2026
     // ── Ligues IN-SEASON ete 2026 (compensation intersaison Europe) ──
-    '7151',   // Canadian Premier League 2026 (avr-oct 2026)
-    '3091',   // Ireland Premier League 2026 (fev-oct 2026)
-    '21042',  // Chile Copa De La Liga 2026 (mar-juin 2026)
+    '7151', // Canadian Premier League 2026 (avr-oct 2026)
+    '3091', // Ireland Premier League 2026 (fev-oct 2026)
+    '21042', // Chile Copa De La Liga 2026 (mar-juin 2026)
     // ── Afrique (audience Plugbet) ──
-    '2988',   // Cameroun Elite One 2025/2026 (marche local Plugbet)
-    '3026',   // Egypt Premier League 2025/2026
-    '3253',   // Tunisia Ligue 1 2025/2026
-    '3159',   // Nigeria Premier League 2025/2026
-    '3227',   // South Africa Premier League 2025/2026
-    '3064',   // Ghana Premier League 2025/2026
+    '2988', // Cameroun Elite One 2025/2026 (marche local Plugbet)
+    '3026', // Egypt Premier League 2025/2026
+    '3253', // Tunisia Ligue 1 2025/2026
+    '3159', // Nigeria Premier League 2025/2026
+    '3227', // South Africa Premier League 2025/2026
+    '3064', // Ghana Premier League 2025/2026
     // Retire (saisons finies, 500 silencieux jusqu'a reprise aout/nov 2026) :
     //   '3155' Eredivisie -> reprend aout 2026
     //   '3863' Senegal Ligue 1 -> reprend novembre 2026
@@ -573,8 +651,8 @@ class StatpalService {
   /// True si on a hydrate les caches memoire depuis le disque (au boot).
   /// Le splash regarde ce flag pour decider s'il peut quitter immediatement
   /// (stale-while-revalidate : on a des donnees affichables tout de suite).
-  bool get hasDiskCache => _hydratedFromDisk &&
-      (_liveCache.isNotEmpty || _dailyCache.isNotEmpty);
+  bool get hasDiskCache =>
+      _hydratedFromDisk && (_liveCache.isNotEmpty || _dailyCache.isNotEmpty);
 
   /// Hydrate les caches memoire depuis le disque (Hive). Appele AVANT le
   /// warmup reseau. Synchrone une fois StatpalDiskCache.init() termine.
@@ -585,7 +663,7 @@ class StatpalService {
     final sw = Stopwatch()..start();
     final cache = StatpalDiskCache.instance;
     int n = 0;
-    for (final sport in Sport.values) {
+    for (final sport in kStatpalSupportedSports) {
       final live = cache.getLive(sport);
       if (live != null) {
         _liveCache[sport] = live;
@@ -657,13 +735,13 @@ class StatpalService {
       final leagueIds = topLeagues.take(6).map((e) => e.key).toList();
 
       await Future.wait([
-        getLiveOdds(sport: Sport.soccer).catchError(
-            (_) => <String, MatchOdds>{}),
-        getLiveOdds(sport: Sport.basketball).catchError(
-            (_) => <String, MatchOdds>{}),
+        getLiveOdds(sport: Sport.soccer)
+            .catchError((_) => <String, MatchOdds>{}),
+        getLiveOdds(sport: Sport.basketball)
+            .catchError((_) => <String, MatchOdds>{}),
         for (final lid in leagueIds)
-          getLeagueOdds(lid, sport: Sport.soccer).catchError(
-              (_) => <String, MatchOdds>{}),
+          getLeagueOdds(lid, sport: Sport.soccer)
+              .catchError((_) => <String, MatchOdds>{}),
       ]);
       _warmedUpFull = true;
     } catch (e) {
@@ -682,7 +760,8 @@ class StatpalService {
   /// StatPal avant d'écrire les parsers de Phase 2.
   ///
   /// Exemple : `await debugRawCall('/soccer/livescores');`
-  Future<String?> debugRawCall(String path, {Map<String, String>? query}) async {
+  Future<String?> debugRawCall(String path,
+      {Map<String, String>? query}) async {
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'statpal_proxy',
@@ -717,7 +796,8 @@ class StatpalService {
   Future<List<BettingMatch>> _fetchLive(Sport sport) async {
     final cached = _liveCache[sport];
     final cachedAt = _liveCacheAt[sport];
-    if (cached != null && cachedAt != null &&
+    if (cached != null &&
+        cachedAt != null &&
         DateTime.now().difference(cachedAt) < _cacheTtl) {
       return cached;
     }
@@ -767,7 +847,8 @@ class StatpalService {
       {bool quickMode = false}) async {
     final cached = _dailyCache[sport];
     final cachedAt = _dailyCacheAt[sport];
-    if (cached != null && cachedAt != null &&
+    if (cached != null &&
+        cachedAt != null &&
         DateTime.now().difference(cachedAt) < _cacheTtl) {
       return cached;
     }
@@ -802,14 +883,24 @@ class StatpalService {
     try {
       final res = await Supabase.instance.client.functions.invoke(
         'statpal_proxy',
-        body: {'path': path, 'query': {'offset': '0'}},
+        body: {
+          'path': path,
+          'query': {'offset': '0'}
+        },
       );
       if (res.status == 200) {
         final json = _decodeJson(res.data);
         if (json != null) {
-          today = _parseMatchesPayload(json, [
-            'daily_matches', 'scores', 'matches', 'live_matches', 'livescore',
-          ], sport);
+          today = _parseMatchesPayload(
+              json,
+              [
+                'daily_matches',
+                'scores',
+                'matches',
+                'live_matches',
+                'livescore',
+              ],
+              sport);
         }
       }
     } catch (e) {
@@ -866,15 +957,16 @@ class StatpalService {
     final topLeagues = byLeague.entries.toList()
       ..sort((a, b) => b.value.compareTo(a.value));
     // Top 10 du jour + ligues featured (CDM, etc.) toujours incluses
-    final featured = sport == Sport.soccer ? _featuredSoccerLeagueIds : const [];
+    final featured =
+        sport == Sport.soccer ? _featuredSoccerLeagueIds : const [];
     final toFetch = {
       ...topLeagues.take(10).map((e) => e.key),
       ...featured,
     }.toList();
 
     // ── 3. Fetch tous les matchs de ces ligues (en parallele) ──
-    final futures = toFetch.map(
-        (lid) => getLeagueAllMatches(lid, sport: sport));
+    final futures =
+        toFetch.map((lid) => getLeagueAllMatches(lid, sport: sport));
     final results = await Future.wait(futures);
 
     // ── 4. Merge today + ligues. Dedupe par id. Filtre matchs > 30j passe ──
@@ -885,7 +977,7 @@ class StatpalService {
     }
     for (final list in results) {
       for (final m in list) {
-        if (m.startTime.isBefore(cutoff)) continue;   // skip matchs passes
+        if (m.startTime.isBefore(cutoff)) continue; // skip matchs passes
         byId.putIfAbsent(m.id, () => m);
       }
     }
@@ -966,7 +1058,8 @@ class StatpalService {
   BettingMatch _parseNbaMatch(Map m, String? leagueId, String leagueName) {
     final home = (m['home'] as Map?) ?? const {};
     final away = (m['away'] as Map?) ?? const {};
-    final id = m['id']?.toString() ?? 'nba_${DateTime.now().microsecondsSinceEpoch}';
+    final id =
+        m['id']?.toString() ?? 'nba_${DateTime.now().microsecondsSinceEpoch}';
     final date = m['date']?.toString() ?? '';
     final time = m['time']?.toString() ?? '';
     final status = m['status']?.toString() ?? '';
@@ -979,8 +1072,8 @@ class StatpalService {
     final isFinished = statusLower.contains('finished') ||
         statusLower.contains('ft') ||
         statusLower.contains('ended');
-    final isNotStarted = statusLower.contains('not started') ||
-        statusLower.isEmpty;
+    final isNotStarted =
+        statusLower.contains('not started') || statusLower.isEmpty;
     final isLive = !isFinished && !isNotStarted && homeScore != null;
 
     final odds = _parseNbaOddsObject(m['odds']);
@@ -992,8 +1085,11 @@ class StatpalService {
       final d = date.split('.');
       final t = time.split(':');
       startTime = DateTime.utc(
-        int.parse(d[2]), int.parse(d[1]), int.parse(d[0]),
-        int.parse(t[0]), int.parse(t[1]),
+        int.parse(d[2]),
+        int.parse(d[1]),
+        int.parse(d[0]),
+        int.parse(t[0]),
+        int.parse(t[1]),
       );
     } catch (_) {
       startTime = DateTime.now().toUtc();
@@ -1033,8 +1129,7 @@ class StatpalService {
 
     Map? pickActiveBm(List bms) {
       for (final b in bms) {
-        if (b is Map &&
-            (b['stop']?.toString() ?? '').toLowerCase() != 'true') {
+        if (b is Map && (b['stop']?.toString() ?? '').toLowerCase() != 'true') {
           return b;
         }
       }
@@ -1045,9 +1140,7 @@ class StatpalService {
       if (mkt is! Map) continue;
       final value = (mkt['value']?.toString() ?? '').trim().toLowerCase();
       final bmRaw = mkt['bookmaker'];
-      final bms = bmRaw is List
-          ? bmRaw
-          : (bmRaw is Map ? [bmRaw] : const []);
+      final bms = bmRaw is List ? bmRaw : (bmRaw is Map ? [bmRaw] : const []);
       if (bms.isEmpty) continue;
 
       // Moneyline pure (Home/Away) - STRICT match du full game uniquement.
@@ -1056,9 +1149,8 @@ class StatpalService {
         final activeBm = pickActiveBm(bms);
         if (activeBm == null) continue;
         final oddRaw = activeBm['odd'];
-        final oddList = oddRaw is List
-            ? oddRaw
-            : (oddRaw is Map ? [oddRaw] : const []);
+        final oddList =
+            oddRaw is List ? oddRaw : (oddRaw is Map ? [oddRaw] : const []);
         for (final o in oddList) {
           if (o is! Map) continue;
           final n = (o['name']?.toString() ?? '').toLowerCase();
@@ -1074,14 +1166,12 @@ class StatpalService {
           mlDone = true;
         }
       } else if (!ouDone &&
-          (value == 'totals' || value == 'total' ||
-           value == 'over/under')) {
+          (value == 'totals' || value == 'total' || value == 'over/under')) {
         final activeBm = pickActiveBm(bms);
         if (activeBm == null) continue;
         final totRaw = activeBm['total'];
-        final totals = totRaw is List
-            ? totRaw
-            : (totRaw is Map ? [totRaw] : const []);
+        final totals =
+            totRaw is List ? totRaw : (totRaw is Map ? [totRaw] : const []);
         for (final t in totals) {
           if (t is! Map) continue;
           if ((t['ismain']?.toString() ?? '').toLowerCase() != 'true') {
@@ -1089,9 +1179,8 @@ class StatpalService {
           }
           mainLine = double.tryParse(t['name']?.toString() ?? '');
           final oddRaw = t['odd'];
-          final oddList = oddRaw is List
-              ? oddRaw
-              : (oddRaw is Map ? [oddRaw] : const []);
+          final oddList =
+              oddRaw is List ? oddRaw : (oddRaw is Map ? [oddRaw] : const []);
           for (final o in oddList) {
             if (o is! Map) continue;
             final n = (o['name']?.toString() ?? '').toLowerCase();
@@ -1108,15 +1197,13 @@ class StatpalService {
           ouBm = activeBm['name']?.toString();
           ouDone = true;
         }
-      } else if (!spDone &&
-          (value == 'spread' || value == 'handicap')) {
+      } else if (!spDone && (value == 'spread' || value == 'handicap')) {
         // Spread classique : 1 seule ligne (la main)
         final activeBm = pickActiveBm(bms);
         if (activeBm == null) continue;
         final hcRaw = activeBm['handicap'];
-        final handicaps = hcRaw is List
-            ? hcRaw
-            : (hcRaw is Map ? [hcRaw] : const []);
+        final handicaps =
+            hcRaw is List ? hcRaw : (hcRaw is Map ? [hcRaw] : const []);
         for (final h in handicaps) {
           if (h is! Map) continue;
           if ((h['ismain']?.toString() ?? '').toLowerCase() != 'true') {
@@ -1126,9 +1213,8 @@ class StatpalService {
           spHomeLine = double.tryParse(raw);
           if (spHomeLine != null) spAwayLine = -spHomeLine;
           final oddRaw = h['odd'];
-          final oddList = oddRaw is List
-              ? oddRaw
-              : (oddRaw is Map ? [oddRaw] : const []);
+          final oddList =
+              oddRaw is List ? oddRaw : (oddRaw is Map ? [oddRaw] : const []);
           for (final o in oddList) {
             if (o is! Map) continue;
             final n = (o['name']?.toString() ?? '').toLowerCase();
@@ -1151,14 +1237,14 @@ class StatpalService {
         if (activeBm == null) continue;
         ahBm ??= activeBm['name']?.toString();
         final hcRaw = activeBm['handicap'];
-        final handicaps = hcRaw is List
-            ? hcRaw
-            : (hcRaw is Map ? [hcRaw] : const []);
+        final handicaps =
+            hcRaw is List ? hcRaw : (hcRaw is Map ? [hcRaw] : const []);
         for (final hc in handicaps) {
           if (hc is! Map) continue;
           if ((hc['stop']?.toString().toLowerCase()) == 'true') continue;
           final rawLine = hc['name']?.toString() ?? '';
-          final line = double.tryParse(rawLine.replaceAll(RegExp(r'[^0-9.\-]'), ''));
+          final line =
+              double.tryParse(rawLine.replaceAll(RegExp(r'[^0-9.\-]'), ''));
           if (line == null) continue;
           // Skip quart-handicaps (NBA peut avoir 0.25, 0.75, etc.)
           final frac = (line * 100).abs() % 100;
@@ -1210,12 +1296,17 @@ class StatpalService {
       return a.line.compareTo(b.line);
     });
     // Tri extras
-    extraList.sort((x, y) => _extraMarketPriority(x.code)
-        .compareTo(_extraMarketPriority(y.code)));
+    extraList.sort((x, y) =>
+        _extraMarketPriority(x.code).compareTo(_extraMarketPriority(y.code)));
 
-    final allNull = home == null && away == null && over == null &&
-        under == null && spHome == null && spAway == null &&
-        ahLines.isEmpty && extraList.isEmpty;
+    final allNull = home == null &&
+        away == null &&
+        over == null &&
+        under == null &&
+        spHome == null &&
+        spAway == null &&
+        ahLines.isEmpty &&
+        extraList.isEmpty;
     if (allNull) return null;
 
     return MatchOdds(
@@ -1230,7 +1321,7 @@ class StatpalService {
       spreadAwayLine: spAwayLine,
       asianHandicap: ahLines,
       extraMarkets: extraList,
-      bookmaker: mlBm,         // legacy fallback
+      bookmaker: mlBm, // legacy fallback
       mlBookmaker: mlBm,
       ouBookmaker: ouBm,
       spreadBookmaker: spBm,
@@ -1277,15 +1368,16 @@ class StatpalService {
     return result;
   }
 
-  BettingMatch _parseSingleMatch(Map m, Sport sport, String? leagueId, String leagueName) {
+  BettingMatch _parseSingleMatch(
+      Map m, Sport sport, String? leagueId, String leagueName) {
     final home = (m['home'] as Map?) ?? const {};
     final away = (m['away'] as Map?) ?? const {};
     // v2 utilise main_id ; v1 utilisait id. On accepte les 2.
-    final id = m['main_id']?.toString()
-        ?? m['id']?.toString()
-        ?? 'sp_${DateTime.now().microsecondsSinceEpoch}';
-    final date = m['date']?.toString() ?? '';   // ex "01.06.2026"
-    final time = m['time']?.toString() ?? '';   // ex "19:00"
+    final id = m['main_id']?.toString() ??
+        m['id']?.toString() ??
+        'sp_${DateTime.now().microsecondsSinceEpoch}';
+    final date = m['date']?.toString() ?? ''; // ex "01.06.2026"
+    final time = m['time']?.toString() ?? ''; // ex "19:00"
     final status = m['status']?.toString() ?? '';
 
     final homeScore = int.tryParse(home['goals']?.toString() ?? '');
@@ -1305,8 +1397,11 @@ class StatpalService {
       final d = date.split('.');
       final t = time.split(':');
       startTime = DateTime.utc(
-        int.parse(d[2]), int.parse(d[1]), int.parse(d[0]),
-        int.parse(t[0]), int.parse(t[1]),
+        int.parse(d[2]),
+        int.parse(d[1]),
+        int.parse(d[0]),
+        int.parse(t[0]),
+        int.parse(t[1]),
       );
     } catch (_) {
       startTime = DateTime.now().toUtc();
@@ -1342,12 +1437,14 @@ class StatpalService {
   }
 
   /// Matchs en direct (score live) pour un sport donne.
-  Future<List<BettingMatch>> getLiveMatches({Sport sport = Sport.soccer}) async {
+  Future<List<BettingMatch>> getLiveMatches(
+      {Sport sport = Sport.soccer}) async {
     return _fetchLive(sport);
   }
 
   /// Matchs du jour (hors live) pour un sport donne.
-  Future<List<BettingMatch>> getTodayMatches({Sport sport = Sport.soccer}) async {
+  Future<List<BettingMatch>> getTodayMatches(
+      {Sport sport = Sport.soccer}) async {
     final all = await _fetchDaily(sport);
     return all.where((m) => !m.isLive).toList();
   }
@@ -1358,7 +1455,6 @@ class StatpalService {
     required bool isLive,
     Sport sport = Sport.soccer,
   }) async {
-
     String? leagueId;
     for (final list in [_liveCache[sport], _dailyCache[sport]]) {
       if (list == null) continue;
@@ -1408,9 +1504,8 @@ class StatpalService {
     String matchId, {
     required bool isLive,
   }) {
-    final candidateRoots = isLive
-        ? ['live_odds', 'live_matches', 'livescore']
-        : ['prematch_odds'];
+    final candidateRoots =
+        isLive ? ['live_odds', 'live_matches', 'livescore'] : ['prematch_odds'];
     dynamic root;
     for (final k in candidateRoots) {
       if (json[k] is Map) {
@@ -1458,17 +1553,15 @@ class StatpalService {
       if (market is! Map) continue;
       final marketName = (market['name']?.toString() ?? '').toLowerCase();
       final bmRaw = market['bookmaker'];
-      final bookmakers = bmRaw is List
-          ? bmRaw
-          : (bmRaw is Map ? [bmRaw] : const []);
+      final bookmakers =
+          bmRaw is List ? bmRaw : (bmRaw is Map ? [bmRaw] : const []);
       if (bookmakers.isEmpty) continue;
       final firstBm = bookmakers.first;
       if (firstBm is! Map) continue;
       bookmakerName ??= firstBm['name']?.toString();
       final oddRaw = firstBm['odd'];
-      final values = oddRaw is List
-          ? oddRaw
-          : (oddRaw is Map ? [oddRaw] : const []);
+      final values =
+          oddRaw is List ? oddRaw : (oddRaw is Map ? [oddRaw] : const []);
 
       final isHalfTime = marketName.contains('1st half') ||
           marketName.contains('half time') ||
@@ -1512,7 +1605,9 @@ class StatpalService {
           if (v is! Map) continue;
           final n = (v['name']?.toString() ?? '').toLowerCase();
           final handicap = v['handicap']?.toString();
-          if (handicap != null && handicap.isNotEmpty && handicap != wantedHandicap) {
+          if (handicap != null &&
+              handicap.isNotEmpty &&
+              handicap != wantedHandicap) {
             continue;
           }
           final val = double.tryParse(v['value']?.toString() ?? '');
@@ -1543,7 +1638,8 @@ class StatpalService {
           }
         }
       } else if (marketName.contains('double chance') &&
-          !marketName.contains('half') && !marketName.contains('quarter')) {
+          !marketName.contains('half') &&
+          !marketName.contains('quarter')) {
         // Double Chance natif (preferer aux derives 1X2). Skip si HT/Q variants.
         // Pas integre en V1 - on garde le calcul derivé existant.
         continue;
@@ -1553,15 +1649,15 @@ class StatpalService {
         // V1 : on garde uniquement entiers + demi-lines, skip les quart (-0.25, -0.75)
         ahBookmaker ??= firstBm['name']?.toString();
         final hcRaw = firstBm['handicap'];
-        final handicaps = hcRaw is List
-            ? hcRaw
-            : (hcRaw is Map ? [hcRaw] : const []);
+        final handicaps =
+            hcRaw is List ? hcRaw : (hcRaw is Map ? [hcRaw] : const []);
         for (final hc in handicaps) {
           if (hc is! Map) continue;
           if ((hc['stop']?.toString().toLowerCase()) == 'true') continue;
           final rawLine = hc['name']?.toString() ?? '';
           // Normalisation : "+0" -> 0.0, "-1.25" -> 1.25
-          final line = double.tryParse(rawLine.replaceAll(RegExp(r'[^0-9.\-]'), ''));
+          final line =
+              double.tryParse(rawLine.replaceAll(RegExp(r'[^0-9.\-]'), ''));
           if (line == null) continue;
           // Skip quart-handicaps (settlement incompatible V1)
           final frac = (line * 100).abs() % 100;
@@ -1607,8 +1703,8 @@ class StatpalService {
     }
 
     // Tri des extras : marches "premium" en premier (Correct Score, HT/FT...)
-    extraList.sort((x, y) => _extraMarketPriority(x.code)
-        .compareTo(_extraMarketPriority(y.code)));
+    extraList.sort((x, y) =>
+        _extraMarketPriority(x.code).compareTo(_extraMarketPriority(y.code)));
 
     final odds_ = MatchOdds(
       home: h, draw: d, away: a,
@@ -1637,107 +1733,215 @@ class StatpalService {
   // marches non listes, le builder genere un code par defaut (kebab-case).
   static const Map<String, _ExtraMeta> _kExtraCatalog = {
     // === SOCCER ===
-    'correct score':              _ExtraMeta('correct_score', 'Score exact', 'Pronostic du score final', ExtraMarketLayout.grid),
-    'correct score 1st half':     _ExtraMeta('correct_score_ht', 'Score exact mi-temps', 'Score a la fin de la 1ere mi-temps', ExtraMarketLayout.grid),
-    'ht/ft double':               _ExtraMeta('htft_double', 'Mi-temps / Fin de match', 'Mene a la pause + gagne au final', ExtraMarketLayout.grid),
-    'ht/ft (including ot)':       _ExtraMeta('htft_ot', 'Mi-temps / Fin de match (avec prol.)', null, ExtraMarketLayout.grid),
-    'odd/even':                   _ExtraMeta('odd_even', 'Pair ou impair', 'Nombre total de buts', ExtraMarketLayout.row2),
-    'odd/even 1st half':          _ExtraMeta('odd_even_ht', 'Pair / impair mi-temps', null, ExtraMarketLayout.row2),
-    'odd/even (2nd half)':        _ExtraMeta('odd_even_2h', 'Pair / impair 2e mi-temps', null, ExtraMarketLayout.row2),
-    'home odd/even':              _ExtraMeta('odd_even_home', 'Pair / impair domicile', null, ExtraMarketLayout.row2),
-    'away odd/even':              _ExtraMeta('odd_even_away', 'Pair / impair exterieur', null, ExtraMarketLayout.row2),
-    'clean sheet - home':         _ExtraMeta('clean_sheet_home', 'Clean sheet domicile', 'Domicile n\'encaisse aucun but', ExtraMarketLayout.row2),
-    'clean sheet - away':         _ExtraMeta('clean_sheet_away', 'Clean sheet exterieur', 'Exterieur n\'encaisse aucun but', ExtraMarketLayout.row2),
-    'win to nil - home':          _ExtraMeta('win_to_nil_home', 'Domicile gagne sans encaisser', null, ExtraMarketLayout.row2),
-    'win to nil - away':          _ExtraMeta('win_to_nil_away', 'Exterieur gagne sans encaisser', null, ExtraMarketLayout.row2),
-    'win to nil':                 _ExtraMeta('win_to_nil', 'Gagne sans encaisser', null, ExtraMarketLayout.row3),
-    'win both halves':            _ExtraMeta('win_both_halves', 'Gagne les 2 mi-temps', null, ExtraMarketLayout.row2),
-    'to win either half':         _ExtraMeta('win_either_half', 'Gagne au moins une mi-temps', null, ExtraMarketLayout.row2),
-    'highest scoring half':       _ExtraMeta('highest_half', 'Mi-temps la plus prolifique', null, ExtraMarketLayout.row3),
-    'team to score first':        _ExtraMeta('team_score_first', 'Premiere equipe a marquer', null, ExtraMarketLayout.row3),
-    'team to score last':         _ExtraMeta('team_score_last', 'Derniere equipe a marquer', null, ExtraMarketLayout.row3),
-    'first goal method':          _ExtraMeta('first_goal_method', 'Methode du 1er but', 'Penalty / coup-franc / tete / etc.', ExtraMarketLayout.chips),
-    'own goal':                   _ExtraMeta('own_goal', 'But contre son camp', null, ExtraMarketLayout.row2),
-    'exact goals number':         _ExtraMeta('exact_goals', 'Nombre exact de buts', null, ExtraMarketLayout.chips),
-    '1st half exact goals number':_ExtraMeta('exact_goals_ht', 'Buts exacts mi-temps', null, ExtraMarketLayout.chips),
-    '2nd half exact goals number':_ExtraMeta('exact_goals_2h', 'Buts exacts 2e mi-temps', null, ExtraMarketLayout.chips),
-    'home team exact goals number':_ExtraMeta('exact_goals_home', 'Buts exacts domicile', null, ExtraMarketLayout.chips),
-    'away team exact goals number':_ExtraMeta('exact_goals_away', 'Buts exacts exterieur', null, ExtraMarketLayout.chips),
-    'home team total goals(1st half)':_ExtraMeta('team_total_home_ht', 'Total buts domicile (MT)', null, ExtraMarketLayout.row2),
-    'away team total goals(1st half)':_ExtraMeta('team_total_away_ht', 'Total buts exterieur (MT)', null, ExtraMarketLayout.row2),
-    'home team total goals(2nd half)':_ExtraMeta('team_total_home_2h', 'Total buts domicile (2e MT)', null, ExtraMarketLayout.row2),
-    'away team total goals(2nd half)':_ExtraMeta('team_total_away_2h', 'Total buts exterieur (2e MT)', null, ExtraMarketLayout.row2),
-    'total - home':               _ExtraMeta('total_home', 'Total buts domicile (match)', null, ExtraMarketLayout.row2),
-    'total - away':               _ExtraMeta('total_away', 'Total buts exterieur (match)', null, ExtraMarketLayout.row2),
-    'over/under 1st half':        _ExtraMeta('ou_ht', 'Total buts mi-temps', null, ExtraMarketLayout.row2),
-    'over/under 2nd half':        _ExtraMeta('ou_2h', 'Total buts 2e mi-temps', null, ExtraMarketLayout.row2),
-    'winning margin':             _ExtraMeta('winning_margin', 'Ecart de victoire', null, ExtraMarketLayout.chips),
-    'scoring draw':               _ExtraMeta('scoring_draw', 'Match nul avec buts', null, ExtraMarketLayout.row2),
-    'home team will score in both halves':_ExtraMeta('home_score_both', 'Domicile marque dans les 2 MT', null, ExtraMarketLayout.row2),
-    'away team will score in both halves':_ExtraMeta('away_score_both', 'Exterieur marque dans les 2 MT', null, ExtraMarketLayout.row2),
-    'to score in both halves':    _ExtraMeta('btts_both_halves', 'BTTS dans les 2 MT', null, ExtraMarketLayout.row2),
-    'to score in both halves by teams':_ExtraMeta('btts_both_halves_team', 'Equipe marque dans les 2 MT', null, ExtraMarketLayout.row3),
-    'both teams to score - 1st half':_ExtraMeta('btts_ht', 'BTTS mi-temps', null, ExtraMarketLayout.row2),
-    'both teams to score - 2nd half':_ExtraMeta('btts_2h', 'BTTS 2e mi-temps', null, ExtraMarketLayout.row2),
-    'home team score a goal':     _ExtraMeta('home_score', 'Domicile marque', null, ExtraMarketLayout.row2),
-    'away team score a goal':     _ExtraMeta('away_score', 'Exterieur marque', null, ExtraMarketLayout.row2),
-    'first 10 min winner':        _ExtraMeta('first10_winner', 'Gagnant 10 premieres min', null, ExtraMarketLayout.row3),
-    '1x2 - 15 minutes':           _ExtraMeta('1x2_15', '1X2 - 15 minutes', null, ExtraMarketLayout.row3),
-    '1x2 - 30 minutes':           _ExtraMeta('1x2_30', '1X2 - 30 minutes', null, ExtraMarketLayout.row3),
-    '1x2 - 60 minutes':           _ExtraMeta('1x2_60', '1X2 - 60 minutes', null, ExtraMarketLayout.row3),
-    '1x2 - 75 minutes':           _ExtraMeta('1x2_75', '1X2 - 75 minutes', null, ExtraMarketLayout.row3),
-    '1x2 2nd half':               _ExtraMeta('1x2_2h', '1X2 2e mi-temps', null, ExtraMarketLayout.row3),
-    'first team to score (3 way) 1st half':_ExtraMeta('first_score_ht', '1ere equipe a marquer (MT)', null, ExtraMarketLayout.row3),
-    'handicap result':            _ExtraMeta('handicap_eu', 'Handicap europeen', null, ExtraMarketLayout.row3),
-    'handicap result 1st half':   _ExtraMeta('handicap_eu_ht', 'Handicap europeen MT', null, ExtraMarketLayout.row3),
-    'european handicap (2nd half)':_ExtraMeta('handicap_eu_2h', 'Handicap europeen 2e MT', null, ExtraMarketLayout.row3),
-    'asian handicap (2nd half)':  _ExtraMeta('ah_2h', 'Handicap asiatique 2e MT', null, ExtraMarketLayout.chips),
-    'asian handicap first half':  _ExtraMeta('ah_ht', 'Handicap asiatique MT', null, ExtraMarketLayout.chips),
-    'goal line':                  _ExtraMeta('goal_line', 'Goal line (asiatique)', null, ExtraMarketLayout.chips),
-    'goal line (1st half)':       _ExtraMeta('goal_line_ht', 'Goal line MT', null, ExtraMarketLayout.chips),
-    'results/both teams to score':_ExtraMeta('result_btts', 'Resultat + BTTS', null, ExtraMarketLayout.grid),
-    'result/total goals':         _ExtraMeta('result_total', 'Resultat + Total buts', null, ExtraMarketLayout.grid),
-    'result/total goals (1st half)':_ExtraMeta('result_total_ht', 'Resultat + Total (MT)', null, ExtraMarketLayout.grid),
-    'total goals/both teams to score':_ExtraMeta('total_btts', 'Total buts + BTTS', null, ExtraMarketLayout.grid),
-    'anytime goal scorer':        _ExtraMeta('any_scorer', 'Buteur dans le match', null, ExtraMarketLayout.chips),
-    'first goal scorer':          _ExtraMeta('first_scorer', 'Premier buteur', null, ExtraMarketLayout.chips),
-    'last goal scorer':           _ExtraMeta('last_scorer', 'Dernier buteur', null, ExtraMarketLayout.chips),
+    'correct score': _ExtraMeta('correct_score', 'Score exact',
+        'Pronostic du score final', ExtraMarketLayout.grid),
+    'correct score 1st half': _ExtraMeta(
+        'correct_score_ht',
+        'Score exact mi-temps',
+        'Score a la fin de la 1ere mi-temps',
+        ExtraMarketLayout.grid),
+    'ht/ft double': _ExtraMeta('htft_double', 'Mi-temps / Fin de match',
+        'Mene a la pause + gagne au final', ExtraMarketLayout.grid),
+    'ht/ft (including ot)': _ExtraMeta('htft_ot',
+        'Mi-temps / Fin de match (avec prol.)', null, ExtraMarketLayout.grid),
+    'odd/even': _ExtraMeta('odd_even', 'Pair ou impair', 'Nombre total de buts',
+        ExtraMarketLayout.row2),
+    'odd/even 1st half': _ExtraMeta(
+        'odd_even_ht', 'Pair / impair mi-temps', null, ExtraMarketLayout.row2),
+    'odd/even (2nd half)': _ExtraMeta('odd_even_2h',
+        'Pair / impair 2e mi-temps', null, ExtraMarketLayout.row2),
+    'home odd/even': _ExtraMeta('odd_even_home', 'Pair / impair domicile', null,
+        ExtraMarketLayout.row2),
+    'away odd/even': _ExtraMeta('odd_even_away', 'Pair / impair exterieur',
+        null, ExtraMarketLayout.row2),
+    'clean sheet - home': _ExtraMeta('clean_sheet_home', 'Clean sheet domicile',
+        'Domicile n\'encaisse aucun but', ExtraMarketLayout.row2),
+    'clean sheet - away': _ExtraMeta(
+        'clean_sheet_away',
+        'Clean sheet exterieur',
+        'Exterieur n\'encaisse aucun but',
+        ExtraMarketLayout.row2),
+    'win to nil - home': _ExtraMeta('win_to_nil_home',
+        'Domicile gagne sans encaisser', null, ExtraMarketLayout.row2),
+    'win to nil - away': _ExtraMeta('win_to_nil_away',
+        'Exterieur gagne sans encaisser', null, ExtraMarketLayout.row2),
+    'win to nil': _ExtraMeta(
+        'win_to_nil', 'Gagne sans encaisser', null, ExtraMarketLayout.row3),
+    'win both halves': _ExtraMeta('win_both_halves', 'Gagne les 2 mi-temps',
+        null, ExtraMarketLayout.row2),
+    'to win either half': _ExtraMeta('win_either_half',
+        'Gagne au moins une mi-temps', null, ExtraMarketLayout.row2),
+    'highest scoring half': _ExtraMeta('highest_half',
+        'Mi-temps la plus prolifique', null, ExtraMarketLayout.row3),
+    'team to score first': _ExtraMeta('team_score_first',
+        'Premiere equipe a marquer', null, ExtraMarketLayout.row3),
+    'team to score last': _ExtraMeta('team_score_last',
+        'Derniere equipe a marquer', null, ExtraMarketLayout.row3),
+    'first goal method': _ExtraMeta('first_goal_method', 'Methode du 1er but',
+        'Penalty / coup-franc / tete / etc.', ExtraMarketLayout.chips),
+    'own goal': _ExtraMeta(
+        'own_goal', 'But contre son camp', null, ExtraMarketLayout.row2),
+    'exact goals number': _ExtraMeta(
+        'exact_goals', 'Nombre exact de buts', null, ExtraMarketLayout.chips),
+    '1st half exact goals number': _ExtraMeta('exact_goals_ht',
+        'Buts exacts mi-temps', null, ExtraMarketLayout.chips),
+    '2nd half exact goals number': _ExtraMeta('exact_goals_2h',
+        'Buts exacts 2e mi-temps', null, ExtraMarketLayout.chips),
+    'home team exact goals number': _ExtraMeta('exact_goals_home',
+        'Buts exacts domicile', null, ExtraMarketLayout.chips),
+    'away team exact goals number': _ExtraMeta('exact_goals_away',
+        'Buts exacts exterieur', null, ExtraMarketLayout.chips),
+    'home team total goals(1st half)': _ExtraMeta('team_total_home_ht',
+        'Total buts domicile (MT)', null, ExtraMarketLayout.row2),
+    'away team total goals(1st half)': _ExtraMeta('team_total_away_ht',
+        'Total buts exterieur (MT)', null, ExtraMarketLayout.row2),
+    'home team total goals(2nd half)': _ExtraMeta('team_total_home_2h',
+        'Total buts domicile (2e MT)', null, ExtraMarketLayout.row2),
+    'away team total goals(2nd half)': _ExtraMeta('team_total_away_2h',
+        'Total buts exterieur (2e MT)', null, ExtraMarketLayout.row2),
+    'total - home': _ExtraMeta('total_home', 'Total buts domicile (match)',
+        null, ExtraMarketLayout.row2),
+    'total - away': _ExtraMeta('total_away', 'Total buts exterieur (match)',
+        null, ExtraMarketLayout.row2),
+    'over/under 1st half': _ExtraMeta(
+        'ou_ht', 'Total buts mi-temps', null, ExtraMarketLayout.row2),
+    'over/under 2nd half': _ExtraMeta(
+        'ou_2h', 'Total buts 2e mi-temps', null, ExtraMarketLayout.row2),
+    'winning margin': _ExtraMeta(
+        'winning_margin', 'Ecart de victoire', null, ExtraMarketLayout.chips),
+    'scoring draw': _ExtraMeta(
+        'scoring_draw', 'Match nul avec buts', null, ExtraMarketLayout.row2),
+    'home team will score in both halves': _ExtraMeta('home_score_both',
+        'Domicile marque dans les 2 MT', null, ExtraMarketLayout.row2),
+    'away team will score in both halves': _ExtraMeta('away_score_both',
+        'Exterieur marque dans les 2 MT', null, ExtraMarketLayout.row2),
+    'to score in both halves': _ExtraMeta(
+        'btts_both_halves', 'BTTS dans les 2 MT', null, ExtraMarketLayout.row2),
+    'to score in both halves by teams': _ExtraMeta('btts_both_halves_team',
+        'Equipe marque dans les 2 MT', null, ExtraMarketLayout.row3),
+    'both teams to score - 1st half':
+        _ExtraMeta('btts_ht', 'BTTS mi-temps', null, ExtraMarketLayout.row2),
+    'both teams to score - 2nd half':
+        _ExtraMeta('btts_2h', 'BTTS 2e mi-temps', null, ExtraMarketLayout.row2),
+    'home team score a goal': _ExtraMeta(
+        'home_score', 'Domicile marque', null, ExtraMarketLayout.row2),
+    'away team score a goal': _ExtraMeta(
+        'away_score', 'Exterieur marque', null, ExtraMarketLayout.row2),
+    'first 10 min winner': _ExtraMeta('first10_winner',
+        'Gagnant 10 premieres min', null, ExtraMarketLayout.row3),
+    '1x2 - 15 minutes':
+        _ExtraMeta('1x2_15', '1X2 - 15 minutes', null, ExtraMarketLayout.row3),
+    '1x2 - 30 minutes':
+        _ExtraMeta('1x2_30', '1X2 - 30 minutes', null, ExtraMarketLayout.row3),
+    '1x2 - 60 minutes':
+        _ExtraMeta('1x2_60', '1X2 - 60 minutes', null, ExtraMarketLayout.row3),
+    '1x2 - 75 minutes':
+        _ExtraMeta('1x2_75', '1X2 - 75 minutes', null, ExtraMarketLayout.row3),
+    '1x2 2nd half':
+        _ExtraMeta('1x2_2h', '1X2 2e mi-temps', null, ExtraMarketLayout.row3),
+    'first team to score (3 way) 1st half': _ExtraMeta('first_score_ht',
+        '1ere equipe a marquer (MT)', null, ExtraMarketLayout.row3),
+    'handicap result': _ExtraMeta(
+        'handicap_eu', 'Handicap europeen', null, ExtraMarketLayout.row3),
+    'handicap result 1st half': _ExtraMeta(
+        'handicap_eu_ht', 'Handicap europeen MT', null, ExtraMarketLayout.row3),
+    'european handicap (2nd half)': _ExtraMeta('handicap_eu_2h',
+        'Handicap europeen 2e MT', null, ExtraMarketLayout.row3),
+    'asian handicap (2nd half)': _ExtraMeta(
+        'ah_2h', 'Handicap asiatique 2e MT', null, ExtraMarketLayout.chips),
+    'asian handicap first half': _ExtraMeta(
+        'ah_ht', 'Handicap asiatique MT', null, ExtraMarketLayout.chips),
+    'goal line': _ExtraMeta(
+        'goal_line', 'Goal line (asiatique)', null, ExtraMarketLayout.chips),
+    'goal line (1st half)': _ExtraMeta(
+        'goal_line_ht', 'Goal line MT', null, ExtraMarketLayout.chips),
+    'results/both teams to score': _ExtraMeta(
+        'result_btts', 'Resultat + BTTS', null, ExtraMarketLayout.grid),
+    'result/total goals': _ExtraMeta(
+        'result_total', 'Resultat + Total buts', null, ExtraMarketLayout.grid),
+    'result/total goals (1st half)': _ExtraMeta('result_total_ht',
+        'Resultat + Total (MT)', null, ExtraMarketLayout.grid),
+    'total goals/both teams to score': _ExtraMeta(
+        'total_btts', 'Total buts + BTTS', null, ExtraMarketLayout.grid),
+    'anytime goal scorer': _ExtraMeta(
+        'any_scorer', 'Buteur dans le match', null, ExtraMarketLayout.chips),
+    'first goal scorer': _ExtraMeta(
+        'first_scorer', 'Premier buteur', null, ExtraMarketLayout.chips),
+    'last goal scorer': _ExtraMeta(
+        'last_scorer', 'Dernier buteur', null, ExtraMarketLayout.chips),
 
     // === NBA (V1) ===
-    '3way result':                _ExtraMeta('3way', '3 voies (avec nul)', 'Inclut la possibilite d\'un match nul fin de temps reglementaire', ExtraMarketLayout.row3),
-    '1st half 3way result':       _ExtraMeta('3way_ht', '3 voies mi-temps', null, ExtraMarketLayout.row3),
-    '2nd half 3way result':       _ExtraMeta('3way_2h', '3 voies 2e mi-temps', null, ExtraMarketLayout.row3),
-    '3way result - 1st qtr':      _ExtraMeta('3way_q1', '3 voies Q1', null, ExtraMarketLayout.row3),
-    '3way result - 2nd qtr':      _ExtraMeta('3way_q2', '3 voies Q2', null, ExtraMarketLayout.row3),
-    '3way result - 3rd qtr':      _ExtraMeta('3way_q3', '3 voies Q3', null, ExtraMarketLayout.row3),
-    '3way result - 4th qtr':      _ExtraMeta('3way_q4', '3 voies Q4', null, ExtraMarketLayout.row3),
-    'home/away - 1st half':       _ExtraMeta('ml_ht', 'Vainqueur 1ere mi-temps', null, ExtraMarketLayout.row2),
-    'home/away - 2nd half':       _ExtraMeta('ml_2h', 'Vainqueur 2e mi-temps', null, ExtraMarketLayout.row2),
-    'home/away - 1st qtr':        _ExtraMeta('ml_q1', 'Vainqueur Q1', null, ExtraMarketLayout.row2),
-    'home/away - 2nd qtr':        _ExtraMeta('ml_q2', 'Vainqueur Q2', null, ExtraMarketLayout.row2),
-    'home/away - 3rd qtr':        _ExtraMeta('ml_q3', 'Vainqueur Q3', null, ExtraMarketLayout.row2),
-    'home/away - 4th qtr':        _ExtraMeta('ml_q4', 'Vainqueur Q4', null, ExtraMarketLayout.row2),
-    'over/under 1st qtr':         _ExtraMeta('ou_q1', 'Total points Q1', null, ExtraMarketLayout.row2),
-    'over/under 2nd qtr':         _ExtraMeta('ou_q2', 'Total points Q2', null, ExtraMarketLayout.row2),
-    'over/under 3rd qtr':         _ExtraMeta('ou_q3', 'Total points Q3', null, ExtraMarketLayout.row2),
-    'over/under 4th qtr':         _ExtraMeta('ou_q4', 'Total points Q4', null, ExtraMarketLayout.row2),
-    'race to 30 points':          _ExtraMeta('race_30', 'Course aux 30 points', null, ExtraMarketLayout.row2),
-    'race to 40 points':          _ExtraMeta('race_40', 'Course aux 40 points', null, ExtraMarketLayout.row2),
-    'race to 50 points':          _ExtraMeta('race_50', 'Course aux 50 points', null, ExtraMarketLayout.row2),
-    'highest scoring quarter':    _ExtraMeta('highest_qtr', 'Quart-temps le plus prolifique', null, ExtraMarketLayout.chips),
-    'team with highest scoring quarter':_ExtraMeta('team_highest_qtr', 'Equipe du quart-temps top', null, ExtraMarketLayout.row2),
-    'overtime':                   _ExtraMeta('overtime', 'Prolongation', 'Y aura-t-il des prolongations ?', ExtraMarketLayout.row2),
-    'odd/even (including ot)':    _ExtraMeta('odd_even_ot', 'Pair / impair (avec prol.)', null, ExtraMarketLayout.row2),
-    'home team total points (1st quarter)':_ExtraMeta('team_total_home_q1', 'Total points domicile Q1', null, ExtraMarketLayout.row2),
-    'away team total points (1st quarter)':_ExtraMeta('team_total_away_q1', 'Total points exterieur Q1', null, ExtraMarketLayout.row2),
-    'home team total points (2nd quarter)':_ExtraMeta('team_total_home_q2', 'Total points domicile Q2', null, ExtraMarketLayout.row2),
-    'away team total points (2nd quarter)':_ExtraMeta('team_total_away_q2', 'Total points exterieur Q2', null, ExtraMarketLayout.row2),
-    'home team total points (3rd quarter)':_ExtraMeta('team_total_home_q3', 'Total points domicile Q3', null, ExtraMarketLayout.row2),
-    'away team total points (3rd quarter)':_ExtraMeta('team_total_away_q3', 'Total points exterieur Q3', null, ExtraMarketLayout.row2),
-    'home team total points (4th quarter)':_ExtraMeta('team_total_home_q4', 'Total points domicile Q4', null, ExtraMarketLayout.row2),
-    'away team total points (4th quarter)':_ExtraMeta('team_total_away_q4', 'Total points exterieur Q4', null, ExtraMarketLayout.row2),
-    'home team total goals (including ot)':_ExtraMeta('team_total_home_ot', 'Total points domicile (avec prol.)', null, ExtraMarketLayout.row2),
-    'away team total goals (including ot)':_ExtraMeta('team_total_away_ot', 'Total points exterieur (avec prol.)', null, ExtraMarketLayout.row2),
+    '3way result': _ExtraMeta(
+        '3way',
+        '3 voies (avec nul)',
+        'Inclut la possibilite d\'un match nul fin de temps reglementaire',
+        ExtraMarketLayout.row3),
+    '1st half 3way result':
+        _ExtraMeta('3way_ht', '3 voies mi-temps', null, ExtraMarketLayout.row3),
+    '2nd half 3way result': _ExtraMeta(
+        '3way_2h', '3 voies 2e mi-temps', null, ExtraMarketLayout.row3),
+    '3way result - 1st qtr':
+        _ExtraMeta('3way_q1', '3 voies Q1', null, ExtraMarketLayout.row3),
+    '3way result - 2nd qtr':
+        _ExtraMeta('3way_q2', '3 voies Q2', null, ExtraMarketLayout.row3),
+    '3way result - 3rd qtr':
+        _ExtraMeta('3way_q3', '3 voies Q3', null, ExtraMarketLayout.row3),
+    '3way result - 4th qtr':
+        _ExtraMeta('3way_q4', '3 voies Q4', null, ExtraMarketLayout.row3),
+    'home/away - 1st half': _ExtraMeta(
+        'ml_ht', 'Vainqueur 1ere mi-temps', null, ExtraMarketLayout.row2),
+    'home/away - 2nd half': _ExtraMeta(
+        'ml_2h', 'Vainqueur 2e mi-temps', null, ExtraMarketLayout.row2),
+    'home/away - 1st qtr':
+        _ExtraMeta('ml_q1', 'Vainqueur Q1', null, ExtraMarketLayout.row2),
+    'home/away - 2nd qtr':
+        _ExtraMeta('ml_q2', 'Vainqueur Q2', null, ExtraMarketLayout.row2),
+    'home/away - 3rd qtr':
+        _ExtraMeta('ml_q3', 'Vainqueur Q3', null, ExtraMarketLayout.row2),
+    'home/away - 4th qtr':
+        _ExtraMeta('ml_q4', 'Vainqueur Q4', null, ExtraMarketLayout.row2),
+    'over/under 1st qtr':
+        _ExtraMeta('ou_q1', 'Total points Q1', null, ExtraMarketLayout.row2),
+    'over/under 2nd qtr':
+        _ExtraMeta('ou_q2', 'Total points Q2', null, ExtraMarketLayout.row2),
+    'over/under 3rd qtr':
+        _ExtraMeta('ou_q3', 'Total points Q3', null, ExtraMarketLayout.row2),
+    'over/under 4th qtr':
+        _ExtraMeta('ou_q4', 'Total points Q4', null, ExtraMarketLayout.row2),
+    'race to 30 points': _ExtraMeta(
+        'race_30', 'Course aux 30 points', null, ExtraMarketLayout.row2),
+    'race to 40 points': _ExtraMeta(
+        'race_40', 'Course aux 40 points', null, ExtraMarketLayout.row2),
+    'race to 50 points': _ExtraMeta(
+        'race_50', 'Course aux 50 points', null, ExtraMarketLayout.row2),
+    'highest scoring quarter': _ExtraMeta('highest_qtr',
+        'Quart-temps le plus prolifique', null, ExtraMarketLayout.chips),
+    'team with highest scoring quarter': _ExtraMeta('team_highest_qtr',
+        'Equipe du quart-temps top', null, ExtraMarketLayout.row2),
+    'overtime': _ExtraMeta('overtime', 'Prolongation',
+        'Y aura-t-il des prolongations ?', ExtraMarketLayout.row2),
+    'odd/even (including ot)': _ExtraMeta('odd_even_ot',
+        'Pair / impair (avec prol.)', null, ExtraMarketLayout.row2),
+    'home team total points (1st quarter)': _ExtraMeta('team_total_home_q1',
+        'Total points domicile Q1', null, ExtraMarketLayout.row2),
+    'away team total points (1st quarter)': _ExtraMeta('team_total_away_q1',
+        'Total points exterieur Q1', null, ExtraMarketLayout.row2),
+    'home team total points (2nd quarter)': _ExtraMeta('team_total_home_q2',
+        'Total points domicile Q2', null, ExtraMarketLayout.row2),
+    'away team total points (2nd quarter)': _ExtraMeta('team_total_away_q2',
+        'Total points exterieur Q2', null, ExtraMarketLayout.row2),
+    'home team total points (3rd quarter)': _ExtraMeta('team_total_home_q3',
+        'Total points domicile Q3', null, ExtraMarketLayout.row2),
+    'away team total points (3rd quarter)': _ExtraMeta('team_total_away_q3',
+        'Total points exterieur Q3', null, ExtraMarketLayout.row2),
+    'home team total points (4th quarter)': _ExtraMeta('team_total_home_q4',
+        'Total points domicile Q4', null, ExtraMarketLayout.row2),
+    'away team total points (4th quarter)': _ExtraMeta('team_total_away_q4',
+        'Total points exterieur Q4', null, ExtraMarketLayout.row2),
+    'home team total goals (including ot)': _ExtraMeta('team_total_home_ot',
+        'Total points domicile (avec prol.)', null, ExtraMarketLayout.row2),
+    'away team total goals (including ot)': _ExtraMeta('team_total_away_ot',
+        'Total points exterieur (avec prol.)', null, ExtraMarketLayout.row2),
   };
 
   /// Mappe le nom raw du marche vers son ExtraMeta connu.
@@ -1748,18 +1952,33 @@ class StatpalService {
     final hit = _kExtraCatalog[key];
     if (hit != null) return hit;
     // Fallback : code stable derive du nom raw
-    final code = key.replaceAll(RegExp(r'[^a-z0-9]+'), '_').replaceAll(RegExp(r'^_|_$'), '');
-    return _ExtraMeta(code.isEmpty ? 'unknown' : code, rawName, null, ExtraMarketLayout.row2);
+    final code = key
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+        .replaceAll(RegExp(r'^_|_$'), '');
+    return _ExtraMeta(
+        code.isEmpty ? 'unknown' : code, rawName, null, ExtraMarketLayout.row2);
   }
 
   /// Priorite de tri (plus petit = affiche en premier).
   /// Les marches "stars" (Correct Score, HT/FT, Race) remontent.
   int _extraMarketPriority(String code) {
     const top = {
-      'correct_score': 10, 'htft_double': 11, 'ou_ht': 12, 'ou_2h': 13,
-      '3way': 14, 'race_30': 15, 'race_40': 16, 'race_50': 17,
-      'ou_q1': 20, 'ou_q2': 21, 'ou_q3': 22, 'ou_q4': 23,
-      'odd_even': 30, 'overtime': 31, 'highest_half': 32, 'highest_qtr': 33,
+      'correct_score': 10,
+      'htft_double': 11,
+      'ou_ht': 12,
+      'ou_2h': 13,
+      '3way': 14,
+      'race_30': 15,
+      'race_40': 16,
+      'race_50': 17,
+      'ou_q1': 20,
+      'ou_q2': 21,
+      'ou_q3': 22,
+      'ou_q4': 23,
+      'odd_even': 30,
+      'overtime': 31,
+      'highest_half': 32,
+      'highest_qtr': 33,
     };
     return top[code] ?? 100;
   }
@@ -1770,15 +1989,15 @@ class StatpalService {
   ///   - bookmaker.total[].odd[]         (OU variantes avec ligne)
   ///   - bookmaker.handicap[].odd[]      (AH-like avec ligne)
   /// Retourne null si aucune cote valide.
-  ExtraMarket? _buildExtraMarket(String marketName, String rawName, Map firstBm) {
+  ExtraMarket? _buildExtraMarket(
+      String marketName, String rawName, Map firstBm) {
     final meta = _resolveExtraMeta(rawName.isEmpty ? marketName : rawName);
     final extraOdds = <ExtraOdd>[];
 
     // ── Structure 1 : odd[] direct ──
     final oddRaw = firstBm['odd'];
-    final flatOdds = oddRaw is List
-        ? oddRaw
-        : (oddRaw is Map ? [oddRaw] : const []);
+    final flatOdds =
+        oddRaw is List ? oddRaw : (oddRaw is Map ? [oddRaw] : const []);
     for (final v in flatOdds) {
       if (v is! Map) continue;
       final n = v['name']?.toString() ?? '';
@@ -1793,9 +2012,8 @@ class StatpalService {
 
     // ── Structure 2 : total[] (OU variantes) ──
     final totalRaw = firstBm['total'];
-    final totals = totalRaw is List
-        ? totalRaw
-        : (totalRaw is Map ? [totalRaw] : const []);
+    final totals =
+        totalRaw is List ? totalRaw : (totalRaw is Map ? [totalRaw] : const []);
     for (final t in totals) {
       if (t is! Map) continue;
       if ((t['stop']?.toString().toLowerCase()) == 'true') continue;
@@ -1808,7 +2026,8 @@ class StatpalService {
         final n = (v['name']?.toString() ?? '').toLowerCase();
         final val = double.tryParse(v['value']?.toString() ?? '');
         if (val == null || val < 1.01) continue;
-        final side = n.contains('over') ? 'over' : (n.contains('under') ? 'under' : n);
+        final side =
+            n.contains('over') ? 'over' : (n.contains('under') ? 'under' : n);
         extraOdds.add(ExtraOdd(
           name: '${side == 'over' ? '+' : '-'}${_fmtNum(line)}',
           code: '${meta.code}_$side@${_fmtNum(line)}',
@@ -1820,9 +2039,8 @@ class StatpalService {
 
     // ── Structure 3 : handicap[] (lignes asymetriques) ──
     final hcRaw = firstBm['handicap'];
-    final handicaps = hcRaw is List
-        ? hcRaw
-        : (hcRaw is Map ? [hcRaw] : const []);
+    final handicaps =
+        hcRaw is List ? hcRaw : (hcRaw is Map ? [hcRaw] : const []);
     for (final hc in handicaps) {
       if (hc is! Map) continue;
       if ((hc['stop']?.toString().toLowerCase()) == 'true') continue;
@@ -1857,13 +2075,19 @@ class StatpalService {
   }
 
   static String _slugify(String s) {
-    return s.trim().toLowerCase().replaceAll(RegExp(r'[^a-z0-9]+'), '_')
+    return s
+        .trim()
+        .toLowerCase()
+        .replaceAll(RegExp(r'[^a-z0-9]+'), '_')
         .replaceAll(RegExp(r'^_|_$'), '');
   }
 
   static String _fmtNum(double v) {
     if (v == v.roundToDouble()) return v.toInt().toString();
-    return v.toStringAsFixed(2).replaceAll(RegExp(r'0+$'), '').replaceAll(RegExp(r'\.$'), '');
+    return v
+        .toStringAsFixed(2)
+        .replaceAll(RegExp(r'0+$'), '')
+        .replaceAll(RegExp(r'\.$'), '');
   }
 
   static String _fmtSignedNum(double v) {
@@ -1931,39 +2155,47 @@ class StatpalService {
     }
   }
 
-  LeagueStanding? _parseSoccerStandings(Map<String, dynamic> json, String fallbackId) {
+  LeagueStanding? _parseSoccerStandings(
+      Map<String, dynamic> json, String fallbackId) {
     // Structure : standings.tournament.team[]
     final root = json['standings'];
     if (root is! Map) return null;
     final tour = root['tournament'];
     if (tour is! Map) return null;
     final teamRaw = tour['team'];
-    final teams = teamRaw is List
-        ? teamRaw
-        : (teamRaw is Map ? [teamRaw] : const []);
+    final teams =
+        teamRaw is List ? teamRaw : (teamRaw is Map ? [teamRaw] : const []);
     final list = <TeamStanding>[];
     for (final t in teams) {
       if (t is! Map) continue;
       final pos = int.tryParse(t['position']?.toString() ?? '') ??
-          int.tryParse(t['rank']?.toString() ?? '') ?? (list.length + 1);
+          int.tryParse(t['rank']?.toString() ?? '') ??
+          (list.length + 1);
       list.add(TeamStanding(
         position: pos,
         teamId: t['id']?.toString() ?? '',
         teamName: t['name']?.toString() ?? '?',
         played: int.tryParse(t['gp']?.toString() ?? '') ??
-            int.tryParse(t['played']?.toString() ?? '') ?? 0,
+            int.tryParse(t['played']?.toString() ?? '') ??
+            0,
         wins: int.tryParse(t['w']?.toString() ?? '') ??
-            int.tryParse(t['wins']?.toString() ?? '') ?? 0,
+            int.tryParse(t['wins']?.toString() ?? '') ??
+            0,
         draws: int.tryParse(t['d']?.toString() ?? '') ??
-            int.tryParse(t['draws']?.toString() ?? '') ?? 0,
+            int.tryParse(t['draws']?.toString() ?? '') ??
+            0,
         losses: int.tryParse(t['l']?.toString() ?? '') ??
-            int.tryParse(t['losses']?.toString() ?? '') ?? 0,
+            int.tryParse(t['losses']?.toString() ?? '') ??
+            0,
         goalsFor: int.tryParse(t['gs']?.toString() ?? '') ??
-            int.tryParse(t['goals_for']?.toString() ?? '') ?? 0,
+            int.tryParse(t['goals_for']?.toString() ?? '') ??
+            0,
         goalsAgainst: int.tryParse(t['ga']?.toString() ?? '') ??
-            int.tryParse(t['goals_against']?.toString() ?? '') ?? 0,
+            int.tryParse(t['goals_against']?.toString() ?? '') ??
+            0,
         points: int.tryParse(t['pts']?.toString() ?? '') ??
-            int.tryParse(t['points']?.toString() ?? '') ?? 0,
+            int.tryParse(t['points']?.toString() ?? '') ??
+            0,
         form: t['form']?.toString(),
       ));
     }
@@ -1992,9 +2224,8 @@ class StatpalService {
     for (final lg in leagues) {
       if (lg is! Map) continue;
       final divRaw = lg['division'];
-      final divisions = divRaw is List
-          ? divRaw
-          : (divRaw is Map ? [divRaw] : const []);
+      final divisions =
+          divRaw is List ? divRaw : (divRaw is Map ? [divRaw] : const []);
       for (final div in divisions) {
         if (div is! Map) continue;
         final tRaw = div['team'];
@@ -2006,16 +2237,21 @@ class StatpalService {
             teamId: t['id']?.toString() ?? '',
             teamName: t['name']?.toString() ?? '?',
             played: int.tryParse(t['played']?.toString() ?? '') ??
-                int.tryParse(t['gp']?.toString() ?? '') ?? 0,
+                int.tryParse(t['gp']?.toString() ?? '') ??
+                0,
             wins: int.tryParse(t['won']?.toString() ?? '') ??
-                int.tryParse(t['w']?.toString() ?? '') ?? 0,
-            draws: 0,  // pas de match nul en NBA
+                int.tryParse(t['w']?.toString() ?? '') ??
+                0,
+            draws: 0, // pas de match nul en NBA
             losses: int.tryParse(t['lost']?.toString() ?? '') ??
-                int.tryParse(t['l']?.toString() ?? '') ?? 0,
+                int.tryParse(t['l']?.toString() ?? '') ??
+                0,
             goalsFor: int.tryParse(t['points_for']?.toString() ?? '') ?? 0,
-            goalsAgainst: int.tryParse(t['points_against']?.toString() ?? '') ?? 0,
+            goalsAgainst:
+                int.tryParse(t['points_against']?.toString() ?? '') ?? 0,
             points: int.tryParse(t['points']?.toString() ?? '') ??
-                int.tryParse(t['won']?.toString() ?? '') ?? 0,
+                int.tryParse(t['won']?.toString() ?? '') ??
+                0,
           ));
         }
       }
@@ -2132,9 +2368,8 @@ class StatpalService {
         : leagueName;
 
     final stageRaw = tournament['stage'];
-    final stages = stageRaw is List
-        ? stageRaw
-        : (stageRaw is Map ? [stageRaw] : const []);
+    final stages =
+        stageRaw is List ? stageRaw : (stageRaw is Map ? [stageRaw] : const []);
 
     for (final stage in stages) {
       if (stage is! Map) continue;
@@ -2173,9 +2408,10 @@ class StatpalService {
     final isFinished = statusLower.contains('ft') ||
         statusLower.contains('finished') ||
         statusLower == 'aet';
-    final isNotStarted = statusLower.contains('not started') ||
-        statusLower.isEmpty;
-    final isLive = !isFinished && !isNotStarted &&
+    final isNotStarted =
+        statusLower.contains('not started') || statusLower.isEmpty;
+    final isLive = !isFinished &&
+        !isNotStarted &&
         (homeScore != null || awayScore != null);
 
     int? minute;
@@ -2190,8 +2426,11 @@ class StatpalService {
       final d = date.split('.');
       final t = time.split(':');
       startTime = DateTime.utc(
-        int.parse(d[2]), int.parse(d[1]), int.parse(d[0]),
-        int.parse(t[0]), int.parse(t[1]),
+        int.parse(d[2]),
+        int.parse(d[1]),
+        int.parse(d[0]),
+        int.parse(t[0]),
+        int.parse(t[1]),
       );
     } catch (_) {
       startTime = DateTime.now().toUtc();
@@ -2203,7 +2442,8 @@ class StatpalService {
       leagueId: leagueId,
       homeName: home['name']?.toString() ?? 'Home',
       awayName: away['name']?.toString() ?? 'Away',
-      homeLogo: null, awayLogo: null,
+      homeLogo: null,
+      awayLogo: null,
       league: leagueName,
       startTime: startTime,
       isLive: isLive,
@@ -2224,7 +2464,8 @@ class StatpalService {
     final key = '${sport.name}:$leagueId';
     final cached = _leagueOddsCache[key];
     final at = _leagueOddsCacheAt[key];
-    if (cached != null && at != null &&
+    if (cached != null &&
+        at != null &&
         DateTime.now().difference(at) < _leagueOddsTtl) {
       return cached;
     }
@@ -2295,7 +2536,10 @@ class StatpalService {
 
     dynamic root;
     for (final k in rootKeys) {
-      if (json[k] is Map) { root = json[k]; break; }
+      if (json[k] is Map) {
+        root = json[k];
+        break;
+      }
     }
     if (root is! Map) return result;
 
@@ -2365,11 +2609,15 @@ class StatpalService {
 
       // ── 1X2 / Fulltime Result / Final Score ──
       if (name == 'fulltime result' || name == 'final score' || name == '1x2') {
-        h ??= lh; d ??= ld; a ??= la;
+        h ??= lh;
+        d ??= ld;
+        a ??= la;
       }
       // ── 1X2 1st Half ──
       else if (name == '1x2 (1st half)') {
-        htH ??= lh; htD ??= ld; htA ??= la;
+        htH ??= lh;
+        htD ??= ld;
+        htA ??= la;
       }
       // ── Over/Under fixe 2.5 (Match Goals) ──
       else if (name == 'match goals') {
@@ -2425,7 +2673,7 @@ class StatpalService {
           final hc = double.tryParse(l['handicap']?.toString() ?? '');
           if (hc == null || v == null) continue;
           final frac = (hc * 100).abs() % 100;
-          if (frac != 0 && frac != 50) continue;  // skip quarts
+          if (frac != 0 && frac != 50) continue; // skip quarts
           final existing = byLine[hc] ?? (h: null, a: null);
           if (n == 'home' || n == '1') {
             byLine[hc] = (h: v, a: existing.a);
@@ -2439,7 +2687,7 @@ class StatpalService {
               line: line,
               homeOdds: pair.h!,
               awayOdds: pair.a!,
-              isMain: ahLines.isEmpty,  // premiere = main par defaut
+              isMain: ahLines.isEmpty, // premiere = main par defaut
             ));
           }
         });
@@ -2481,16 +2729,23 @@ class StatpalService {
       if (a.isMain != b.isMain) return a.isMain ? -1 : 1;
       return a.line.compareTo(b.line);
     });
-    extraList.sort((x, y) => _extraMarketPriority(x.code)
-        .compareTo(_extraMarketPriority(y.code)));
+    extraList.sort((x, y) =>
+        _extraMarketPriority(x.code).compareTo(_extraMarketPriority(y.code)));
 
     final odds_ = MatchOdds(
-      home: h, draw: d, away: a,
-      over25: ov25, under25: un25,
+      home: h,
+      draw: d,
+      away: a,
+      over25: ov25,
+      under25: un25,
       mainOuLine: (ov25 != null || un25 != null) ? 2.5 : null,
-      bttsYes: bttsY, bttsNo: bttsN,
-      htHome: htH, htDraw: htD, htAway: htA,
-      htOver15: htOv15, htUnder15: htUn15,
+      bttsYes: bttsY,
+      bttsNo: bttsN,
+      htHome: htH,
+      htDraw: htD,
+      htAway: htA,
+      htOver15: htOv15,
+      htUnder15: htUn15,
       asianHandicap: ahLines,
       extraMarkets: extraList,
     );
@@ -2501,9 +2756,9 @@ class StatpalService {
   /// Phase 2 : RPC place_bet idempotente (debit wallet + insert bets).
   Future<bool> placeBet({
     required String matchId,
-    required String market,   // '1X2_home', 'OU25_over', 'BTTS_yes', ...
+    required String market, // '1X2_home', 'OU25_over', 'BTTS_yes', ...
     required double odds,
-    required int stake,       // FCFA
+    required int stake, // FCFA
   }) async {
     _log.info('placeBet stub : $matchId $market @$odds stake=$stake');
     return false; // toujours stub Phase 1

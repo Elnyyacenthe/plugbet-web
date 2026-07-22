@@ -64,42 +64,71 @@ class FortuneBoard extends StatelessWidget {
 
     return Row(
       children: [
-        // Multiplier label on left
+        // Multiplier label on left — capsule néon
         SizedBox(
-          width: 52,
-          child: Container(
-            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+          width: 54,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 7),
             decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(8),
-              color: isLostRow
-                  ? AppColors.neonRed.withValues(alpha: 0.15)
+              borderRadius: BorderRadius.circular(10),
+              gradient: isLostRow
+                  ? LinearGradient(colors: [
+                      AppColors.neonRed.withValues(alpha: 0.28),
+                      AppColors.neonRed.withValues(alpha: 0.10),
+                    ])
                   : isActiveRow
-                      ? AppColors.neonGreen.withValues(alpha: 0.12)
+                      ? LinearGradient(colors: [
+                          AppColors.neonGreen.withValues(alpha: 0.24),
+                          AppColors.neonGreen.withValues(alpha: 0.08),
+                        ])
                       : isReached
-                          ? AppColors.neonGreen.withValues(alpha: 0.06)
-                          : Colors.transparent,
+                          ? LinearGradient(colors: [
+                              AppColors.neonGreen.withValues(alpha: 0.12),
+                              AppColors.neonGreen.withValues(alpha: 0.04),
+                            ])
+                          : null,
+              color: (isLostRow || isActiveRow || isReached)
+                  ? null
+                  : AppColors.bgCard.withValues(alpha: 0.4),
               border: Border.all(
                 color: isLostRow
-                    ? AppColors.neonRed.withValues(alpha: 0.4)
+                    ? AppColors.neonRed.withValues(alpha: 0.55)
                     : isActiveRow
-                        ? AppColors.neonGreen.withValues(alpha: 0.4)
+                        ? AppColors.neonGreen.withValues(alpha: 0.55)
                         : isReached
-                            ? AppColors.neonGreen.withValues(alpha: 0.15)
-                            : AppColors.divider.withValues(alpha: 0.2),
+                            ? AppColors.neonGreen.withValues(alpha: 0.22)
+                            : AppColors.divider.withValues(alpha: 0.25),
+                width: isActiveRow ? 1.4 : 1,
               ),
+              boxShadow: isActiveRow
+                  ? [
+                      BoxShadow(
+                        color: AppColors.neonGreen.withValues(alpha: 0.35),
+                        blurRadius: 10,
+                      ),
+                    ]
+                  : isLostRow
+                      ? [
+                          BoxShadow(
+                            color: AppColors.neonRed.withValues(alpha: 0.35),
+                            blurRadius: 10,
+                          ),
+                        ]
+                      : null,
             ),
             child: Text(
               'x${mult % 1 == 0 ? mult.toInt() : mult}',
               textAlign: TextAlign.center,
               style: TextStyle(
                 fontSize: 10,
-                fontWeight: isActiveRow ? FontWeight.w800 : FontWeight.w600,
+                fontWeight: isActiveRow ? FontWeight.w900 : FontWeight.w700,
                 color: isLostRow
                     ? AppColors.neonRed
                     : isActiveRow
                         ? AppColors.neonGreen
                         : isReached
-                            ? AppColors.neonGreen.withValues(alpha: 0.7)
+                            ? AppColors.neonGreen.withValues(alpha: 0.75)
                             : AppColors.textMuted,
               ),
             ),

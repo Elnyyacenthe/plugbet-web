@@ -247,6 +247,7 @@ class TeamLogoService extends ChangeNotifier {
         stream.addListener(listener);
       }
     }
+
     next();
   }
 
@@ -254,6 +255,22 @@ class TeamLogoService extends ChangeNotifier {
       _cache.containsKey(_key(name, sport));
 
   String? getCached(String name, Sport sport) => _cache[_key(name, sport)];
+
+  String? _proxySport(Sport sport) {
+    switch (sport) {
+      case Sport.soccer:
+        return 'soccer';
+      case Sport.basketball:
+        return 'basketball';
+      case Sport.americanFootball:
+      case Sport.baseball:
+      case Sport.tennis:
+      case Sport.iceHockey:
+      case Sport.rugby:
+      case Sport.handball:
+        return null;
+    }
+  }
 
   /// Attend que les requetes en cours se terminent (max timeout).
   /// Utile pour bloquer le loader initial du screen tant que tous les
@@ -269,6 +286,7 @@ class TeamLogoService extends ChangeNotifier {
   }
 
   void prefetch(String name, Sport sport) {
+    if (_proxySport(sport) == null) return;
     final k = _key(name, sport);
     if (_cache.containsKey(k) || _inFlight.contains(k)) return;
     _inFlight.add(k);
@@ -361,7 +379,8 @@ class TeamLogoService extends ChangeNotifier {
     add(_stripAccents(stripped));
 
     // 6. Strip et/and (Newcastle and Sunderland -> Newcastle Sunderland)
-    add(name.replaceAll(RegExp(r'\s+(and|et|&)\s+', caseSensitive: false), ' '));
+    add(name.replaceAll(
+        RegExp(r'\s+(and|et|&)\s+', caseSensitive: false), ' '));
 
     // 7. 1er mot seulement (derniere chance pour noms exotiques)
     final firstWord = name.split(RegExp(r'\s+')).first;
@@ -391,10 +410,14 @@ class TeamLogoService extends ChangeNotifier {
   /// Retourne {url, transient}. Si transient=true, le client NE met PAS
   /// en cache negatif et retentera au prochain prefetch.
   Future<_FetchResult> _fetch(String name, Sport sport) async {
+    final proxySport = _proxySport(sport);
+    if (proxySport == null) {
+      return const _FetchResult(url: null, transient: false);
+    }
     try {
       final res = await Supabase.instance.client.functions
           .invoke('team_logo_proxy', body: {
-        'sport': sport == Sport.basketball ? 'basketball' : 'soccer',
+        'sport': proxySport,
         'name': name,
       });
       if (res.status != 200) {
@@ -427,7 +450,8 @@ class _PendingFetch {
   final String name;
   final Sport sport;
   final String key;
-  const _PendingFetch({required this.name, required this.sport, required this.key});
+  const _PendingFetch(
+      {required this.name, required this.sport, required this.key});
 }
 
 class _FetchResult {

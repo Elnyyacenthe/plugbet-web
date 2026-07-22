@@ -10,6 +10,7 @@ class TransactionTile extends StatelessWidget {
   final int amount;
   final DateTime date;
   final String type; // 'game' | 'bet' | 'refund' | 'deposit' | 'withdrawal' | 'pending' | 'failed'
+  final String? subtitle; // motif (ex: raison d'un echec K-Pay)
 
   const TransactionTile({
     super.key,
@@ -17,6 +18,7 @@ class TransactionTile extends StatelessWidget {
     required this.amount,
     required this.date,
     required this.type,
+    this.subtitle,
   });
 
   IconData get _icon {
@@ -98,6 +100,19 @@ class TransactionTile extends StatelessWidget {
                     fontSize: 13,
                   ),
                 ),
+                if (subtitle != null && subtitle!.isNotEmpty) ...[
+                  const SizedBox(height: 2),
+                  Text(
+                    subtitle!,
+                    style: TextStyle(
+                      color: type == 'failed'
+                          ? AppColors.neonRed
+                          : AppColors.textSecondary,
+                      fontSize: 11,
+                      height: 1.3,
+                    ),
+                  ),
+                ],
                 const SizedBox(height: 2),
                 Text(
                   _formatDate(date),

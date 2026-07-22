@@ -16,7 +16,7 @@ class PenaltyAudio {
   static html.AudioElement _make(String asset,
       {bool loop = false, double vol = 0.8}) {
     final a = html.AudioElement()
-      ..src = 'assets/assets/audio/$asset'
+      ..src = 'assets/audio/games/penalty/$asset'
       ..loop = loop
       ..volume = vol
       ..preload = 'auto';

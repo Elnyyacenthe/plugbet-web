@@ -1,5 +1,5 @@
 // ============================================================
-// LUDO V2 — Board Widget (plateau + pions animés)
+// LUDO V2 — Board Widget (plateau + pions animés, premium redesign)
 // ============================================================
 
 import 'package:flutter/material.dart';
@@ -134,8 +134,10 @@ class _SameCellInfo {
   const _SameCellInfo(this.index, this.total);
 }
 
-/// Pion animé avec position, couleur, tap et highlight
-class _AnimatedPawn extends StatelessWidget {
+/// Pion animé avec position, couleur, tap et highlight.
+/// Ajoute une pulsation néon douce quand le pion est jouable, pour un
+/// rendu "premium" façon plateforme de paris haut de gamme.
+class _AnimatedPawn extends StatefulWidget {
   final int row;
   final int col;
   final double cell;
@@ -158,50 +160,139 @@ class _AnimatedPawn extends StatelessWidget {
   });
 
   @override
+  State<_AnimatedPawn> createState() => _AnimatedPawnState();
+}
+
+class _AnimatedPawnState extends State<_AnimatedPawn>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _pulseCtrl = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.isPlayable) _pulseCtrl.repeat(reverse: true);
+  }
+
+  @override
+  void didUpdateWidget(_AnimatedPawn old) {
+    super.didUpdateWidget(old);
+    if (widget.isPlayable != old.isPlayable) {
+      if (widget.isPlayable) {
+        _pulseCtrl.repeat(reverse: true);
+      } else {
+        _pulseCtrl.stop();
+        _pulseCtrl.value = 0;
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    _pulseCtrl.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final x = col * cell + stackOffset.dx;
-    final y = row * cell + stackOffset.dy;
-    final size = cell * 0.75;
+    final x = widget.col * widget.cell + widget.stackOffset.dx;
+    final y = widget.row * widget.cell + widget.stackOffset.dy;
+    final size = widget.cell * 0.75;
 
     return AnimatedPositioned(
       duration: const Duration(milliseconds: 350),
       curve: Curves.easeInOut,
-      left: x + (cell - size) / 2,
-      top: y + (cell - size) / 2,
+      left: x + (widget.cell - size) / 2,
+      top: y + (widget.cell - size) / 2,
       width: size,
       height: size,
       child: GestureDetector(
-        onTap: onTap,
-        child: AnimatedContainer(
-          duration: const Duration(milliseconds: 300),
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            color: color,
-            border: Border.all(
-              color: isPlayable ? Colors.white : color.withValues(alpha: 0.5),
-              width: isPlayable ? 3 : 1.5,
-            ),
-            boxShadow: [
-              if (isPlayable)
-                BoxShadow(
-                  color: Colors.white.withValues(alpha: 0.6),
-                  blurRadius: 8,
-                  spreadRadius: 2,
-                ),
-              BoxShadow(
-                color: Colors.black.withValues(alpha: 0.3),
-                blurRadius: 2,
-                offset: const Offset(1, 2),
+        onTap: widget.onTap,
+        child: AnimatedBuilder(
+          animation: _pulseCtrl,
+          builder: (_, child) {
+            final pulse = widget.isPlayable ? _pulseCtrl.value : 0.0;
+            return Transform.scale(
+              scale: 1.0 + (pulse * 0.10),
+              child: child,
+            );
+          },
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 300),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(
+                center: const Alignment(-0.35, -0.35),
+                colors: [
+                  Color.lerp(widget.color, Colors.white, 0.35)!,
+                  widget.color,
+                  Color.lerp(widget.color, Colors.black, 0.25)!,
+                ],
+                stops: const [0.0, 0.55, 1.0],
               ),
-            ],
-          ),
-          child: Center(
-            child: Container(
-              width: size * 0.4,
-              height: size * 0.4,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: Colors.white.withValues(alpha: 0.4),
+              border: Border.all(
+                color: widget.isPlayable ? Colors.white : widget.color.withValues(alpha: 0.5),
+                width: widget.isPlayable ? 3 : 1.5,
+              ),
+              boxShadow: [
+                if (widget.isPlayable) ...[
+                  BoxShadow(
+                    color: Colors.white.withValues(alpha: 0.5),
+                    blurRadius: 8,
+                    spreadRadius: 2,
+                  ),
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.55),
+                    blurRadius: 14,
+                    spreadRadius: 3,
+                  ),
+                ] else if (widget.isActive)
+                  BoxShadow(
+                    color: widget.color.withValues(alpha: 0.35),
+                    blurRadius: 6,
+                    spreadRadius: 1,
+                  ),
+                BoxShadow(
+                  color: Colors.black.withValues(alpha: 0.45),
+                  blurRadius: 5,
+                  offset: const Offset(0, 3),
+                ),
+              ],
+            ),
+            child: Center(
+              // Cabochon surélevé (dôme + reflet spéculaire) → vrai jeton 3D
+              child: Container(
+                width: size * 0.5,
+                height: size * 0.5,
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  gradient: RadialGradient(
+                    center: const Alignment(-0.35, -0.4),
+                    colors: [
+                      Colors.white.withValues(alpha: 0.85),
+                      Color.lerp(widget.color, Colors.white, 0.25)!,
+                      widget.color,
+                    ],
+                    stops: const [0, 0.5, 1],
+                  ),
+                  border: Border.all(
+                      color: Colors.black.withValues(alpha: 0.15), width: 0.8),
+                ),
+                child: Align(
+                  alignment: const Alignment(-0.35, -0.4),
+                  child: FractionallySizedBox(
+                    widthFactor: 0.32,
+                    heightFactor: 0.32,
+                    child: DecoratedBox(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        color: Colors.white.withValues(alpha: 0.85),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),

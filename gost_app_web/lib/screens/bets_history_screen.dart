@@ -21,7 +21,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
 import '../services/statpal_service.dart';
+import '../services/notification_service.dart';
+import '../providers/notification_provider.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
 import '../theme/app_theme.dart';
 import '../utils/bet_live_eval.dart';
 import 'bet_ticket_detail_screen.dart';
@@ -76,7 +81,7 @@ extension on BetStatus {
 Color _statusColor(BetStatus s) {
   switch (s) {
     case BetStatus.pending:    return AppColors.neonYellow;
-    case BetStatus.won:        return AppColors.neonGreen;
+    case BetStatus.won:        return AppColors.primaryInk;
     case BetStatus.lost:       return AppColors.neonRed;
     case BetStatus.voided:     return AppColors.textMuted;
     case BetStatus.cashedOut:  return AppColors.neonBlue;
@@ -94,24 +99,24 @@ extension on DisplaySport {
   IconData get icon {
     switch (this) {
       case DisplaySport.footballReal:
-      case DisplaySport.footballVirtual:   return Icons.sports_soccer;
+      case DisplaySport.footballVirtual:   return AppIcons.football;
       case DisplaySport.basketballReal:
-      case DisplaySport.basketballVirtual: return Icons.sports_basketball;
-      case DisplaySport.tennisVirtual:     return Icons.sports_tennis;
-      case DisplaySport.raceVirtual:       return Icons.directions_car_filled;
-      case DisplaySport.greyhoundVirtual:  return Icons.pets;
-      case DisplaySport.unknown:           return Icons.sports;
+      case DisplaySport.basketballVirtual: return AppIcons.basketball;
+      case DisplaySport.tennisVirtual:     return AppIcons.tennis;
+      case DisplaySport.raceVirtual:       return AppIcons.raceCar;
+      case DisplaySport.greyhoundVirtual:  return AppIcons.greyhound;
+      case DisplaySport.unknown:           return AppIcons.sportUnknown;
     }
   }
 
   // ignore: unused_element
   Color get color {
     switch (this) {
-      case DisplaySport.footballReal:      return AppColors.neonGreen;
+      case DisplaySport.footballReal:      return AppColors.primaryInk;
       case DisplaySport.footballVirtual:   return AppColors.neonPurple;
       case DisplaySport.basketballReal:    return AppColors.neonYellow;
       case DisplaySport.basketballVirtual: return AppColors.neonBlue;
-      case DisplaySport.tennisVirtual:     return AppColors.neonGreen;
+      case DisplaySport.tennisVirtual:     return AppColors.primaryInk;
       case DisplaySport.raceVirtual:       return AppColors.neonRed;
       case DisplaySport.greyhoundVirtual:  return AppColors.neonYellow;
       case DisplaySport.unknown:           return AppColors.textMuted;
@@ -194,6 +199,10 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
 
   // Live tracking (preserve)
   Map<String, BettingMatch> _liveById = const {};
+
+  // Detection des reglements 2Up pour notifier "Ton pari est deja gagne".
+  final Set<String> _known2UpBetIds = {};
+  bool _seeded2Up = false;
   Timer? _livePollTimer;
   static const _pollInterval = Duration(seconds: 10);
 
@@ -276,6 +285,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
     try {
       final page = await _fetchPage(limit: _pageSize, offset: 0);
       if (!mounted) return;
+      _detect2UpSettlements(page.items);
       setState(() {
         _bets
           ..clear()
@@ -292,6 +302,44 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
         _error = '$e';
       });
     }
+  }
+
+  /// Detecte les tickets nouvellement regles via 2Up et notifie l'utilisateur
+  /// ("Ton pari est deja gagne !"). Ne notifie pas au tout premier chargement
+  /// (seed) pour eviter les alertes retroactives sur d'anciens paris.
+  void _detect2UpSettlements(List<dynamic> items) {
+    final current = <String>{};
+    for (final b in items) {
+      if (b is Map &&
+          b['settled_via_2up'] == true &&
+          b['status']?.toString() == 'won') {
+        current.add(b['id']?.toString() ?? '');
+      }
+    }
+    current.remove('');
+    if (!_seeded2Up) {
+      _known2UpBetIds.addAll(current);
+      _seeded2Up = true;
+      return;
+    }
+    final fresh = current.difference(_known2UpBetIds);
+    _known2UpBetIds.addAll(current);
+    if (fresh.isEmpty) return;
+    // Notification in-app (feed)
+    try {
+      context.read<NotificationProvider>().add(
+            title: 'Ton pari est déjà gagné ! 🎉',
+            body: 'Réglé gagnant en avance grâce au 2Up.',
+            icon: AppIcons.checkCircleFilled,
+            color: AppColors.primary,
+          );
+    } catch (_) {/* provider absent : ignore */}
+    // Notification OS locale
+    NotificationService.instance.showPushNotification(
+      title: 'Ton pari est déjà gagné ! 🎉',
+      body: 'Un de tes paris a été réglé gagnant en avance grâce au 2Up.',
+      payload: '2up',
+    );
   }
 
   Future<void> _loadMore() async {
@@ -379,8 +427,8 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
       builder: (ctx, child) => Theme(
         data: Theme.of(ctx).copyWith(
           colorScheme: ColorScheme.dark(
-            primary: AppColors.neonGreen,
-            onPrimary: Colors.black,
+            primary: AppColors.primaryInk,
+            onPrimary: AppColors.onPrimary,
             surface: AppColors.bgCard,
             onSurface: AppColors.textPrimary,
           ),
@@ -417,21 +465,12 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgDark,
-        elevation: 0,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
-        title: Text('Mes paris',
-            style: TextStyle(
-              color: AppColors.textPrimary,
-              fontSize: 16,
-              fontWeight: FontWeight.w900,
-              letterSpacing: -0.3,
-            )),
+      appBar: ReliefAppBar(
+        title: 'Mes paris',
         actions: [
           IconButton(
-            icon: Icon(Icons.qr_code_2_rounded,
-                color: AppColors.neonGreen, size: 22),
+            icon: Icon(AppIcons.qrCode,
+                color: AppColors.primaryInk, size: 22),
             tooltip: 'Charger un coupon',
             onPressed: () {
               Navigator.of(context).push(MaterialPageRoute(
@@ -465,7 +504,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
               color: AppColors.divider.withValues(alpha: 0.5), width: 0.5),
         ),
         child: Row(children: [
-          Icon(Icons.search_rounded, size: 18, color: AppColors.textMuted),
+          Icon(AppIcons.search, size: 18, color: AppColors.textMuted),
           const SizedBox(width: 8),
           Expanded(
             child: TextField(
@@ -491,7 +530,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
                 _searchCtrl.clear();
                 _onSearchChanged('');
               },
-              child: Icon(Icons.close_rounded,
+              child: Icon(AppIcons.close,
                   size: 16, color: AppColors.textMuted),
             ),
         ]),
@@ -519,7 +558,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
           ),
           _filterChip(
             label: 'Gagnés',
-            color: AppColors.neonGreen,
+            color: AppColors.primaryInk,
             selected: _filterStatus == BetStatus.won,
             onTap: () => _setFilterStatus(BetStatus.won),
           ),
@@ -545,7 +584,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
             label: _filterDateFrom != null && _filterDateTo != null
                 ? '${_fmtDateShort(_filterDateFrom!)}→${_fmtDateShort(_filterDateTo!)}'
                 : 'Date',
-            icon: Icons.calendar_today_rounded,
+            icon: AppIcons.calendar,
             selected: _filterDateFrom != null,
             onTap: _pickDateRange,
             onLongPress: _filterDateFrom != null ? _clearDateRange : null,
@@ -554,7 +593,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
             label: _filterMinPayout != null
                 ? '≥ ${_filterMinPayout}F'
                 : 'Gain min',
-            icon: Icons.payments_rounded,
+            icon: AppIcons.card,
             selected: _filterMinPayout != null,
             onTap: _showMinPayoutDialog,
             onLongPress: _filterMinPayout != null
@@ -574,7 +613,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
     IconData? icon,
     VoidCallback? onLongPress,
   }) {
-    final accent = color ?? AppColors.neonGreen;
+    final accent = color ?? AppColors.primaryInk;
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 4),
       child: GestureDetector(
@@ -638,7 +677,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
               title: Text('≥ $v FCFA',
                   style: TextStyle(
                     color: selected == v
-                        ? AppColors.neonGreen
+                        ? AppColors.primaryInk
                         : AppColors.textPrimary,
                     fontSize: 13,
                     fontWeight: FontWeight.w800)),
@@ -666,12 +705,12 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
   Widget _body() {
     if (_loading && _bets.isEmpty) {
       return Center(
-          child: CircularProgressIndicator(color: AppColors.neonGreen));
+          child: CircularProgressIndicator(color: AppColors.primaryInk));
     }
     if (_error != null) return _errorView();
     if (_bets.isEmpty) return _emptyView();
     return RefreshIndicator(
-      color: AppColors.neonGreen,
+      color: AppColors.primaryInk,
       backgroundColor: AppColors.bgCard,
       onRefresh: () async {
         await Future.wait([_load(reset: true), _refreshLive()]);
@@ -696,7 +735,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
             ? SizedBox(
                 width: 22, height: 22,
                 child: CircularProgressIndicator(
-                  color: AppColors.neonGreen, strokeWidth: 2.2),
+                  color: AppColors.primaryInk, strokeWidth: 2.2),
               )
             : Text('Faites défiler pour charger plus',
                 style: TextStyle(
@@ -718,6 +757,9 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
     final createdAt = DateTime.tryParse(bet['created_at']?.toString() ?? '');
     final selections = (bet['selections'] as List?) ?? const [];
     final sport = _detectSport(selections, isVirtual);
+    // 2Up : reglement anticipe (paiement avant la fin du match).
+    final via2Up = bet['settled_via_2up'] == true;
+    final score2Up = bet['settled_at_score']?.toString();
 
     // ── Live tracking : evaluation par selection + verdict combine ──
     // Preserve exactement le comportement de la v1.
@@ -765,13 +807,16 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
         ? (actualPayout ?? (status == BetStatus.won ? payout : stake))
         : payout;
     final (badgeColor, badgeLabel, badgeIcon) = switch (status) {
-      BetStatus.won       => (AppColors.neonGreen, 'Gagné',     Icons.check_circle_rounded),
-      BetStatus.lost      => (AppColors.neonRed,   'Perdu',     Icons.cancel_rounded),
-      BetStatus.voided    => (AppColors.neonPurple,'Remboursé', Icons.do_not_disturb_rounded),
-      BetStatus.refunded  => (AppColors.neonPurple,'Remboursé', Icons.payments_rounded),
-      BetStatus.cashedOut => (AppColors.neonBlue,  'Encaissé',  Icons.payments_rounded),
-      _                   => (AppColors.neonBlue,  'Accepté',   Icons.check_circle_rounded),
+      BetStatus.won       => (AppColors.primaryInk, 'Gagné',     AppIcons.checkCircleFilled),
+      BetStatus.lost      => (AppColors.neonRed,   'Perdu',     AppIcons.cancel),
+      BetStatus.voided    => (AppColors.neonPurple,'Remboursé', AppIcons.blocked),
+      BetStatus.refunded  => (AppColors.neonPurple,'Remboursé', AppIcons.card),
+      BetStatus.cashedOut => (AppColors.neonBlue,  'Encaissé',  AppIcons.card),
+      _                   => (AppColors.neonBlue,  'Accepté',   AppIcons.checkCircleFilled),
     };
+    // Label statut : "Gagné via 2Up" si le ticket a ete regle en anticipe.
+    final statusLabel =
+        (status == BetStatus.won && via2Up) ? 'Gagné · 2Up' : badgeLabel;
 
     return GestureDetector(
       onTap: () => _openDetail(bet),
@@ -817,10 +862,10 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
                 else if (combined != null) _liveTicketBadge(combined),
               ]),
             ),
-            Icon(Icons.notifications_outlined,
+            Icon(AppIcons.notification,
                 size: 18, color: AppColors.textMuted),
             const SizedBox(width: 6),
-            Icon(Icons.more_vert_rounded,
+            Icon(AppIcons.more,
                 size: 18, color: AppColors.textMuted),
           ]),
           const SizedBox(height: 6),
@@ -846,6 +891,30 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
                       fontFeatures: const [FontFeature.tabularFigures()])),
               ),
             ),
+            if (via2Up) ...[
+              const SizedBox(width: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(3),
+                  border: Border.all(
+                      color: AppColors.primary.withValues(alpha: 0.5),
+                      width: 0.5),
+                ),
+                child: Text(
+                  (score2Up != null && score2Up.isNotEmpty)
+                      ? '2UP · $score2Up'
+                      : '2UP',
+                  style: TextStyle(
+                    color: AppColors.primaryInk,
+                    fontSize: 9,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 0.4,
+                  ),
+                ),
+              ),
+            ],
           ]),
           const SizedBox(height: 12),
           // ── Lignes tabulees : Type + Cote, Mise, Gains potentiels ──
@@ -879,7 +948,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
                 status == BetStatus.lost ? '— F' : '$displayPayout F',
                 style: TextStyle(
                   color: status == BetStatus.won
-                      ? AppColors.neonGreen
+                      ? AppColors.primaryInk
                       : (status == BetStatus.lost
                           ? AppColors.textMuted
                           : AppColors.textPrimary),
@@ -897,7 +966,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
               child: Row(mainAxisSize: MainAxisSize.min, children: [
                 Icon(badgeIcon, size: 12, color: badgeColor),
                 const SizedBox(width: 4),
-                Text(badgeLabel,
+                Text(statusLabel,
                     style: TextStyle(
                       color: badgeColor,
                       fontSize: 11,
@@ -992,10 +1061,10 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
   Widget _selectionRow(Map sel, {BetLiveStatus liveStatus = BetLiveStatus.unknown}) {
     final status = sel['selection_status']?.toString() ?? 'pending';
     final (icon, iconColor) = switch (status) {
-      'won'  => (Icons.check_circle_rounded, AppColors.neonGreen),
-      'lost' => (Icons.cancel_rounded, AppColors.neonRed),
-      'void' => (Icons.do_not_disturb_rounded, AppColors.textMuted),
-      _      => (Icons.schedule_rounded, AppColors.neonYellow),
+      'won'  => (AppIcons.checkCircleFilled, AppColors.primaryInk),
+      'lost' => (AppIcons.cancel, AppColors.neonRed),
+      'void' => (AppIcons.blocked, AppColors.textMuted),
+      _      => (AppIcons.clock, AppColors.neonYellow),
     };
     final odds = (sel['odds'] as num?)?.toDouble();
     final showLive = status == 'pending' &&
@@ -1154,7 +1223,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
       col = AppColors.neonRed;
       label = 'LIVE · PERDU';
     } else if (c.winning) {
-      col = AppColors.neonGreen;
+      col = AppColors.primaryInk;
       label = c.hasUnknown ? 'LIVE · OK' : 'LIVE · GAGNÉ';
     } else {
       col = AppColors.neonRed;
@@ -1176,8 +1245,8 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
 
   (Color, String) _liveStatusVisual(BetLiveStatus s) {
     switch (s) {
-      case BetLiveStatus.winning: return (AppColors.neonGreen, 'TU MÈNES');
-      case BetLiveStatus.locked:  return (AppColors.neonGreen, 'ACQUIS');
+      case BetLiveStatus.winning: return (AppColors.primaryInk, 'TU MÈNES');
+      case BetLiveStatus.locked:  return (AppColors.primaryInk, 'ACQUIS');
       case BetLiveStatus.losing:  return (AppColors.neonRed,   'EN RETARD');
       case BetLiveStatus.busted:  return (AppColors.neonRed,   'PERDU LIVE');
       case BetLiveStatus.unknown: return (AppColors.textMuted, '');
@@ -1215,7 +1284,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.receipt_long_rounded,
+          Icon(AppIcons.receipt,
               size: 56, color: AppColors.textMuted),
           const SizedBox(height: 12),
           Text(hasFilters ? 'Aucun ticket trouvé' : 'Aucun pari',
@@ -1239,7 +1308,7 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
       child: Padding(
         padding: const EdgeInsets.all(32),
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
-          Icon(Icons.error_outline, size: 56, color: AppColors.neonRed),
+          Icon(AppIcons.warning, size: 56, color: AppColors.neonRed),
           const SizedBox(height: 12),
           Text('Erreur',
               style: TextStyle(
@@ -1253,8 +1322,8 @@ class _BetsHistoryScreenState extends State<BetsHistoryScreen>
           ElevatedButton(
             onPressed: () => _load(reset: true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: AppColors.neonGreen,
-              foregroundColor: Colors.black,
+              backgroundColor: AppColors.primary,
+              foregroundColor: AppColors.onPrimary,
               padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(10)),

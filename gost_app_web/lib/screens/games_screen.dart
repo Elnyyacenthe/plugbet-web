@@ -1,303 +1,295 @@
 // ============================================================
-// Plugbet – Écran des jeux
-// Fantasy en featured + grille 2 colonnes + leaderboard
+// Plugbet - Ecran des jeux
+// Header custom + carousel + recherche + filtres + grille 3 colonnes.
+// La navigation de chaque jeu reste portee par les builders existants.
 // ============================================================
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import '../theme/app_theme.dart';
 import '../l10n/generated/app_localizations.dart';
+import '../theme/app_theme.dart';
 import '../providers/wallet_provider.dart';
-import '../fantasy/screens/fantasy_home_screen.dart';
-import '../ludo_v2/screens/ludo_menu_screen.dart';
-import '../games/cora_dice/screens/cora_dice_screen.dart';
-import '../games/checkers/screens/checkers_screen.dart';
-import '../games/solitaire/screens/solitaire_screen.dart';
-import '../games/aviator/screens/aviator_screen.dart';
-import '../games/blackjack/screens/blackjack_screen.dart';
-import '../games/roulette/screens/roulette_screen.dart';
-import '../games/coinflip/screens/coinflip_screen.dart';
-import '../games/slots_777/screens/slots_screen.dart';
-import '../games/wheel/screens/wheel_screen.dart';
-import '../games/apple_fortune/screens/apple_fortune_screen.dart';
-import '../games/mines/screens/mines_screen.dart';
-import '../games/penalty/screens/penalty_bet_screen.dart';
+import '../games/games_catalog.dart';
 import '../widgets/game_rules_dialog.dart';
 import '../widgets/players_leaderboard.dart';
+import '../providers/promo_provider.dart';
+import '../models/promo_item.dart';
+import 'promotions/promo_detail_screen.dart';
 
-class _Game {
-  final String title;
-  final String subtitle;
+class _FilterOption {
+  final String label;
   final IconData icon;
-  final String imageAsset;
-  final Color color;
-  final Widget Function(BuildContext) builder;
-  final GameRules? rules;
-  const _Game({
-    required this.title,
-    required this.subtitle,
+  final GameCategory? tag;
+
+  const _FilterOption({
+    required this.label,
     required this.icon,
-    required this.imageAsset,
-    required this.color,
-    required this.builder,
-    this.rules,
+    required this.tag,
   });
 }
 
-class GamesScreen extends StatelessWidget {
+class GamesScreen extends StatefulWidget {
   const GamesScreen({super.key});
+
+  @override
+  State<GamesScreen> createState() => _GamesScreenState();
+}
+
+class _GamesScreenState extends State<GamesScreen> {
+  final _searchController = TextEditingController();
+  final _carouselController = PageController(viewportFraction: 0.85);
+  GameCategory? _selectedTag;
+  String _query = '';
+
+  static const _filters = <_FilterOption>[
+    _FilterOption(label: 'Tous', icon: Icons.apps_rounded, tag: null),
+    _FilterOption(
+      label: 'Classiques',
+      icon: Icons.extension_rounded,
+      tag: GameCategory.classic,
+    ),
+    _FilterOption(
+      label: 'Casino',
+      icon: Icons.casino_rounded,
+      tag: GameCategory.casino,
+    ),
+    _FilterOption(
+      label: 'Multijoueur',
+      icon: Icons.groups_rounded,
+      tag: GameCategory.multiplayer,
+    ),
+    _FilterOption(
+      label: 'Arcade',
+      icon: Icons.sports_esports_rounded,
+      tag: GameCategory.arcade,
+    ),
+  ];
+
+
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _carouselController.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
     final wallet = context.watch<WalletProvider>();
-    final t = AppLocalizations.of(context)!;
-
-    final games = <_Game>[
-      _Game(
-        title: 'Ludo',
-        subtitle: 'Plateau classique • 2-4 joueurs',
-        icon: Icons.dashboard_rounded,
-        imageAsset: 'assets/games/ludo.png',
-        color: AppColors.neonBlue,
-        builder: (_) => const LudoV2MenuScreen(),
-        rules: GameRulesLibrary.ludo,
-      ),
-      _Game(
-        title: 'Cora Dice',
-        subtitle: 'Jeu de dés multijoueur',
-        icon: Icons.casino_rounded,
-        imageAsset: 'assets/games/cora_dice.jpg',
-        color: AppColors.neonGreen,
-        builder: (_) => const CoraDiceScreen(),
-        rules: GameRulesLibrary.coraDice,
-      ),
-      _Game(
-        title: 'Dames',
-        subtitle: 'Plateau 8×8 • 1v1',
-        icon: Icons.grid_4x4_rounded,
-        imageAsset: 'assets/games/dames.jpg',
-        color: AppColors.neonOrange,
-        builder: (_) => const CheckersScreen(),
-        rules: GameRulesLibrary.checkers,
-      ),
-      _Game(
-        title: 'Aviator',
-        subtitle: 'Crash multiplier',
-        icon: Icons.flight_takeoff_rounded,
-        imageAsset: 'assets/games/aviator.png',
-        color: const Color(0xFFF97316),
-        builder: (_) => const AviatorScreen(),
-        rules: GameRulesLibrary.aviator,
-      ),
-      _Game(
-        title: 'Blackjack',
-        subtitle: '2-4 joueurs vs Dealer',
-        icon: Icons.style_rounded,
-        imageAsset: 'assets/games/blackjack.jpg',
-        color: const Color(0xFF2E7D32),
-        builder: (_) => const BlackjackScreen(),
-        rules: GameRulesLibrary.blackjack,
-      ),
-      _Game(
-        title: 'Roulette',
-        subtitle: 'Multi joueurs • Rouge/Noir',
-        icon: Icons.donut_large_rounded,
-        imageAsset: 'assets/games/roulette.jpg',
-        color: const Color(0xFFB71C1C),
-        builder: (_) => const RouletteScreen(),
-        rules: GameRulesLibrary.roulette,
-      ),
-      _Game(
-        title: 'Apple Fortune',
-        subtitle: 'Pyramide multiplicateurs',
-        icon: Icons.change_history_rounded,
-        imageAsset: 'assets/games/apple_fortune.png',
-        color: const Color(0xFF4CAF50),
-        builder: (_) => const AppleFortuneScreen(),
-        rules: GameRulesLibrary.appleFortune,
-      ),
-      _Game(
-        title: 'Mines',
-        subtitle: 'Diamants vs bombes',
-        icon: Icons.diamond_rounded,
-        imageAsset: 'assets/games/mines.png',
-        color: const Color(0xFFE53935),
-        builder: (_) => const MinesScreen(),
-        rules: GameRulesLibrary.mines,
-      ),
-      _Game(
-        title: 'Pile ou Face',
-        subtitle: 'Duel 1v1',
-        icon: Icons.monetization_on_rounded,
-        imageAsset: 'assets/games/coinflip.png',
-        color: const Color(0xFFFFD700),
-        builder: (_) => const CoinflipScreen(),
-        rules: GameRulesLibrary.coinflip,
-      ),
-      _Game(
-        title: 'Solitaire',
-        subtitle: 'Klondike • Solo',
-        icon: Icons.layers_rounded,
-        imageAsset: 'assets/games/solitaire.png',
-        color: const Color(0xFF9C27B0),
-        builder: (_) => const SolitaireScreen(),
-        rules: GameRulesLibrary.solitaire,
-      ),
-      // ── Penalty natif (server-authoritative) ─────────────────
-      // 5 tirs au but, RNG serveur pour le gardien. Mise libre
-      // [10, 1000]. Si goals > misses -> 2× la mise. Sinon mise perdue.
-      _Game(
-        title: 'Penalty',
-        subtitle: 'Mise libre • 5 tirs • 2× si victoire',
-        icon: Icons.sports_soccer_rounded,
-        imageAsset: 'assets/games/penalty_shooters_2.png',
-        color: const Color(0xFF00C853),
-        builder: (_) => const PenaltyBetScreen(),
-      ),
-      // ── Big Win 777 — machine a sous (server-RNG + caisse) ─
-      // 3 rouleaux, 1 ligne centrale. RNG serveur. Mises libres 10-1000.
-      // Jackpot 7-7-7 = ×500. Debit/credit via _ledger_post + caisse.
-      _Game(
-        title: 'Big Win 777',
-        subtitle: 'Machine à sous • Mise libre 10-1000',
-        icon: Icons.casino_outlined,
-        imageAsset: 'assets/games/big_win_777.webp',
-        color: const Color(0xFFFFD600),
-        builder: (_) => const SlotsScreen(),
-      ),
-      // ── Plugbet Wheel — roue de la fortune (multi-mise) ────
-      // 48 segments, 6 tuiles 1/2/5/10/20/40. RNG serveur.
-      // Multi-mise : depose des FCFA sur plusieurs tuiles, payout =
-      // stake × (tile + 1) sur la tuile gagnante. Min 25, max 25000.
-      _Game(
-        title: 'Plugbet Wheel',
-        subtitle: 'Roue de la fortune • Multi-mise',
-        icon: Icons.brightness_low,
-        imageAsset: 'assets/games/wheel.png',
-        color: const Color(0xFFFFB300),
-        builder: (_) => const WheelScreen(),
-      ),
-    ];
+    final games = kGamesCatalog.where((g) => g.matches(_query, _selectedTag)).toList();
 
     return Scaffold(
-      backgroundColor: AppColors.bgDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgBlueNight,
-        title: Text(
-          t.tabGames,
-          style: TextStyle(color: AppColors.textPrimary, fontWeight: FontWeight.w800),
-        ),
-        centerTitle: true,
-        actions: [
-          Padding(
-            padding: const EdgeInsets.only(right: 16),
-            child: Row(
+      backgroundColor: AppColors.gamesBackground,
+      appBar: _GamesHeader(balance: wallet.coins),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 24),
+        children: [
+          const SizedBox(height: 4),
+          _PromoCarousel(controller: _carouselController),
+          _SearchBar(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _query = value.trim()),
+          ),
+          _GameFilters(
+            filters: _filters,
+            selectedTag: _selectedTag,
+            onSelected: (tag) => setState(() => _selectedTag = tag),
+          ),
+          _GamesSectionHeader(count: games.length),
+          if (games.isEmpty)
+            const _EmptyGamesState()
+          else
+            _GamesGrid(
+              games: games,
+              onOpen: _openGame,
+              onRules: _showRules,
+            ),
+          const SizedBox(height: 18),
+          const PlayersLeaderboard(),
+        ],
+      ),
+    );
+  }
+
+  void _openGame(GameEntry game) {
+    Navigator.push(context, MaterialPageRoute(builder: game.builder));
+  }
+
+  void _showRules(GameEntry game) {
+    final rules = game.rules;
+    if (rules == null) return;
+    GameRulesDialog.show(context, rules);
+  }
+}
+
+class _GamesHeader extends StatelessWidget implements PreferredSizeWidget {
+  final int balance;
+
+  const _GamesHeader({required this.balance});
+
+  @override
+  Size get preferredSize => const Size.fromHeight(92);
+
+  @override
+  Widget build(BuildContext context) {
+    final localizedTitle = AppLocalizations.of(context)?.tabGames ?? 'Games';
+
+    return SafeArea(
+      bottom: false,
+      child: Container(
+        height: preferredSize.height,
+        color: AppColors.gamesBackground,
+        padding: const EdgeInsets.fromLTRB(20, 16, 20, 14),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 18),
-                const SizedBox(width: 4),
+                Semantics(
+                  label: localizedTitle,
+                  child: ShaderMask(
+                    blendMode: BlendMode.srcIn,
+                    shaderCallback: (bounds) => LinearGradient(
+                      begin: Alignment.centerLeft,
+                      end: Alignment.centerRight,
+                      colors: [
+                        AppColors.gamesTextPrimary,
+                        AppColors.gamesTextPrimary,
+                        AppColors.gamesAccent,
+                      ],
+                      stops: const [0, 0.42, 1],
+                    ).createShader(bounds),
+                    child: Text(
+                      'Games',
+                      style: TextStyle(
+                        fontSize: 31,
+                        height: 1,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0,
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 7),
                 Text(
-                  '${wallet.coins}',
+                  'ARCADE & CASINO',
                   style: TextStyle(
-                    color: AppColors.neonYellow,
-                    fontWeight: FontWeight.w700,
-                    fontSize: 15,
+                    color: AppColors.gamesAccent,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: 2.2,
                   ),
                 ),
               ],
             ),
-          ),
-        ],
-      ),
-      body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
-        child: ListView(
-          padding: const EdgeInsets.symmetric(vertical: 12),
-          children: [
-            // ───── JEU PRINCIPAL : Fantasy Premier League ─────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-              child: _featuredCard(context),
-            ),
-
-            // ───── Section autres jeux ─────
-            Padding(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
-              child: Row(
-                children: [
-                  Text(
-                    'TOUS LES JEUX',
-                    style: TextStyle(
-                      color: AppColors.textMuted,
-                      fontSize: 11,
-                      fontWeight: FontWeight.w800,
-                      letterSpacing: 1.2,
-                    ),
+            Container(
+              height: 38,
+              padding: const EdgeInsets.symmetric(horizontal: 13),
+              decoration: BoxDecoration(
+                color: AppColors.gamesSurfaceElevated,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: AppColors.gamesBorder),
+                boxShadow: [
+                  BoxShadow(
+                    color: AppColors.gamesSoftShadow,
+                    blurRadius: 12,
+                    offset: const Offset(0, 4),
                   ),
-                  const SizedBox(width: 8),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: AppColors.neonGreen.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${games.length}',
-                      style: TextStyle(
-                        color: AppColors.neonGreen,
-                        fontSize: 10,
-                        fontWeight: FontWeight.w800,
-                      ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.attach_money_rounded,
+                    color: AppColors.gamesYellow,
+                    size: 18,
+                  ),
+                  const SizedBox(width: 4),
+                  Text(
+                    '$balance',
+                    style: TextStyle(
+                      color: AppColors.gamesTextPrimary,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w800,
                     ),
                   ),
                 ],
               ),
             ),
-
-            // ───── Grille 2 colonnes ─────
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: GridView.builder(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: 2,
-                  childAspectRatio: 0.88,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: games.length,
-                itemBuilder: (context, i) => _gameTile(context, games[i]),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // ───── Top joueurs avec chat ─────
-            const PlayersLeaderboard(),
-
-            const SizedBox(height: 80),
           ],
         ),
       ),
     );
   }
+}
 
-  // ────────────────────────────────────────────────────────────
-  // FEATURED CARD : Fantasy Premier League
-  // ────────────────────────────────────────────────────────────
-  Widget _featuredCard(BuildContext context) {
-    return GestureDetector(
-      onTap: () => Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => const FantasyHomeScreen()),
+class _PromoCarousel extends StatelessWidget {
+  final PageController controller;
+
+  const _PromoCarousel({required this.controller});
+
+  @override
+  Widget build(BuildContext context) {
+    final provider = context.watch<PromoProvider>();
+    final promos = provider.promotions;
+
+    if (promos.isEmpty) {
+      // En cours de chargement (ou aucune promo) : on reserve la hauteur
+      // pour eviter un saut de layout, sans rien afficher d'intrusif.
+      return const SizedBox(height: 204);
+    }
+
+    return SizedBox(
+      height: 204,
+      child: PageView.builder(
+        controller: controller,
+        padEnds: false,
+        itemCount: promos.length,
+        itemBuilder: (context, index) {
+          return Padding(
+            padding: EdgeInsets.only(
+              left: index == 0 ? 16 : 6,
+              right: 6,
+              top: 2,
+              bottom: 10,
+            ),
+            child: _PromoCard(promo: promos[index]),
+          );
+        },
       ),
+    );
+  }
+}
+
+class _PromoCard extends StatelessWidget {
+  final PromoItem promo;
+
+  const _PromoCard({required this.promo});
+
+  void _open(BuildContext context) {
+    // Détail de CETTE promo (avant : ouvrait la page globale des promos).
+    Navigator.push(
+      context,
+      MaterialPageRoute(builder: (_) => PromoDetailScreen(promoId: promo.id)),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: () => _open(context),
       child: Container(
-        height: 160,
         decoration: BoxDecoration(
+          color: AppColors.gamesSurface,
           borderRadius: BorderRadius.circular(20),
+          border: Border.all(color: AppColors.gamesBorder),
           boxShadow: [
             BoxShadow(
-              color: const Color(0xFF38003C).withValues(alpha: 0.4),
-              blurRadius: 20,
+              color: AppColors.gamesCardShadow,
+              blurRadius: 16,
               offset: const Offset(0, 8),
             ),
           ],
@@ -305,124 +297,492 @@ class GamesScreen extends StatelessWidget {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(20),
           child: Stack(
-          children: [
-            // Fond image Fantasy (avec fallback gradient si manquante)
-            Positioned.fill(
-              child: Image.asset(
-                'assets/games/fantasy.jpg',
+            fit: StackFit.expand,
+            children: [
+              Image.asset(
+                promo.imageUrl,
                 fit: BoxFit.cover,
-                cacheWidth: 800,
-                filterQuality: FilterQuality.low,
-                errorBuilder: (_, __, ___) => DecoratedBox(
+                errorBuilder: (_, __, ___) => _fallback(),
+              ),
+              // Voile bas pour lisibilite du titre.
+              Positioned.fill(
+                child: DecoratedBox(
                   decoration: BoxDecoration(
                     gradient: LinearGradient(
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
+                      begin: Alignment.topCenter,
+                      end: Alignment.bottomCenter,
                       colors: [
-                        const Color(0xFF38003C),
-                        const Color(0xFF00FF87),
+                        Colors.transparent,
+                        Colors.black.withValues(alpha: 0.10),
+                        Colors.black.withValues(alpha: 0.72),
                       ],
+                      stops: const [0.35, 0.6, 1],
                     ),
                   ),
                 ),
               ),
-            ),
+              // Badge "PROMO".
+              Positioned(
+                left: 12,
+                top: 12,
+                child: Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                  decoration: BoxDecoration(
+                    color: AppColors.gamesAccent,
+                    borderRadius: BorderRadius.circular(999),
+                  ),
+                  child: Text(
+                    'PROMO',
+                    style: TextStyle(
+                      color: AppColors.gamesOnAccent,
+                      fontSize: 9,
+                      fontWeight: FontWeight.w900,
+                      letterSpacing: 1.2,
+                    ),
+                  ),
+                ),
+              ),
+              // Titre + CTA en bas.
+              Positioned(
+                left: 14,
+                right: 14,
+                bottom: 12,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    Expanded(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            promo.title,
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 18,
+                              fontWeight: FontWeight.w900,
+                              letterSpacing: -0.3,
+                            ),
+                          ),
+                          if (promo.highlightedReward != null) ...[
+                            const SizedBox(height: 2),
+                            Text(
+                              promo.highlightedReward!,
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
+                              style: TextStyle(
+                                color: AppColors.gamesAccent,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w800,
+                              ),
+                            ),
+                          ],
+                        ],
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 8),
+                      decoration: BoxDecoration(
+                        color: AppColors.gamesAccent,
+                        borderRadius: BorderRadius.circular(999),
+                      ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            'Voir',
+                            style: TextStyle(
+                              color: AppColors.gamesOnAccent,
+                              fontSize: 12,
+                              fontWeight: FontWeight.w900,
+                            ),
+                          ),
+                          const SizedBox(width: 3),
+                          Icon(
+                            Icons.arrow_forward_rounded,
+                            size: 15,
+                            color: AppColors.gamesOnAccent,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
 
-            // Overlay sombre pour lisibilite du texte
+  Widget _fallback() {
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [
+            AppColors.gamesAccent.withValues(alpha: 0.85),
+            AppColors.gamesAccent.withValues(alpha: 0.45),
+          ],
+        ),
+      ),
+      child: Center(
+        child: Icon(
+          Icons.card_giftcard_rounded,
+          size: 56,
+          color: AppColors.gamesOnAccent.withValues(alpha: 0.9),
+        ),
+      ),
+    );
+  }
+}
+
+class _SearchBar extends StatelessWidget {
+  final TextEditingController controller;
+  final ValueChanged<String> onChanged;
+
+  const _SearchBar({
+    required this.controller,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 50,
+      margin: const EdgeInsets.fromLTRB(16, 12, 16, 10),
+      decoration: BoxDecoration(
+        color: AppColors.gamesSurfaceElevated,
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: AppColors.gamesBorder),
+        boxShadow: [
+          BoxShadow(
+            color: AppColors.gamesSoftShadow,
+            blurRadius: 10,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: TextField(
+        controller: controller,
+        onChanged: onChanged,
+        cursorColor: AppColors.gamesAccent,
+        style: TextStyle(
+          color: AppColors.gamesTextPrimary,
+          fontSize: 14,
+          fontWeight: FontWeight.w600,
+        ),
+        decoration: InputDecoration(
+          prefixIcon: Icon(
+            Icons.search_rounded,
+            color: AppColors.gamesMutedIcon,
+            size: 21,
+          ),
+          hintText: 'Rechercher un jeu...',
+          hintStyle: TextStyle(
+            color: AppColors.gamesTextSecondary,
+            fontSize: 14,
+            fontWeight: FontWeight.w500,
+          ),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 15),
+        ),
+      ),
+    );
+  }
+}
+
+class _GameFilters extends StatelessWidget {
+  final List<_FilterOption> filters;
+  final GameCategory? selectedTag;
+  final ValueChanged<GameCategory?> onSelected;
+
+  const _GameFilters({
+    required this.filters,
+    required this.selectedTag,
+    required this.onSelected,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      height: 48,
+      child: ListView.separated(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        scrollDirection: Axis.horizontal,
+        itemCount: filters.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final filter = filters[index];
+          final active = filter.tag == selectedTag;
+          return _FilterChip(
+            option: filter,
+            active: active,
+            onTap: () => onSelected(filter.tag),
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _FilterChip extends StatelessWidget {
+  final _FilterOption option;
+  final bool active;
+  final VoidCallback onTap;
+
+  const _FilterChip({
+    required this.option,
+    required this.active,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final fg = active ? AppColors.gamesOnAccent : AppColors.gamesTextSecondary;
+    return InkWell(
+      borderRadius: BorderRadius.circular(12),
+      onTap: onTap,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+        decoration: BoxDecoration(
+          color:
+              active ? AppColors.gamesAccent : AppColors.gamesSurfaceElevated,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: active ? AppColors.gamesAccent : AppColors.gamesBorder,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: active ? AppColors.transparent : AppColors.gamesSoftShadow,
+              blurRadius: 8,
+              offset: const Offset(0, 2),
+            ),
+          ],
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(option.icon, size: 16, color: fg),
+            const SizedBox(width: 7),
+            Text(
+              option.label,
+              style: TextStyle(
+                color: fg,
+                fontSize: 12,
+                fontWeight: active ? FontWeight.w900 : FontWeight.w700,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _GamesSectionHeader extends StatelessWidget {
+  final int count;
+
+  const _GamesSectionHeader({required this.count});
+
+  @override
+  Widget build(BuildContext context) {
+    final counterText =
+        AppColors.isDark ? AppColors.gamesAccent : AppColors.gamesAccentDeep;
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 17, 16, 13),
+      child: Row(
+        children: [
+          Icon(
+            Icons.local_fire_department_rounded,
+            color: AppColors.gamesOrange,
+            size: 18,
+          ),
+          const SizedBox(width: 6),
+          Text(
+            'TOUS LES JEUX',
+            style: TextStyle(
+              color: AppColors.gamesTextPrimary,
+              fontSize: 13,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 1,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+            decoration: BoxDecoration(
+              color: AppColors.gamesAccentSoft,
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              '$count',
+              style: TextStyle(
+                color: counterText,
+                fontSize: 11,
+                fontWeight: FontWeight.w900,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GamesGrid extends StatelessWidget {
+  final List<GameEntry> games;
+  final ValueChanged<GameEntry> onOpen;
+  final ValueChanged<GameEntry> onRules;
+
+  const _GamesGrid({
+    required this.games,
+    required this.onOpen,
+    required this.onRules,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GridView.builder(
+      shrinkWrap: true,
+      physics: const NeverScrollableScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 16),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 3,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 0.88,
+      ),
+      itemCount: games.length,
+      itemBuilder: (context, index) {
+        final game = games[index];
+        return _GameTile(
+          game: game,
+          onTap: () => onOpen(game),
+          onRules: () => onRules(game),
+        );
+      },
+    );
+  }
+}
+
+class _GameTile extends StatelessWidget {
+  final GameEntry game;
+  final VoidCallback onTap;
+  final VoidCallback onRules;
+
+  const _GameTile({
+    required this.game,
+    required this.onTap,
+    required this.onRules,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(16),
+        child: Stack(
+          fit: StackFit.expand,
+          children: [
+            _GameImage(
+              asset: game.imageAsset,
+              icon: game.icon,
+              cacheWidth: 320,
+            ),
             Positioned.fill(
               child: DecoratedBox(
                 decoration: BoxDecoration(
                   gradient: LinearGradient(
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
                     colors: [
-                      Colors.black.withValues(alpha: 0.55),
-                      Colors.black.withValues(alpha: 0.15),
+                      AppColors.gamesImageOverlayClear,
+                      AppColors.gamesImageOverlaySoft,
+                      AppColors.gamesImageOverlayStrong,
                     ],
+                    stops: const [0.35, 0.72, 1],
                   ),
                 ),
               ),
             ),
-
-            // Contenu
-            Padding(
-              padding: const EdgeInsets.all(20),
+            if (game.hot)
+              const Positioned(
+                top: 7,
+                left: 7,
+                child: _HotBadge(),
+              ),
+            Positioned(
+              top: 7,
+              right: 7,
+              child: GestureDetector(
+                onTap: onRules,
+                child: Container(
+                  width: 25,
+                  height: 25,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.gamesImageControlBg,
+                  ),
+                  child: Icon(
+                    Icons.question_mark_rounded,
+                    color: AppColors.gamesImageText,
+                    size: 15,
+                  ),
+                ),
+              ),
+            ),
+            Positioned(
+              left: 10,
+              right: 8,
+              bottom: 9,
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                mainAxisSize: MainAxisSize.min,
                 children: [
+                  Text(
+                    game.title,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: AppColors.gamesImageText,
+                      fontSize: 15,
+                      fontWeight: FontWeight.w900,
+                      height: 1.05,
+                      letterSpacing: 0,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
                   Row(
                     children: [
                       Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        width: 6,
+                        height: 6,
                         decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.2),
-                          borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
-                        ),
-                        child: const Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.star, size: 12, color: Colors.white),
-                            SizedBox(width: 4),
-                            Text(
-                              'PRINCIPAL',
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: 10,
-                                fontWeight: FontWeight.w800,
-                                letterSpacing: 1.0,
-                              ),
-                            ),
-                          ],
+                          color: AppColors.gamesAccent,
+                          shape: BoxShape.circle,
                         ),
                       ),
-                      const Spacer(),
-                      Container(
-                        padding: const EdgeInsets.all(6),
-                        decoration: BoxDecoration(
-                          color: Colors.white.withValues(alpha: 0.15),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: const Icon(
-                          Icons.arrow_forward,
-                          color: Colors.white,
-                          size: 16,
-                        ),
-                      ),
-                    ],
-                  ),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          const Text('⚽', style: TextStyle(fontSize: 24)),
-                          const SizedBox(width: 8),
-                          Text(
-                            'Fantasy Premier League',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w900,
-                              letterSpacing: -0.5,
-                              shadows: [
-                                Shadow(
-                                  color: Colors.black.withValues(alpha: 0.3),
-                                  blurRadius: 4,
-                                ),
-                              ],
-                            ),
+                      const SizedBox(width: 4),
+                      Expanded(
+                        child: Text(
+                          '${game.onlineCount} en ligne',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: AppColors.gamesImageTextMuted,
+                            fontSize: 11,
+                            fontWeight: FontWeight.w700,
+                            height: 1,
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      Text(
-                        'Construis ton équipe • Affronte tes amis',
-                        style: TextStyle(
-                          color: Colors.white.withValues(alpha: 0.85),
-                          fontSize: 12,
-                          fontWeight: FontWeight.w500,
                         ),
                       ),
                     ],
@@ -432,144 +792,121 @@ class GamesScreen extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _HotBadge extends StatelessWidget {
+  const _HotBadge();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
+      decoration: BoxDecoration(
+        color: AppColors.gamesOrange,
+        borderRadius: BorderRadius.circular(999),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(
+            Icons.local_fire_department_rounded,
+            color: AppColors.gamesOnAccent,
+            size: 10,
+          ),
+          const SizedBox(width: 2),
+          Text(
+            'HOT',
+            style: TextStyle(
+              color: AppColors.gamesOnAccent,
+              fontSize: 8,
+              fontWeight: FontWeight.w900,
+              letterSpacing: 0.4,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _GameImage extends StatelessWidget {
+  final String asset;
+  final IconData icon;
+  final int cacheWidth;
+
+  const _GameImage({
+    required this.asset,
+    required this.icon,
+    required this.cacheWidth,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Image.asset(
+      asset,
+      fit: BoxFit.cover,
+      cacheWidth: cacheWidth,
+      filterQuality: FilterQuality.low,
+      errorBuilder: (_, __, ___) => DecoratedBox(
+        decoration: const BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              AppColors.gamesImageFallbackStart,
+              AppColors.gamesImageFallbackEnd,
+            ],
+          ),
+        ),
+        child: Center(
+          child: Icon(
+            icon,
+            size: 44,
+            color: AppColors.gamesImageFallbackIcon,
+          ),
         ),
       ),
     );
   }
+}
 
-  // ────────────────────────────────────────────────────────────
-  // GAME TILE : carte plein-cadre, fond gradient intense,
-  // icone geante en watermark + overlay sombre pour le texte
-  // ────────────────────────────────────────────────────────────
-  Widget _gameTile(BuildContext context, _Game g) {
-    final darkEnd = Color.lerp(g.color, Colors.black, 0.75)!;
-    return GestureDetector(
-      onTap: () =>
-          Navigator.push(context, MaterialPageRoute(builder: g.builder)),
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(16),
-          boxShadow: [
-            BoxShadow(
-              color: g.color.withValues(alpha: 0.25),
-              blurRadius: 10,
-              offset: const Offset(0, 4),
-            ),
-          ],
-        ),
-        child: ClipRRect(
-          borderRadius: BorderRadius.circular(16),
-          child: Stack(
-            children: [
-              // FOND : image si elle existe, sinon gradient de couleur
-              // cacheWidth limite le decodage en RAM (sinon full resolution)
-              Positioned.fill(
-                child: Image.asset(
-                  g.imageAsset,
-                  fit: BoxFit.cover,
-                  cacheWidth: 400,
-                  filterQuality: FilterQuality.low,
-                  errorBuilder: (_, __, ___) {
-                    // Fallback : gradient + icone si image pas encore ajoutee
-                    return DecoratedBox(
-                      decoration: BoxDecoration(
-                        gradient: LinearGradient(
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                          colors: [g.color, darkEnd],
-                        ),
-                      ),
-                      child: Center(
-                        child: Icon(
-                          g.icon,
-                          size: 80,
-                          color: Colors.white.withValues(alpha: 0.4),
-                        ),
-                      ),
-                    );
-                  },
-                ),
-              ),
+class _EmptyGamesState extends StatelessWidget {
+  const _EmptyGamesState();
 
-              // Overlay sombre en bas pour lisibilite du texte
-              Positioned(
-                left: 0,
-                right: 0,
-                bottom: 0,
-                height: 72,
-                child: DecoratedBox(
-                  decoration: BoxDecoration(
-                    gradient: LinearGradient(
-                      begin: Alignment.topCenter,
-                      end: Alignment.bottomCenter,
-                      colors: [
-                        Colors.transparent,
-                        Colors.black.withValues(alpha: 0.75),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-
-              // Bouton regles (coin haut droit)
-              if (g.rules != null)
-                Positioned(
-                  top: 8,
-                  right: 8,
-                  child: GestureDetector(
-                    onTap: () => GameRulesDialog.show(context, g.rules!),
-                    child: Container(
-                      width: 28,
-                      height: 28,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: Colors.black.withValues(alpha: 0.5),
-                      ),
-                      child: const Icon(
-                        Icons.help_outline_rounded,
-                        color: Colors.white,
-                        size: 16,
-                      ),
-                    ),
-                  ),
-                ),
-
-              // Texte en bas
-              Positioned(
-                left: 12,
-                right: 12,
-                bottom: 10,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Text(
-                      g.title,
-                      style: const TextStyle(
-                        color: Colors.white,
-                        fontSize: 15,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: -0.3,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      g.subtitle,
-                      style: TextStyle(
-                        color: Colors.white.withValues(alpha: 0.85),
-                        fontSize: 10,
-                        fontWeight: FontWeight.w500,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                  ],
-                ),
-              ),
-            ],
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 32, 24, 24),
+      child: Column(
+        children: [
+          Icon(
+            Icons.search_off_rounded,
+            color: AppColors.gamesMutedIcon,
+            size: 42,
           ),
-        ),
+          const SizedBox(height: 10),
+          Text(
+            'Aucun jeu trouvé',
+            style: TextStyle(
+              color: AppColors.gamesTextPrimary,
+              fontSize: 15,
+              fontWeight: FontWeight.w800,
+            ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'Essaie une autre recherche ou un autre filtre.',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: AppColors.gamesTextSecondary,
+              fontSize: 13,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
       ),
     );
   }

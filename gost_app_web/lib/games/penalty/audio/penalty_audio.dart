@@ -13,5 +13,4 @@
 //   * playSave()     : capture.mp3 (arrêt par le gardien)
 // ============================================================
 
-export 'penalty_audio_io.dart'
-  if (dart.library.html) 'penalty_audio_web.dart';
+export 'penalty_audio_io.dart';

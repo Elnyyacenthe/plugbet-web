@@ -8,6 +8,12 @@
 // L'animation : on tourne plusieurs tours complets puis on atterit
 // pile sur le segment cible (passe par le parent via [targetSegment]
 // quand le serveur a repondu).
+//
+// >>> DESIGN PREMIUM <<<
+// Cette version enrichit uniquement le rendu visuel (gradients,
+// glow neon, bezel glassmorphism, ombres portees, degrades sur les
+// segments). AUCUNE logique d'animation, de timing ou de calcul
+// d'angle n'a ete modifiee.
 // ============================================================
 
 import 'dart:math' as math;
@@ -112,19 +118,50 @@ class _WheelWidgetState extends State<WheelWidget>
     return SizedBox(
       width: widget.size, height: widget.size,
       child: Stack(alignment: Alignment.center, children: [
-        // Halo
+        // --- Halo ambiant "respirant" (purement decoratif, ne touche
+        // pas a la logique de rotation, se contente de lire _idleCtrl
+        // pour une pulsation douce) ---
+        AnimatedBuilder(
+          animation: _idleCtrl,
+          builder: (_, __) {
+            final pulse = 0.35 + 0.15 * math.sin(_idleCtrl.value * 2 * math.pi);
+            return Container(
+              width: widget.size * 1.06,
+              height: widget.size * 1.06,
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                boxShadow: [
+                  BoxShadow(
+                    color: const Color(0xFFFFD600).withValues(alpha: pulse),
+                    blurRadius: 42,
+                    spreadRadius: 2,
+                  ),
+                  BoxShadow(
+                    color: const Color(0xFFFF6F00).withValues(alpha: pulse * 0.5),
+                    blurRadius: 60,
+                    spreadRadius: -4,
+                  ),
+                ],
+              ),
+            );
+          },
+        ),
+        // --- Ombre portee statique sous la roue (profondeur) ---
         Container(
+          width: widget.size * 0.94,
+          height: widget.size * 0.94,
           decoration: BoxDecoration(
             shape: BoxShape.circle,
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFFFFD600).withValues(alpha: 0.4),
-                blurRadius: 30, spreadRadius: 4,
+                color: Colors.black.withValues(alpha: 0.55),
+                blurRadius: 24,
+                offset: const Offset(0, 10),
               ),
             ],
           ),
         ),
-        // Roue
+        // Roue (rotation — logique inchangee)
         AnimatedBuilder(
           animation: Listenable.merge([_idleCtrl, _spinCtrl]),
           builder: (_, __) {
@@ -143,18 +180,57 @@ class _WheelWidgetState extends State<WheelWidget>
             );
           },
         ),
+        // --- Jante metallique 3D + ampoules casino (couche fixe) ---
+        IgnorePointer(
+          child: AnimatedBuilder(
+            animation: _idleCtrl,
+            builder: (_, __) => CustomPaint(
+              size: Size(widget.size, widget.size),
+              painter: _WheelRimPainter(_idleCtrl.value),
+            ),
+          ),
+        ),
+        // --- Bezel glassmorphism fixe (ne tourne pas avec la roue) ---
+        IgnorePointer(
+          child: Container(
+            width: widget.size,
+            height: widget.size,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              border: Border.all(
+                color: Colors.white.withValues(alpha: 0.18),
+                width: 1.2,
+              ),
+            ),
+          ),
+        ),
+        IgnorePointer(
+          child: Container(
+            width: widget.size * 0.985,
+            height: widget.size * 0.985,
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: SweepGradient(
+                colors: [
+                  Colors.white.withValues(alpha: 0.0),
+                  Colors.white.withValues(alpha: 0.20),
+                  Colors.white.withValues(alpha: 0.0),
+                  Colors.white.withValues(alpha: 0.0),
+                ],
+                stops: const [0.0, 0.12, 0.5, 1.0],
+              ),
+              border: Border.all(color: Colors.transparent, width: 0),
+            ),
+          ),
+        ),
         // Centre (logo PLUGBET stylise)
         _PlugbetCenter(size: widget.size * 0.34),
         // Pointeur (en haut)
         Positioned(
-          top: -4,
-          child: Container(
-            width: 0, height: 0,
-            decoration: const BoxDecoration(),
-            child: CustomPaint(
-              size: const Size(22, 26),
-              painter: _PointerPainter(),
-            ),
+          top: -6,
+          child: CustomPaint(
+            size: const Size(26, 30),
+            painter: _PointerPainter(),
           ),
         ),
       ]),
@@ -164,17 +240,17 @@ class _WheelWidgetState extends State<WheelWidget>
 
 class _WheelPainter extends CustomPainter {
   static const _palette = [
-    Color(0xFF1976D2), // bleu
-    Color(0xFFD32F2F), // rouge
-    Color(0xFF388E3C), // vert
-    Color(0xFFFFA000), // orange
-    Color(0xFF7B1FA2), // violet
-    Color(0xFFFFC107), // jaune
+    Color(0xFF1E7FE0), // bleu neon
+    Color(0xFFE0303F), // rouge neon
+    Color(0xFF19B562), // vert neon
+    Color(0xFFFF9F1C), // orange neon
+    Color(0xFF9A2FD6), // violet neon
+    Color(0xFFF2C40C), // jaune neon
   ];
 
   // Couleurs speciales par tuile
   static const Color _gold = Color(0xFFFFD600);
-  static const Color _silver = Color(0xFFB0BEC5);
+  static const Color _silver = Color(0xFFD7DEE4);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -182,38 +258,89 @@ class _WheelPainter extends CustomPainter {
     final radius = size.shortestSide / 2;
     const segmentAngle = 2 * math.pi / kWheelSegments;
 
-    final ringPaint = Paint()
-      ..color = const Color(0xFF7A4F00)
+    // Anneau exterieur (fond) — degrade or profond pour effet 3D
+    final outerRingPaint = Paint()
+      ..shader = SweepGradient(
+        colors: const [
+          Color(0xFF3A2400),
+          Color(0xFFB07A00),
+          Color(0xFF3A2400),
+          Color(0xFFB07A00),
+          Color(0xFF3A2400),
+        ],
+        stops: const [0, 0.25, 0.5, 0.75, 1],
+      ).createShader(Rect.fromCircle(center: center, radius: radius))
       ..style = PaintingStyle.stroke
-      ..strokeWidth = 4;
+      ..strokeWidth = 5;
 
     for (int i = 0; i < kWheelSegments; i++) {
       final startAngle = -math.pi / 2 + i * segmentAngle;
       final type = segmentType(i);
       final tileValue = segmentToTileValue(i);
 
-      // Couleur du segment
-      final Color color;
+      // Couleur de base du segment
+      final Color baseColor;
       switch (type) {
         case SegmentType.multiplier2x:
-          color = const Color(0xFFE91E63); // rose vif
+          baseColor = const Color(0xFFEC1E63); // rose vif neon
           break;
         case SegmentType.multiplier7x:
-          color = const Color(0xFF6A1B9A); // violet profond
+          baseColor = const Color(0xFF7C1FD6); // violet profond neon
           break;
         case SegmentType.money:
           if (tileValue == 40) {
-            color = _gold;
+            baseColor = _gold;
           } else if (tileValue == 20) {
-            color = _silver;
+            baseColor = _silver;
           } else {
-            color = _palette[i % _palette.length];
+            baseColor = _palette[i % _palette.length];
           }
       }
 
-      final paint = Paint()..color = color..style = PaintingStyle.fill;
       final rect = Rect.fromCircle(center: center, radius: radius);
-      canvas.drawArc(rect, startAngle, segmentAngle, true, paint);
+
+      // Degrade radial (centre plus clair / bord plus profond) pour un
+      // rendu "glossy" premium au lieu d'une teinte plate.
+      final lightShade = Color.lerp(baseColor, Colors.white, 0.30)!;
+      final darkShade = Color.lerp(baseColor, Colors.black, 0.35)!;
+      final segPaint = Paint()
+        ..shader = RadialGradient(
+          center: const Alignment(0, -0.15),
+          radius: 1.05,
+          colors: [lightShade, baseColor, darkShade],
+          stops: const [0.0, 0.55, 1.0],
+        ).createShader(rect)
+        ..style = PaintingStyle.fill;
+      canvas.drawArc(rect, startAngle, segmentAngle, true, segPaint);
+
+      // Halo interne pour la tuile 40 (or) et les segments speciaux
+      final bool isFeature = tileValue == 40 ||
+          type == SegmentType.multiplier2x ||
+          type == SegmentType.multiplier7x;
+      if (isFeature) {
+        final glowPaint = Paint()
+          ..color = baseColor.withValues(alpha: 0.55)
+          ..style = PaintingStyle.fill
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+        canvas.drawArc(
+          Rect.fromCircle(center: center, radius: radius - 6),
+          startAngle,
+          segmentAngle,
+          true,
+          glowPaint,
+        );
+      }
+
+      // Separateur neon fin entre segments
+      final dividerPaint = Paint()
+        ..color = Colors.white.withValues(alpha: 0.28)
+        ..strokeWidth = 1.1
+        ..style = PaintingStyle.stroke;
+      final edge = Offset(
+        center.dx + radius * math.cos(startAngle),
+        center.dy + radius * math.sin(startAngle),
+      );
+      canvas.drawLine(center, edge, dividerPaint);
 
       // Texte du segment
       final String label;
@@ -239,8 +366,9 @@ class _WheelPainter extends CustomPainter {
             color: textColor,
             fontSize: textSize,
             fontWeight: FontWeight.w900,
-            shadows: const [
-              Shadow(color: Colors.black54, blurRadius: 1),
+            shadows: [
+              const Shadow(color: Colors.black87, blurRadius: 2),
+              Shadow(color: baseColor.withValues(alpha: 0.9), blurRadius: 6),
             ],
           ),
         ),
@@ -259,20 +387,39 @@ class _WheelPainter extends CustomPainter {
       canvas.restore();
     }
 
-    // Anneau exterieur
-    canvas.drawCircle(center, radius - 2, ringPaint);
-    canvas.drawCircle(center, radius - 12,
-        Paint()..color = const Color(0xFFFFD600)..style = PaintingStyle.stroke..strokeWidth = 2);
+    // Anneau exterieur degrade
+    canvas.drawCircle(center, radius - 2, outerRingPaint);
 
-    // Petits points dores (decoration)
-    final dotPaint = Paint()..color = const Color(0xFFFFE082);
+    // Liseret neon dore fin
+    canvas.drawCircle(
+      center,
+      radius - 12,
+      Paint()
+        ..color = const Color(0xFFFFD600)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2,
+    );
+    canvas.drawCircle(
+      center,
+      radius - 12,
+      Paint()
+        ..color = const Color(0xFFFFD600).withValues(alpha: 0.55)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 6
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 5),
+    );
+
+    // Petits points dores (decoration) avec leger glow
+    final dotGlowPaint = Paint()
+      ..color = const Color(0xFFFFE082).withValues(alpha: 0.6)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3);
+    final dotPaint = Paint()..color = const Color(0xFFFFF3C4);
     for (int i = 0; i < 24; i++) {
       final a = -math.pi / 2 + (i * 2 * math.pi / 24);
       final r = radius - 6;
-      canvas.drawCircle(
-        Offset(center.dx + r * math.cos(a), center.dy + r * math.sin(a)),
-        2.5, dotPaint,
-      );
+      final pos = Offset(center.dx + r * math.cos(a), center.dy + r * math.sin(a));
+      canvas.drawCircle(pos, 3.5, dotGlowPaint);
+      canvas.drawCircle(pos, 2.2, dotPaint);
     }
   }
 
@@ -310,67 +457,92 @@ class _PlugbetCenter extends StatelessWidget {
         border: Border.all(color: const Color(0xFF5A3800), width: 3),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFFFFD600).withValues(alpha: 0.6),
-            blurRadius: 18,
+            color: const Color(0xFFFFD600).withValues(alpha: 0.65),
+            blurRadius: 22,
+            spreadRadius: 1,
           ),
           BoxShadow(
             color: Colors.black.withValues(alpha: 0.5),
-            blurRadius: 6, offset: const Offset(0, 3),
+            blurRadius: 8, offset: const Offset(0, 4),
           ),
         ],
       ),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
+      child: Stack(
+        alignment: Alignment.center,
         children: [
-          // PLUGBET avec gradient + outline + glow
-          Stack(alignment: Alignment.center, children: [
-            // Outline noire (rendu 2 fois pour effet outline epaisse)
-            Text('PLUGBET', style: TextStyle(
-              fontSize: fontSize,
-              fontWeight: FontWeight.w900,
-              letterSpacing: 1.5,
-              foreground: Paint()
-                ..style = PaintingStyle.stroke
-                ..strokeWidth = 3.5
-                ..color = Colors.black,
-            )),
-            // Texte avec gradient or vif
-            ShaderMask(
-              shaderCallback: (rect) => const LinearGradient(
-                begin: Alignment.topCenter, end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xFFFFF59D),  // jaune lumineux haut
-                  Color(0xFFFFD600),  // or vif
-                  Color(0xFFFFA000),  // orange-or bas
-                ],
-                stops: [0, 0.5, 1],
-              ).createShader(rect),
-              child: Text('PLUGBET', style: TextStyle(
-                color: Colors.white,
-                fontSize: fontSize,
+          // Reflet vitre en haut du disque (glassmorphism subtil)
+          Positioned(
+            top: size * 0.06,
+            child: Container(
+              width: size * 0.62,
+              height: size * 0.24,
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(size),
+                gradient: LinearGradient(
+                  colors: [
+                    Colors.white.withValues(alpha: 0.55),
+                    Colors.white.withValues(alpha: 0.0),
+                  ],
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                ),
+              ),
+            ),
+          ),
+          Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // PLUGBET avec gradient + outline + glow
+              Stack(alignment: Alignment.center, children: [
+                // Outline noire (rendu 2 fois pour effet outline epaisse)
+                Text('PLUGBET', style: TextStyle(
+                  fontSize: fontSize,
+                  fontWeight: FontWeight.w900,
+                  letterSpacing: 1.5,
+                  foreground: Paint()
+                    ..style = PaintingStyle.stroke
+                    ..strokeWidth = 3.5
+                    ..color = Colors.black,
+                )),
+                // Texte avec gradient or vif
+                ShaderMask(
+                  shaderCallback: (rect) => const LinearGradient(
+                    begin: Alignment.topCenter, end: Alignment.bottomCenter,
+                    colors: [
+                      Color(0xFFFFF59D),  // jaune lumineux haut
+                      Color(0xFFFFD600),  // or vif
+                      Color(0xFFFFA000),  // orange-or bas
+                    ],
+                    stops: [0, 0.5, 1],
+                  ).createShader(rect),
+                  child: Text('PLUGBET', style: TextStyle(
+                    color: Colors.white,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.w900,
+                    letterSpacing: 1.5,
+                    shadows: const [
+                      Shadow(color: Color(0xFFFF6F00), blurRadius: 6),
+                    ],
+                  )),
+                ),
+              ]),
+              SizedBox(height: size * 0.015),
+              // Sous-titre WHEEL en rouge neon
+              Text('WHEEL', style: TextStyle(
+                color: const Color(0xFFFF1744),
+                fontSize: fontSize * 0.55,
                 fontWeight: FontWeight.w900,
-                letterSpacing: 1.5,
-                shadows: const [
-                  Shadow(color: Color(0xFFFF6F00), blurRadius: 6),
+                letterSpacing: 2.5,
+                shadows: [
+                  Shadow(
+                    color: const Color(0xFFFF1744).withValues(alpha: 0.85),
+                    blurRadius: 8,
+                  ),
+                  const Shadow(color: Colors.black, blurRadius: 2),
                 ],
               )),
-            ),
-          ]),
-          SizedBox(height: size * 0.015),
-          // Sous-titre WHEEL en rouge neon
-          Text('WHEEL', style: TextStyle(
-            color: const Color(0xFFFF1744),
-            fontSize: fontSize * 0.55,
-            fontWeight: FontWeight.w900,
-            letterSpacing: 2.5,
-            shadows: [
-              Shadow(
-                color: const Color(0xFFFF1744).withValues(alpha: 0.8),
-                blurRadius: 6,
-              ),
-              const Shadow(color: Colors.black, blurRadius: 2),
             ],
-          )),
+          ),
         ],
       ),
     );
@@ -380,20 +552,149 @@ class _PlugbetCenter extends StatelessWidget {
 class _PointerPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
-    final p = Paint()..color = AppColors.neonRed;
     final path = Path()
       ..moveTo(size.width / 2, size.height)   // pointe en bas
-      ..lineTo(0, 0)
-      ..lineTo(size.width, 0)
+      ..lineTo(0, size.height * 0.14)
+      ..quadraticBezierTo(0, 0, size.width * 0.18, 0)
+      ..lineTo(size.width * 0.82, 0)
+      ..quadraticBezierTo(size.width, 0, size.width, size.height * 0.14)
       ..close();
-    canvas.drawPath(path, p);
-    // Bord blanc
+
+    // Glow neon derriere le pointeur
+    final glow = Paint()
+      ..color = AppColors.neonRed.withValues(alpha: 0.65)
+      ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 6);
+    canvas.drawPath(path, glow);
+
+    // Corps degrade
+    final bodyPaint = Paint()
+      ..shader = LinearGradient(
+        begin: Alignment.topCenter,
+        end: Alignment.bottomCenter,
+        colors: [
+          Color.lerp(AppColors.neonRed, Colors.white, 0.25)!,
+          AppColors.neonRed,
+          Color.lerp(AppColors.neonRed, Colors.black, 0.35)!,
+        ],
+      ).createShader(Rect.fromLTWH(0, 0, size.width, size.height));
+    canvas.drawPath(path, bodyPaint);
+
+    // Bord blanc fin (liseret glass)
     canvas.drawPath(
       path,
-      Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = 1.5,
+      Paint()
+        ..color = Colors.white.withValues(alpha: 0.85)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.4,
+    );
+
+    // Reflet vitre en haut du pointeur
+    final highlight = Path()
+      ..moveTo(size.width * 0.22, size.height * 0.06)
+      ..lineTo(size.width * 0.78, size.height * 0.06)
+      ..lineTo(size.width * 0.6, size.height * 0.42)
+      ..lineTo(size.width * 0.4, size.height * 0.42)
+      ..close();
+    canvas.drawPath(
+      highlight,
+      Paint()..color = Colors.white.withValues(alpha: 0.35),
     );
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter old) => false;
+}
+
+/// Jante metallique doree biseautee (relief 3D) + couronne d'ampoules
+/// casino qui scintillent en chenillard. Purement decoratif : ne tourne
+/// pas avec la roue, ne capte aucun geste.
+class _WheelRimPainter extends CustomPainter {
+  final double t; // 0..1 phase du chenillard
+  _WheelRimPainter(this.t);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final r = size.shortestSide / 2;
+    final rimOuter = r - 1;
+    final rimInner = r * 0.865;
+    final rimW = rimOuter - rimInner;
+    final rimMid = (rimOuter + rimInner) / 2;
+    final rect = Rect.fromCircle(center: center, radius: rimMid);
+
+    // Corps de la jante : degrade vertical (lumiere haut / ombre bas) → 3D
+    canvas.drawCircle(
+      center,
+      rimMid,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = rimW
+        ..shader = const LinearGradient(
+          begin: Alignment.topCenter,
+          end: Alignment.bottomCenter,
+          colors: [
+            Color(0xFFFFF3C4),
+            Color(0xFFFFC94D),
+            Color(0xFFB07A00),
+            Color(0xFF5A3800),
+          ],
+          stops: [0, 0.35, 0.7, 1],
+        ).createShader(rect),
+    );
+    // Aretes sombres interne + externe (separation nette)
+    final edge = Paint()
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.4
+      ..color = const Color(0xFF3A2400);
+    canvas.drawCircle(center, rimOuter, edge);
+    canvas.drawCircle(center, rimInner, edge);
+    // Reflet metallique haut
+    canvas.drawArc(
+      Rect.fromCircle(center: center, radius: rimMid),
+      -math.pi * 0.85,
+      math.pi * 0.7,
+      false,
+      Paint()
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = rimW * 0.35
+        ..strokeCap = StrokeCap.round
+        ..color = Colors.white.withValues(alpha: 0.4)
+        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
+    );
+
+    // Couronne d'ampoules
+    const n = 24;
+    for (int i = 0; i < n; i++) {
+      final a = -math.pi / 2 + i * 2 * math.pi / n;
+      final pos = Offset(
+        center.dx + rimMid * math.cos(a),
+        center.dy + rimMid * math.sin(a),
+      );
+      // Chenillard : luminosite qui defile
+      final phase = ((i / n) + t * 2) % 1.0;
+      final bright = 0.35 + 0.65 * (0.5 + 0.5 * math.sin(phase * 2 * math.pi));
+      final warm = i.isEven;
+      final core = warm ? const Color(0xFFFFF7D6) : const Color(0xFFFFE0A3);
+      final glow = warm ? const Color(0xFFFFD600) : const Color(0xFFFF8A00);
+      // Halo
+      canvas.drawCircle(
+        pos,
+        4.5,
+        Paint()
+          ..color = glow.withValues(alpha: 0.55 * bright)
+          ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
+      );
+      // Culot sombre
+      canvas.drawCircle(pos, 3.1, Paint()..color = const Color(0xFF2A1B00));
+      // Ampoule
+      canvas.drawCircle(
+        pos,
+        2.4,
+        Paint()..color = Color.lerp(const Color(0xFF7A5A00), core, bright)!,
+      );
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant _WheelRimPainter old) => old.t != t;
 }

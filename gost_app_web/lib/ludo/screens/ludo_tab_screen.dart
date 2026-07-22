@@ -7,9 +7,10 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../theme/app_theme.dart';
 import '../../providers/wallet_provider.dart';
-import '../../screens/auth_screen.dart';
+import '../../screens/login_screen.dart';
+import '../../screens/signup_screen.dart';
 import '../providers/ludo_provider.dart';
-import '../services/audio_service.dart';
+import '../../services/audio_service.dart';
 import 'ludo_lobby_screen.dart';
 import 'ludo_room_screen.dart';
 import 'ludo_local_mode_screen.dart';
@@ -132,7 +133,7 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
                   final result = await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AuthScreen(startWithSignUp: true),
+                      builder: (_) => const SignupScreen(),
                     ),
                   );
                   if (result == true && mounted) {
@@ -166,7 +167,7 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
                   final result = await Navigator.push<bool>(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const AuthScreen(startWithSignUp: false),
+                      builder: (_) => const LoginScreen(),
                     ),
                   );
                   if (result == true && mounted) {
@@ -300,9 +301,11 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
                 child: Row(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    Icon(Icons.account_balance_wallet, color: Colors.white70, size: 14),
+                    Icon(Icons.account_balance_wallet,
+                        color: Colors.white70, size: 14),
                     SizedBox(width: 4),
-                    Text('Wallet', style: TextStyle(color: Colors.white70, fontSize: 12)),
+                    Text('Wallet',
+                        style: TextStyle(color: Colors.white70, fontSize: 12)),
                   ],
                 ),
               ),
@@ -312,7 +315,8 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
           Row(
             crossAxisAlignment: CrossAxisAlignment.end,
             children: [
-              Icon(Icons.monetization_on, color: AppColors.neonYellow, size: 36),
+              Icon(Icons.monetization_on,
+                  color: AppColors.neonYellow, size: 36),
               SizedBox(width: 10),
               Text(
                 '${context.watch<WalletProvider>().coins}',
@@ -599,9 +603,11 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
           SizedBox(height: 16),
           Row(
             children: [
-              _statItem('Parties', '${profile?.gamesPlayed ?? 0}', Icons.gamepad),
+              _statItem(
+                  'Parties', '${profile?.gamesPlayed ?? 0}', Icons.gamepad),
               SizedBox(width: 16),
-              _statItem('Victoires', '${profile?.gamesWon ?? 0}', Icons.emoji_events),
+              _statItem(
+                  'Victoires', '${profile?.gamesWon ?? 0}', Icons.emoji_events),
               SizedBox(width: 16),
               _statItem(
                 'Win Rate',
@@ -675,11 +681,17 @@ class _LudoTabScreenState extends State<LudoTabScreen> {
             ],
           ),
           SizedBox(height: 12),
-          _RuleItem(icon: '1', text: 'Entrez dans le Lobby et defiez un joueur en ligne'),
+          _RuleItem(
+              icon: '1',
+              text: 'Entrez dans le Lobby et defiez un joueur en ligne'),
           _RuleItem(icon: '2', text: 'Choisissez votre mise en FCFA'),
           _RuleItem(icon: '3', text: 'Lancez le de et deplacez vos pions'),
-          _RuleItem(icon: '4', text: 'Un 6 fait sortir un pion ou donne un tour bonus'),
-          _RuleItem(icon: '5', text: 'Le premier a amener ses 4 pions au centre gagne le pot !'),
+          _RuleItem(
+              icon: '4',
+              text: 'Un 6 fait sortir un pion ou donne un tour bonus'),
+          _RuleItem(
+              icon: '5',
+              text: 'Le premier a amener ses 4 pions au centre gagne le pot !'),
         ],
       ),
     );

@@ -13,6 +13,9 @@
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import '../theme/app_icons.dart';
+import '../theme/app_reliefs.dart';
+import '../theme/app_surfaces.dart';
 import '../theme/app_theme.dart';
 import '../services/virtual_match_service.dart';
 import '../state/bet_slip_controller.dart';
@@ -105,14 +108,12 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: AppColors.bgDark,
-      appBar: AppBar(
-        backgroundColor: AppColors.bgDark,
-        elevation: 0,
-        iconTheme: IconThemeData(color: AppColors.textPrimary),
-        title: Row(children: [
-          Icon(Icons.flash_on_rounded,
-              color: AppColors.neonPurple, size: 22),
-          const SizedBox(width: 8),
+      appBar: ReliefAppBar(
+        accent: AppColors.neonPurple,
+        titleWidget: Row(mainAxisSize: MainAxisSize.min, children: [
+          DomeIcon(
+              icon: AppIcons.bets, color: AppColors.neonPurple, size: 28),
+          const SizedBox(width: 9),
           Text('Matchs Flash',
               style: TextStyle(
                 color: AppColors.textPrimary,
@@ -167,27 +168,35 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
         allMatches.where((m) => m.sport == Sport.basketball).length;
     Widget tab(Sport s, IconData icon, String label, int count) {
       final active = _selectedSport == s;
+      final fg = active
+          ? AppSurfaces.inkOn(AppColors.neonPurple)
+          : AppColors.textMuted;
       return Expanded(
         child: InkWell(
           onTap: () => setState(() => _selectedSport = s),
-          borderRadius: BorderRadius.circular(10),
+          borderRadius: AppRadius.brXs,
           child: AnimatedContainer(
             duration: const Duration(milliseconds: 180),
+            curve: Curves.easeOut,
             padding: const EdgeInsets.symmetric(vertical: 10),
             decoration: BoxDecoration(
-              color: active ? AppColors.neonPurple : Colors.transparent,
-              borderRadius: BorderRadius.circular(10),
+              borderRadius: AppRadius.brXs,
+              gradient: active
+                  ? AppSurfaces.raisedGradient(AppColors.neonPurple)
+                  : null,
+              boxShadow: active
+                  ? AppSurfaces.raised(
+                      glow: AppColors.neonPurple, elevation: 0.55)
+                  : null,
             ),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                Icon(icon,
-                    size: 16,
-                    color: active ? Colors.white : AppColors.textMuted),
+                Icon(icon, size: 16, color: fg),
                 const SizedBox(width: 6),
                 Text('$label · $count',
                     style: TextStyle(
-                      color: active ? Colors.white : AppColors.textPrimary,
+                      color: active ? fg : AppColors.textPrimary,
                       fontSize: 12,
                       fontWeight: FontWeight.w900,
                       letterSpacing: 0.2,
@@ -201,17 +210,13 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
 
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 16, 4),
-      child: Container(
+      child: InsetPanel(
+        radius: AppRadius.sm,
         padding: const EdgeInsets.all(3),
-        decoration: BoxDecoration(
-          color: AppColors.bgElevated,
-          borderRadius: BorderRadius.circular(12),
-          border: Border.all(
-              color: AppColors.divider.withValues(alpha: 0.5), width: 0.5),
-        ),
+        baseColor: AppColors.bgDark,
         child: Row(children: [
-          tab(Sport.soccer, Icons.sports_soccer, 'Football', soccerN),
-          tab(Sport.basketball, Icons.sports_basketball, 'Basket', basketN),
+          tab(Sport.soccer, AppIcons.football, 'Football', soccerN),
+          tab(Sport.basketball, AppIcons.basketball, 'Basket', basketN),
         ]),
       ),
     );
@@ -224,8 +229,8 @@ class _VirtualMatchesScreenState extends State<VirtualMatchesScreen> {
         child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
           Icon(
               _selectedSport == Sport.basketball
-                  ? Icons.sports_basketball
-                  : Icons.sports_soccer,
+                  ? AppIcons.basketball
+                  : AppIcons.football,
               size: 48, color: AppColors.textMuted),
           const SizedBox(height: 12),
           Text('Aucun match Flash en cours',

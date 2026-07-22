@@ -15,7 +15,7 @@ import '../../../providers/wallet_provider.dart';
 import '../../../providers/matches_provider.dart';
 import '../../../services/live_score_manager.dart';
 // lobby_screen import removed - not needed
-import '../../../ludo/services/audio_service.dart';
+import '../../../services/audio_service.dart';
 import '../models/cora_models.dart';
 import '../services/cora_service.dart';
 import '../components/dice_animation.dart';
@@ -75,6 +75,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   @override
   void initState() {
     super.initState();
+    _initAudio();
     CoraGameScreen.isOnScreen = true;
     _diceController = AnimationController(
       vsync: this,
@@ -94,16 +95,25 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     _subscribeToGame();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
-        try { context.read<MatchesProvider>().pausePolling(); } catch (_) {}
-        try { context.read<LiveScoreManager>().pauseTracking(); } catch (_) {}
+        try {
+          context.read<MatchesProvider>().pausePolling();
+        } catch (_) {}
+        try {
+          context.read<LiveScoreManager>().pauseTracking();
+        } catch (_) {}
       }
     });
   }
 
+  Future<void> _initAudio() async {
+    await AudioService.instance.configureGame('cora_dice');
+    AudioService.instance.startBackgroundMusic();
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.resumed
-        && !(_game?.gameState.isFinished ?? false)) {
+    if (state == AppLifecycleState.resumed &&
+        !(_game?.gameState.isFinished ?? false)) {
       _refetchNow();
     }
   }
@@ -134,8 +144,8 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     // _cora_force_clean_user) et la session est reprise au retour
     // foreground via _checkActiveCoraSession.
     final game = _game;
-    final isResumed = WidgetsBinding.instance.lifecycleState ==
-        AppLifecycleState.resumed;
+    final isResumed =
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed;
     if (game != null &&
         game.status == CoraRoomStatus.playing &&
         !game.gameState.isFinished &&
@@ -145,20 +155,29 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       // ignore: discarded_futures
       _service.forfeit(widget.gameId);
     }
-    try { context.read<MatchesProvider>().resumePolling(); } catch (_) {}
-    try { context.read<LiveScoreManager>().resumeTracking(); } catch (_) {}
+    try {
+      context.read<MatchesProvider>().resumePolling();
+    } catch (_) {}
+    try {
+      context.read<LiveScoreManager>().resumeTracking();
+    } catch (_) {}
+    AudioService.instance.stopBackgroundMusic();
     super.dispose();
   }
 
   Future<void> _loadGame() async {
-    setState(() { _isLoading = true; _loadError = null; });
+    setState(() {
+      _isLoading = true;
+      _loadError = null;
+    });
     try {
       final g = await _service.getGame(widget.gameId);
       if (!mounted) return;
       if (g == null) {
         setState(() {
           _isLoading = false;
-          _loadError = 'Partie introuvable. Elle a peut-être été annulée ou tu n\'es pas un participant.';
+          _loadError =
+              'Partie introuvable. Elle a peut-être été annulée ou tu n\'es pas un participant.';
         });
         return;
       }
@@ -198,50 +217,53 @@ class _CoraGameScreenState extends State<CoraGameScreen>
   }
 
   void _onGameUpdate(CoraGame game) {
-      if (!mounted) return;
-      setState(() => _game = game);
-      _gameNotifier.value = game;
+    if (!mounted) return;
+    setState(() => _game = game);
+    _gameNotifier.value = game;
 
-      // Start/reset turn timer when turn changes
-      final currentTurnId = game.gameState.currentTurn;
-      if (currentTurnId != _lastTurnPlayerId && !game.gameState.isFinished) {
-        _lastTurnPlayerId = currentTurnId;
-        _startTurnTimer(currentTurnId);
-      }
+    // Start/reset turn timer when turn changes
+    final currentTurnId = game.gameState.currentTurn;
+    if (currentTurnId != _lastTurnPlayerId && !game.gameState.isFinished) {
+      _lastTurnPlayerId = currentTurnId;
+      _startTurnTimer(currentTurnId);
+    }
 
-      // Animer si un joueur vient de lancer
-      final myId = _service.currentUserId;
-      if (myId != null) {
-        final me = game.gameState.players[myId];
-        if (me != null && me.hasRolled && me.roll != _lastRoll) {
-          _lastRoll = me.roll;
-          _animateRoll(me.roll!);
-        }
+    // Animer si un joueur vient de lancer
+    final myId = _service.currentUserId;
+    if (myId != null) {
+      final me = game.gameState.players[myId];
+      if (me != null && me.hasRolled && me.roll != _lastRoll) {
+        _lastRoll = me.roll;
+        _animateRoll(me.roll!);
       }
+    }
 
-      // Si rematch accepté → naviguer vers la nouvelle game
-      final rm = game.gameState.rematch;
-      if (rm != null && rm.isAccepted && rm.newGameId != null && !_rematchNavigated) {
-        _rematchNavigated = true;
-        // Ferme le dialog si ouvert puis navigate
-        if (_resultDialogOpen && Navigator.canPop(context)) {
-          Navigator.pop(context);
-        }
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (_) => CoraGameScreen(gameId: rm.newGameId!),
-          ),
-        );
-        return;
+    // Si rematch accepté → naviguer vers la nouvelle game
+    final rm = game.gameState.rematch;
+    if (rm != null &&
+        rm.isAccepted &&
+        rm.newGameId != null &&
+        !_rematchNavigated) {
+      _rematchNavigated = true;
+      // Ferme le dialog si ouvert puis navigate
+      if (_resultDialogOpen && Navigator.canPop(context)) {
+        Navigator.pop(context);
       }
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => CoraGameScreen(gameId: rm.newGameId!),
+        ),
+      );
+      return;
+    }
 
-      // Si partie terminée, afficher résultat après 2s
-      if (game.gameState.isFinished && !_resultDialogOpen) {
-        Future.delayed(const Duration(seconds: 2), () {
-          if (mounted && !_resultDialogOpen) _showResultDialog();
-        });
-      }
+    // Si partie terminée, afficher résultat après 2s
+    if (game.gameState.isFinished && !_resultDialogOpen) {
+      Future.delayed(const Duration(seconds: 2), () {
+        if (mounted && !_resultDialogOpen) _showResultDialog();
+      });
+    }
   }
 
   void _animateRoll(DiceRoll roll) {
@@ -333,35 +355,35 @@ class _CoraGameScreenState extends State<CoraGameScreen>
         _confirmExit();
       },
       child: Scaffold(
-      backgroundColor: AppColors.bgDark,
-      body: Container(
-        decoration: BoxDecoration(gradient: AppColors.bgGradient),
-        child: SafeArea(
-          child: Column(
-            children: [
-              const ConnectivityBanner(),
-              // Header
-              _buildHeader(),
+        backgroundColor: AppColors.bgDark,
+        body: Container(
+          decoration: BoxDecoration(gradient: AppColors.bgGradient),
+          child: SafeArea(
+            child: Column(
+              children: [
+                const ConnectivityBanner(),
+                // Header
+                _buildHeader(),
 
-              // Scores des joueurs
-              _buildScoresBar(),
+                // Scores des joueurs
+                _buildScoresBar(),
 
-              // Zone centrale: dés
-              Expanded(
-                child: Center(
-                  child: _buildDiceZone(isMyTurn, me),
+                // Zone centrale: dés
+                Expanded(
+                  child: Center(
+                    child: _buildDiceZone(isMyTurn, me),
+                  ),
                 ),
-              ),
 
-              // Bouton lancer
-              if (!_game!.gameState.isFinished)
-                _buildRollButton(isMyTurn, me),
+                // Bouton lancer
+                if (!_game!.gameState.isFinished)
+                  _buildRollButton(isMyTurn, me),
 
-              SizedBox(height: 16),
-            ],
+                SizedBox(height: 16),
+              ],
+            ),
           ),
         ),
-      ),
       ),
     );
   }
@@ -400,10 +422,20 @@ class _CoraGameScreenState extends State<CoraGameScreen>
             ),
           ),
           Container(
-            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
             decoration: BoxDecoration(
-              color: AppColors.neonGreen.withValues(alpha: 0.2),
-              borderRadius: BorderRadius.circular(12),
+              gradient: LinearGradient(colors: [
+                AppColors.neonGreen.withValues(alpha: 0.22),
+                AppColors.neonGreen.withValues(alpha: 0.08),
+              ]),
+              borderRadius: BorderRadius.circular(30),
+              border:
+                  Border.all(color: AppColors.neonGreen.withValues(alpha: 0.4)),
+              boxShadow: [
+                BoxShadow(
+                    color: AppColors.neonGreen.withValues(alpha: 0.2),
+                    blurRadius: 10),
+              ],
             ),
             child: Row(
               mainAxisSize: MainAxisSize.min,
@@ -414,7 +446,7 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                   '${_game!.playerCount}',
                   style: TextStyle(
                     color: AppColors.neonGreen,
-                    fontWeight: FontWeight.w700,
+                    fontWeight: FontWeight.w800,
                   ),
                 ),
               ],
@@ -451,7 +483,9 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       borderColor = AppColors.neonBlue;
     }
 
-    return Container(
+    final glowActive = isCurrentTurn && !_game!.gameState.isFinished;
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 300),
       width: 90,
       margin: EdgeInsets.only(right: 12),
       padding: EdgeInsets.all(8),
@@ -466,6 +500,15 @@ class _CoraGameScreenState extends State<CoraGameScreen>
             : AppColors.cardGradient,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: borderColor, width: 2),
+        boxShadow: glowActive
+            ? [
+                BoxShadow(
+                  color: AppColors.neonGreen.withValues(alpha: 0.35),
+                  blurRadius: 14,
+                  spreadRadius: 1,
+                ),
+              ]
+            : null,
       ),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
@@ -475,9 +518,12 @@ class _CoraGameScreenState extends State<CoraGameScreen>
             backgroundColor:
                 player.hasRolled ? AppColors.neonGreen : AppColors.bgElevated,
             child: Text(
-              player.username.isNotEmpty ? player.username[0].toUpperCase() : '?',
+              player.username.isNotEmpty
+                  ? player.username[0].toUpperCase()
+                  : '?',
               style: TextStyle(
-                color: player.hasRolled ? AppColors.bgDark : AppColors.textMuted,
+                color:
+                    player.hasRolled ? AppColors.bgDark : AppColors.textMuted,
                 fontSize: 14,
                 fontWeight: FontWeight.w900,
               ),
@@ -596,25 +642,50 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     final myId = _service.currentUserId;
     final isWinner = _game!.gameState.winners.contains(myId);
 
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Icon(
-          isWinner ? Icons.emoji_events : Icons.sentiment_neutral,
-          size: 100,
-          color: isWinner ? AppColors.neonYellow : AppColors.textMuted,
-        ),
-        SizedBox(height: 24),
-        Text(
-          isWinner ? '🎉 VICTOIRE ! 🎉' : result,
-          textAlign: TextAlign.center,
-          style: TextStyle(
-            color: isWinner ? AppColors.neonYellow : AppColors.textPrimary,
-            fontSize: 24,
-            fontWeight: FontWeight.w900,
+    return TweenAnimationBuilder<double>(
+      tween: Tween(begin: 0.9, end: 1.0),
+      duration: const Duration(milliseconds: 320),
+      curve: Curves.easeOutBack,
+      builder: (context, scale, child) =>
+          Transform.scale(scale: scale, child: child),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              shape: BoxShape.circle,
+              gradient: RadialGradient(colors: [
+                (isWinner ? AppColors.neonYellow : AppColors.textMuted)
+                    .withValues(alpha: 0.22),
+                Colors.transparent,
+              ]),
+            ),
+            child: Icon(
+              isWinner ? Icons.emoji_events : Icons.sentiment_neutral,
+              size: 100,
+              color: isWinner ? AppColors.neonYellow : AppColors.textMuted,
+            ),
           ),
-        ),
-      ],
+          SizedBox(height: 20),
+          Text(
+            isWinner ? '🎉 VICTOIRE ! 🎉' : result,
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              color: isWinner ? AppColors.neonYellow : AppColors.textPrimary,
+              fontSize: 24,
+              fontWeight: FontWeight.w900,
+              shadows: isWinner
+                  ? [
+                      Shadow(
+                          color: AppColors.neonYellow.withValues(alpha: 0.6),
+                          blurRadius: 18),
+                    ]
+                  : null,
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -623,43 +694,73 @@ class _CoraGameScreenState extends State<CoraGameScreen>
 
     return Padding(
       padding: EdgeInsets.symmetric(horizontal: 32),
-      child: SizedBox(
-        width: double.infinity,
-        height: 64,
-        child: ElevatedButton(
-          onPressed: canRoll ? _rollDice : null,
-          style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.neonGreen,
-            foregroundColor: AppColors.bgDark,
-            shape: RoundedRectangleBorder(
+      child: AnimatedOpacity(
+        duration: const Duration(milliseconds: 200),
+        opacity: canRoll ? 1 : 0.55,
+        child: GestureDetector(
+          onTap: canRoll ? _rollDice : null,
+          child: AnimatedContainer(
+            duration: const Duration(milliseconds: 200),
+            width: double.infinity,
+            height: 64,
+            alignment: Alignment.center,
+            decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(20),
-            ),
-            elevation: canRoll ? 10 : 0,
-          ),
-          child: _isRolling
-              ? SizedBox(
-                  width: 24,
-                  height: 24,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: AppColors.bgDark,
-                  ),
-                )
-              : Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Icon(Icons.casino, size: 32),
-                    SizedBox(width: 12),
-                    Text(
-                      'LANCER LES DÉS',
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w900,
-                        letterSpacing: 1,
+              gradient: canRoll
+                  ? LinearGradient(
+                      begin: Alignment.topLeft,
+                      end: Alignment.bottomRight,
+                      colors: [
+                        AppColors.neonGreen,
+                        AppColors.neonGreen.withValues(alpha: 0.72),
+                      ],
+                    )
+                  : null,
+              color: canRoll
+                  ? null
+                  : AppColors.textMuted.withValues(alpha: 0.22),
+              boxShadow: canRoll
+                  ? [
+                      BoxShadow(
+                        color: AppColors.neonGreen.withValues(alpha: 0.5),
+                        blurRadius: 22,
+                        spreadRadius: 1,
                       ),
+                    ]
+                  : null,
+            ),
+            child: _isRolling
+                ? SizedBox(
+                    width: 24,
+                    height: 24,
+                    child: CircularProgressIndicator(
+                      strokeWidth: 2,
+                      color: AppColors.bgDark,
                     ),
-                  ],
-                ),
+                  )
+                : Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.casino,
+                          size: 32,
+                          color: canRoll
+                              ? AppColors.bgDark
+                              : AppColors.textMuted),
+                      SizedBox(width: 12),
+                      Text(
+                        'LANCER LES DÉS',
+                        style: TextStyle(
+                          color: canRoll
+                              ? AppColors.bgDark
+                              : AppColors.textMuted,
+                          fontSize: 20,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 1,
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
         ),
       ),
     );
@@ -670,7 +771,10 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     if (!mounted) return;
     setState(() => _turnCountdown = _turnSeconds);
     _turnTimer = Timer.periodic(const Duration(seconds: 1), (t) {
-      if (!mounted) { t.cancel(); return; }
+      if (!mounted) {
+        t.cancel();
+        return;
+      }
       setState(() => _turnCountdown--);
       if (_turnCountdown <= 0) {
         t.cancel();
@@ -714,9 +818,13 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     // de l'effet de bord du dispose. Puis refresh wallet pour que le
     // joueur voie son solde à jour immédiatement.
     _forfeitDone = true;
-    try { await _service.forfeit(widget.gameId); } catch (_) {}
+    try {
+      await _service.forfeit(widget.gameId);
+    } catch (_) {}
     if (!mounted) return;
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
+    try {
+      context.read<WalletProvider>().refresh();
+    } catch (_) {}
     Future.delayed(const Duration(seconds: 3), () {
       if (mounted) Navigator.pop(context);
     });
@@ -729,14 +837,15 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     AudioService.instance.playDiceRoll();
 
     // request_id STABLE hors du closure -> idempotence wrapper sur retry
-    final reqId = '${_service.currentUserId ?? "anon"}-${widget.gameId}-roll-${DateTime.now().microsecondsSinceEpoch}';
+    final reqId =
+        '${_service.currentUserId ?? "anon"}-${widget.gameId}-roll-${DateTime.now().microsecondsSinceEpoch}';
     try {
       // ANTI-CHEAT : le SERVEUR genere les des. Le client recoit le resultat
       // et l'utilise uniquement pour l'animation (impossible de forcer un
       // lancer cote serveur). Retry auto sur erreur reseau.
       final serverRoll = await NetworkRetry.run(
         () => _service.submitRollAndGetServerDice(
-          gameId: widget.gameId, requestId: reqId),
+            gameId: widget.gameId, requestId: reqId),
         label: 'cora_submit_roll',
       );
       if (serverRoll != null) _animateRoll(serverRoll);
@@ -766,20 +875,24 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     }
     // Cora double le pot SEULEMENT s'il y a exactement 1 Cora (pas annulé si plusieurs)
     final prize = isWinner
-        ? (_game!.gameState.coraCount == 1 ? _game!.potAmount * 2 : _game!.potAmount)
+        ? (_game!.gameState.coraCount == 1
+            ? _game!.potAmount * 2
+            : _game!.potAmount)
         : 0;
 
     // Rafraîchir le wallet immédiatement
-    try { context.read<WalletProvider>().refresh(); } catch (_) {}
+    try {
+      context.read<WalletProvider>().refresh();
+    } catch (_) {}
 
     // Enregistrer XP / stats (sauf partie annulée)
     if (!isCancelled) {
       try {
         context.read<PlayerProvider>().recordGameResult(
-          gameType: 'cora',
-          result: isWinner ? 'win' : 'loss',
-          coinsChange: isWinner ? prize : -(_game!.betAmount),
-        );
+              gameType: 'cora',
+              result: isWinner ? 'win' : 'loss',
+              coinsChange: isWinner ? prize : -(_game!.betAmount),
+            );
       } catch (_) {}
     }
 
@@ -804,7 +917,8 @@ class _CoraGameScreenState extends State<CoraGameScreen>
 
           return AlertDialog(
             backgroundColor: AppColors.bgCard,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+            shape:
+                RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
             title: Row(children: [
               Icon(
                 isWinner
@@ -812,7 +926,9 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                     : (isCancelled ? Icons.refresh : Icons.info_outline),
                 color: isWinner
                     ? AppColors.neonYellow
-                    : (isCancelled ? AppColors.neonBlue : AppColors.textSecondary),
+                    : (isCancelled
+                        ? AppColors.neonBlue
+                        : AppColors.textSecondary),
                 size: 32,
               ),
               const SizedBox(width: 12),
@@ -822,7 +938,8 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                       ? 'Victoire !'
                       : (isCancelled ? 'Partie annulée' : 'Partie terminée'),
                   style: TextStyle(
-                    color: isWinner ? AppColors.neonYellow : AppColors.textPrimary,
+                    color:
+                        isWinner ? AppColors.neonYellow : AppColors.textPrimary,
                     fontSize: 18,
                   ),
                 ),
@@ -852,11 +969,13 @@ class _CoraGameScreenState extends State<CoraGameScreen>
               const SizedBox(height: 12),
               Consumer<WalletProvider>(
                 builder: (_, w, __) => Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
                   decoration: BoxDecoration(
                     color: AppColors.bgElevated,
                     borderRadius: BorderRadius.circular(10),
-                    border: Border.all(color: AppColors.divider.withValues(alpha: 0.4)),
+                    border: Border.all(
+                        color: AppColors.divider.withValues(alpha: 0.4)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
@@ -911,8 +1030,14 @@ class _CoraGameScreenState extends State<CoraGameScreen>
               ],
             ]),
             actions: _buildResultActions(
-              ctx, betAmount, rematch, iVoted, iAccepted, isPending,
-              isRefused, isExpired,
+              ctx,
+              betAmount,
+              rematch,
+              iVoted,
+              iAccepted,
+              isPending,
+              isRefused,
+              isExpired,
             ),
           );
         },
@@ -934,12 +1059,16 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     if (isRefused || isExpired) {
       return [
         ElevatedButton(
-          onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
+          onPressed: () {
+            Navigator.pop(ctx);
+            Navigator.pop(context);
+          },
           style: ElevatedButton.styleFrom(
             backgroundColor: AppColors.neonRed,
             foregroundColor: Colors.white,
           ),
-          child: const Text('Quitter', style: TextStyle(fontWeight: FontWeight.w800)),
+          child: const Text('Quitter',
+              style: TextStyle(fontWeight: FontWeight.w800)),
         ),
       ];
     }
@@ -971,7 +1100,8 @@ class _CoraGameScreenState extends State<CoraGameScreen>
             final canReplay = w.coins >= betAmount * 2;
             return ElevatedButton.icon(
               icon: const Icon(Icons.refresh, size: 20),
-              onPressed: canReplay ? () async => await _voteRematch(true) : null,
+              onPressed:
+                  canReplay ? () async => await _voteRematch(true) : null,
               style: ElevatedButton.styleFrom(
                 backgroundColor: AppColors.neonGreen,
                 foregroundColor: AppColors.bgDark,
@@ -989,9 +1119,13 @@ class _CoraGameScreenState extends State<CoraGameScreen>
     // Cas initial (pas encore de rematch demandé) → Quitter + Rejouer
     return [
       TextButton(
-        onPressed: () { Navigator.pop(ctx); Navigator.pop(context); },
+        onPressed: () {
+          Navigator.pop(ctx);
+          Navigator.pop(context);
+        },
         child: Text(AppLocalizations.of(context)!.gameQuit,
-            style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
+            style: TextStyle(
+                color: AppColors.neonRed, fontWeight: FontWeight.w700)),
       ),
       Consumer<WalletProvider>(
         builder: (_, w, __) {
@@ -1025,13 +1159,16 @@ class _CoraGameScreenState extends State<CoraGameScreen>
       // Si le serveur a finalisé immédiatement (ex: tous ont accepté en même temps),
       // l'event realtime UPDATE arrivera et on naviguera. Mais on peut aussi
       // déclencher la navigation tout de suite si la réponse contient new_game_id.
-      if (res != null && res['status'] == 'accepted' && res['new_game_id'] != null) {
+      if (res != null &&
+          res['status'] == 'accepted' &&
+          res['new_game_id'] != null) {
         _rematchNavigated = true;
         if (Navigator.canPop(context)) Navigator.pop(context); // close dialog
         Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (_) => CoraGameScreen(gameId: res['new_game_id'] as String),
+            builder: (_) =>
+                CoraGameScreen(gameId: res['new_game_id'] as String),
           ),
         );
       } else if (res != null && res['status'] == 'refused' && !accept) {
@@ -1083,11 +1220,14 @@ class _CoraGameScreenState extends State<CoraGameScreen>
                 await _service.forfeit(widget.gameId);
               } catch (_) {}
               if (!mounted) return;
-              try { context.read<WalletProvider>().refresh(); } catch (_) {}
+              try {
+                context.read<WalletProvider>().refresh();
+              } catch (_) {}
               if (mounted) Navigator.pop(context);
             },
             child: Text(AppLocalizations.of(context)!.gameForfeit,
-                style: TextStyle(color: AppColors.neonRed, fontWeight: FontWeight.w700)),
+                style: TextStyle(
+                    color: AppColors.neonRed, fontWeight: FontWeight.w700)),
           ),
         ],
       ),
